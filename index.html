@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.10.0</title>
+<title>降龙猎手 · 五行觉醒 V1.10.1</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -54,8 +54,26 @@ function pickW(w){let s=0;for(const x of w)s+=x;let r=Math.random()*s;for(let i=
 
 /* ============ 音效 ============ */
 let AC=null;
-function sfx(f,d,type,v){if(!AC)return;d=d||.08;type=type||'square';v=v||.04;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d);}catch(e){}}
+function sfxVol(){return p&&p.set&&p.set.sv!=null?p.set.sv/5:1;} // V1.10.1需求5：音效音量 1~5 档
+function asfx(f,d,type,v){if(p&&p.set&&!p.set.asfx)return;sfx(f,d,type,v);} // V1.10.1需求5：攻击声效开关
+function sfx(f,d,type,v){if(!AC)return;d=d||.08;type=type||'square';v=v||.04;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v*sfxVol();o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d);}catch(e){}}
 function arp(list,step){step=step||80;list.forEach(function(f,i){setTimeout(function(){sfx(f,.13,'square',.05);},i*step);});}
+/* V1.10.1需求5：背景音乐——五声音阶拨弦循环，帧驱动，随开关即时启停 */
+const MUS_SCALE=[262,294,330,392,440,523,587,659];
+const MUS_SEQ=[0,2,4,6,5,3,4,1,0,3,5,7,6,4,2,4];
+let musStep=0;
+function tone(f,dur,vol,type){if(!AC)return;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type||'triangle';o.frequency.value=f;
+  g.gain.value=0;o.connect(g);g.connect(AC.destination);const t0=AC.currentTime;
+  g.gain.linearRampToValueAtTime(Math.max(.0002,vol),t0+.02);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+  o.start(t0);o.stop(t0+dur+.02);}catch(e){}}
+function updateMusic(){
+  if(!started||!AC||!p||!p.set||!p.set.mus)return;
+  if(++musStep%26)return; // ~0.43 秒一拍
+  const mv=p.set.mv|0||3,vol=.010*mv,beat=(musStep/26|0);
+  const n=MUS_SEQ[beat%16];
+  tone(MUS_SCALE[n]*2,.5,vol);tone(MUS_SCALE[n],.9,vol*.7);
+  if(beat%8===0)tone(MUS_SCALE[n]/2,1.4,vol*.8,'sine');
+}
 
 /* ============ 矢量图标库（内联SVG图片，任意尺寸清晰） ============ */
 const ICONS={};
@@ -797,6 +815,24 @@ function pickWx(i){ // V1.9.12需求1：早晚时辰按 FOG_P 概率出雾；非
   if(FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P)return WX.findIndex(function(w){return w.k===FOG_K;});
   let n;do{n=ri(0,WX.length-1);}while(isFog(n));return n;}
 function wxNow(){return WX[wxI];}
+/* V1.10.1需求4：转变天气时 5 秒大提示横幅——新旧天气对照，比普通播报更醒目 */
+const WXBAN={t:0,from:null,to:null};
+function wxBan(oldI,newI){WXBAN.t=300;WXBAN.from=WX[oldI];WXBAN.to=WX[newI];}
+function drawWxBan(){
+  if(WXBAN.t<=0||!WXBAN.to)return;
+  const k=WXBAN.t/300,al=k>.95?(1-k)/.05:(k<.15?k/.15:1); // 首尾淡入淡出（各 0.25 秒）
+  const W=WXBAN.to,O=WXBAN.from;
+  C.save();C.globalAlpha=al*.96;
+  const bw=430,bx=LW/2-bw/2,by=44;
+  const g=C.createLinearGradient(bx,by,bx+bw,by);
+  g.addColorStop(0,'rgba(8,10,6,0)');g.addColorStop(.12,'rgba(8,10,6,.86)');g.addColorStop(.88,'rgba(8,10,6,.86)');g.addColorStop(1,'rgba(8,10,6,0)');
+  C.fillStyle=g;rr(bx+8,by,bw-16,46,10);C.fill();
+  C.strokeStyle=W.col;C.lineWidth=1.6;C.globalAlpha=al*.8;rr(bx+8,by,bw-16,46,10);C.stroke();C.globalAlpha=al;
+  txt('🌦 天象转换',LW/2,by+12,11,'#c9b96a','center','400',true);
+  txt((O?O.ic+O.n+' → ':'')+W.ic+' '+W.n,LW/2,by+30,19,W.col,'center','700',true);
+  txt(W.tip+'（仅视觉效果，不影响战力）',LW/2,by+43,9.5,'#8a9a7a','center','400',true);
+  C.restore();
+}
 function schOf(){return (SCH_START+Math.floor(t/SCH_FRAME))%12;}
 function NB(){return 1+dark*.5;} /* 需求2：夜战倍率（攻·速同源），白昼恒为 1，深夜 1.5 */
 function updateClock(){ /* 每帧推时辰：明暗度在相邻时辰标称值间线性插值，跨界连续无跳变 */
@@ -816,13 +852,14 @@ function updateClock(){ /* 每帧推时辰：明暗度在相邻时辰标称值�
     const old=wxI;wxSeq=seq;
     do{wxI=pickWx(i);}while(wxI===old); // V1.9.12需求1：受时段约束的天气抽取
     wxT=t;
-    if(started&&old!==wxI){const W=WX[wxI];msg('🌦 天象转换：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}
+    if(started&&old!==wxI){wxBan(old,wxI);const W=WX[wxI];msg('🌦 天象转换：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}
   }else if(chg){ /* V1.9.12需求1：时辰边界雾守卫——离早晚必散雾，入早晚按概率起雾（解决雾赖过时段） */
-    if(isFog(wxI)&&FOG_OK.indexOf(i)<0){do{wxI=ri(0,WX.length-1);}while(isFog(wxI));wxT=t;
-      if(started){const W=WX[wxI];msg('🌦 时辰更替，大雾散去——'+W.ic+' '+W.n,W.col);}}
-    else if(!isFog(wxI)&&FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P){wxI=WX.findIndex(function(w){return w.k===FOG_K;});wxT=t;
-      if(started){const W=WX[wxI];msg('🌫 晨昏生雾：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);}}
+    if(isFog(wxI)&&FOG_OK.indexOf(i)<0){const oldf=wxI;do{wxI=ri(0,WX.length-1);}while(isFog(wxI));wxT=t;
+      if(started){wxBan(oldf,wxI);const W=WX[wxI];msg('🌦 时辰更替，大雾散去——'+W.ic+' '+W.n,W.col);}}
+    else if(!isFog(wxI)&&FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P){const oldf=wxI;wxI=WX.findIndex(function(w){return w.k===FOG_K;});wxT=t;
+      if(started){wxBan(oldf,wxI);const W=WX[wxI];msg('🌫 晨昏生雾：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);}}
   }
+  if(WXBAN.t>0)WXBAN.t--; // V1.10.1需求4：横幅 5 秒倒计时（面板暂停时同样流逝）
 }
 function drawNightView(){ /* 需求3：视野随夜色收窄，天亮渐开，白昼全屏可视 */
   if(dark<=.02)return;
@@ -1106,12 +1143,14 @@ function setTog(k,lab){p.set[k]=p.set[k]?0:1;sfx(p.set[k]?880:420,.07,'square',.
   if(k==='bless'&&p.set.bless)blessFire(2);
   doSave(true);}
 function setDens(v){p.set.bd=v;sfx(700+v*90,.07,'triangle',.03);msg('🎐 祝福弹幕密度：'+BLESS_DENS[v]+'——击杀即放 '+['少','中','多'][v],'#ff9ad5');blessFire(v+1);doSave(true);}
+function setVol(k,lab,v){p.set[k]=v;sfx(k==='sv'?120+v*180:660+v*60,.07,'triangle',.03);
+  msg('🎚 '+lab+'：'+v+'/5','#8fd08f');doSave(true);}
 function blessTest(){if(!p.set.bless){p.set.bless=1;msg('🧧 已顺手打开祝福播报总开关','#8fd08f');}blessFire(3);sfx(1046,.09,'triangle',.04);}
 function blessReset(){blessInit();p.bless={q:blessNewQ(),done:0,r:p.bless.r};blessFly.length=0;blessP.length=0;
   msg('↺ 本轮祝福词库已重洗（'+BLESS_TOTAL+' 条待播）','#e8c86a');sfx(520,.1,'square',.04);}
 function drawSetPanel(){
   blessInit();
-  const pw=650,ph=470,px=LW/2-pw/2,py=26;
+  const pw=650,ph=520,px=LW/2-pw/2,py=12; // V1.10.1需求5：面板加高以容纳音频区
   panel(px,py,pw,ph);btn(px+pw-34,py+8,26,22,'✕',function(){setOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：补右上角✕（与其余面板统一），右下文字关闭钮保留
   txt('⚙ 设置 · 播报内容与祝福弹幕',px+16,py+14,16,'#e8cf4a');
   txt('📢 播报内容',px+18,py+48,13,'#8fd08f');
@@ -1120,11 +1159,20 @@ function drawSetPanel(){
     C.fillStyle=i%2?'rgba(255,255,255,.03)':'rgba(0,0,0,.2)';C.fillRect(px+12,yy-11,308,23);
     txt(R[0],px+18,yy,12,on?'#e8e0c0':'#777');
     btn(px+238,yy-11,74,22,on?'✅ 开启':'🔇 关闭',(function(k,lab){return function(){setTog(k,lab);};})(R[1],R[0]),on?'#3a5a2a':'#5a2626');});
-  txt('🎐 祝福弹幕密度（击杀一次放几条）',px+18,py+214,12.5,'#ff9ad5');
-  BLESS_DENS.forEach(function(dn,i){btn(px+18+i*100,py+226,92,24,dn+(p.set.bd===i?' ●':''),(function(v){return function(){setDens(v);};})(i),p.set.bd===i?'#8a2a2a':'#3a3226');});
-  txt(['普怪 20%·精英 1·BOSS 2','普怪 50%·精英 2·BOSS 4','普怪 100%·精英 3·BOSS 6'][Math.max(0,Math.min(2,p.set.bd|0))],px+18,py+264,10,'#8a9a7a',null,'400',true);
+  /* V1.10.1需求5：音乐控制与攻击声效 */
+  txt('🎵 音乐与音效',px+18,py+206,13,'#8fd08f');
+  [['🎼 背景音乐','mus'],['⚔ 攻击声效','asfx']].forEach(function(R,i){const yy=py+226+i*26,on=!!p.set[R[1]];
+    C.fillStyle=i%2?'rgba(255,255,255,.03)':'rgba(0,0,0,.2)';C.fillRect(px+12,yy-11,308,21);
+    txt(R[0],px+18,yy,12,on?'#e8e0c0':'#777');
+    btn(px+238,yy-11,74,21,on?'✅ 开启':'🔇 关闭',(function(k,lab){return function(){setTog(k,lab);};})(R[1],R[0]),on?'#3a5a2a':'#5a2626');});
+  [['🔈 音乐音量','mv'],['🔊 音效音量','sv']].forEach(function(R,j){const yy=py+278+j*26,cur=R[1]==='mv'?(p.set.mv|0||3):(p.set.sv|0||5);
+    txt(R[0],px+18,yy,12,'#e8e0c0');
+    for(let i=0;i<5;i++)btn(px+150+i*34,yy-10,30,20,i<cur?'●':'○',(function(k,v){return function(){setVol(k,k==='mv'?'音乐音量':'音效音量',v);};})(R[1],i+1),i<cur?'#2a5a3a':'#33302a');});
+  txt('🎐 祝福弹幕密度（击杀一次放几条）',px+18,py+322,12.5,'#ff9ad5');
+  BLESS_DENS.forEach(function(dn,i){btn(px+18+i*100,py+334,92,24,dn+(p.set.bd===i?' ●':''),(function(v){return function(){setDens(v);};})(i),p.set.bd===i?'#8a2a2a':'#3a3226');});
+  txt(['普怪 20%·精英 1·BOSS 2','普怪 50%·精英 2·BOSS 4','普怪 100%·精英 3·BOSS 6'][Math.max(0,Math.min(2,p.set.bd|0))],px+18,py+368,10,'#8a9a7a',null,'400',true);
   const TIP=['🏮 词库 6 类 '+BLESS_TOTAL+' 条：财运·幸福·事业·学业·安康·好运','一条弹幕一个好词，击杀即放出，屏幕中上部播出','全部播完且弹幕飞尽 → 即时成就【福满乾坤】','到营地天使处按 E 交接，可分三档点亮长效增益','不想看弹幕？上方把祝福播报关掉即可'];
-  TIP.forEach(function(L,i){txt(L,px+18,py+290+i*19,10,i===2?'#ffd700':'#8a9a7a',null,i===2?'700':'400',true);});
+  TIP.forEach(function(L,i){txt(L,px+18,py+392+i*18,10,i===2?'#ffd700':'#8a9a7a',null,i===2?'700':'400',true);});
   /* 右侧：本轮祝福进度卡与实用按钮 */
   const cx3=px+336,cw3=pw-362;
   rr(cx3-8,py+42,cw3+16,ph-104,8);C.fillStyle='rgba(64,8,8,.55)';C.fill();C.strokeStyle='#8a5a2a';C.lineWidth=1.5;C.stroke();
@@ -1822,7 +1870,7 @@ const p={x:3500,y:2260,hp:100,mp:50,lvl:1,exp:0,gold:0,aim:0,cool:0,inv:0,flash:
   equip:{mweap:null,sweap:null,hat:null,top:null,pants:null,boots:null,acc:null,neck:null},
   slots:[0,8,4,11],skcd:[0,0,0,0],skLvl:{},skUse:{},store:{},ek:{},bagRows:10,qs:[],qa:{},qv:0,main:0,encN:0, // 需求50/70：qs=进行中任务列表(≤10)、qa=成就位图、qv=已交付数、encN=已发大鼓励次数
   autoSell:{eq:false,wp:false,pot:false,book:false,mat:false},colEq:0,colMat:{},ach2:{enhOk:0,drillOk:0,skLvlMax:0,morphN:0,petLvl:0,towerMax:0,towerKills:0,towerAch:0,mazeK:0,mazeEx:0,petKill:0,mountN:0,blessR:0},morphUsed:{}, // 需求76：自动售卖开关；需求77：装备/材料收集计数；v1.4需求27/28：ach2=五大系统联动成就计数；v1.5需求3/4：tower*=爬塔进度；V1.6/V1.7：mazeK/mazeEx/petKill/mountN；V1.8：blessR=祝福大典圆成轮数
-  set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度
+  set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度
   mounts:{un:{},sel:''},mr:false, // V1.7：un=已解锁坐骑、sel=当前坐骑、mr=野外自由乘骑旗标
   pets:[null,null,null,null], // v1.4需求21：同时携带4个宝宝（兼容旧 p.pet 单人档）
   kills:{slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0}};
@@ -3365,14 +3413,14 @@ function updatePlayer(){
       if(Math.random()<cb)shootArrow(p.aim+rnd(-.2,.2),.7,0,'#9adcfa');
       // v1.4需求5：弓系独特攻击视觉——元素弓弦光点
       for(let i=0;i<3;i++)parts.push({x:p.x+Math.cos(p.aim)*12+rnd(-3,3),y:p.y-8+Math.sin(p.aim)*12+rnd(-3,3),vx:Math.cos(p.aim)*2+rnd(-.5,.5),vy:Math.sin(p.aim)*2+rnd(-.5,.5),col:ec,t:12,s:2+((mwE?.tier||0)*.15)});
-      p.cool=Math.round(22*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;sfx(620,.05,'square',.02);}
+      p.cool=Math.round(22*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;asfx(620,.05,'square',.02);}
     else if(wk==='sword'){p.cool=Math.round(14*fast);p.atkAct=ACT_MELEE;p.atkDur=ACT_MELEE;p.atkBack=0;const sc=TIERC[Math.min(19,mwE?mwE.tier||0:0)];
       fxSlash(p.x,p.y,p.aim,SR,1.9,sc);areaDmg(p.x,p.y,SR,1,p.aim,1.9);
       if(Math.random()<cb){fxSlash(p.x,p.y,p.aim+.8,SR,1.9,'#9adcfa');areaDmg(p.x,p.y,SR,.5,p.aim+.8,1.9);}
       if(SR>52)fxRing(p.x,p.y,6,SR*.7,sc,2);
       // v1.4需求5：剑系剑气波纹
       for(let i=0;i<4;i++){const a2=p.aim+rnd(-.6,.6);parts.push({x:p.x+Math.cos(a2)*SR*.5,y:p.y+Math.sin(a2)*SR*.5,vx:Math.cos(a2)*1.8,vy:Math.sin(a2)*1.8,col:sc,t:10,s:2.5});}
-      sfx(480,.05,'triangle',.03);}
+      asfx(480,.05,'triangle',.03);}
     else if(wk==='gun'){p.cool=Math.round(9*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;
       const bc=EL[wEl()||'fire'].col;
       const pierce0=wfx('e')==='pierce'?1+(wfxPw()>=8?1:0):0;
@@ -3381,7 +3429,7 @@ function updatePlayer(){
       // v1.4需求5：枪系壳+枪口火焰元素色
       parts.push({x:p.x+Math.cos(p.aim)*20,y:p.y-6+Math.sin(p.aim)*20,vx:Math.cos(p.aim)*1.5,vy:Math.sin(p.aim)*1.5-.4,col:bc,t:8,s:5+(mwE?mwE.tier||0:0)*.18});
       parts.push({x:p.x+Math.cos(p.aim)*8+rnd(-2,2),y:p.y+4,vx:rnd(1,3),vy:-rnd(1,3),col:'#c9a22a',t:18,s:2}); // 抛壳
-      sfx(900,.04,'square',.03);}
+      asfx(900,.04,'square',.03);}
     else if(wk==='staff'){p.cool=Math.round(24*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;
       const el=EL[wEl()||'wood'],ec=el?el.col:'#c9a2ff';
       const bR=wfx('e')==='nova'?1+wfxPw()*.05:1;
@@ -3389,13 +3437,13 @@ function updatePlayer(){
       if(Math.random()<cb)projs.push({k:'orb',x:p.x+Math.cos(p.aim)*14,y:p.y-8+Math.sin(p.aim)*14,vx:Math.cos(p.aim+rnd(-.2,.2))*5,vy:Math.sin(p.aim+rnd(-.2,.2))*5,t:90,r:6,d:.9,pierce:0,hit:new Set(),col:ec});
       // v1.4需求5：法杖环绕符文粒子
       for(let i=0;i<5;i++){const a2=p.aim+rnd(-1,1);parts.push({x:p.x+Math.cos(a2)*14,y:p.y-8+Math.sin(a2)*14,vx:Math.cos(a2)*1.2+rnd(-.8,.8),vy:Math.sin(a2)*1.2+rnd(-.8,.8),col:ec,t:16,s:3+((mwE?.tier||0)*.12)});}
-      fxRing(p.x,p.y,4,20,ec,2);sfx(680,.1,'sine',.04);}
+      fxRing(p.x,p.y,4,20,ec,2);asfx(680,.1,'sine',.04);}
     else{p.cool=Math.round(28*fast);p.atkAct=ACT_MELEE;p.atkDur=ACT_MELEE;p.atkBack=0;fxSlash(p.x,p.y,p.aim,SR+8,2.5,'#ffd27a');areaDmg(p.x,p.y,SR+8,1.6,p.aim,2.5,null,6);
       if(Math.random()<cb){fxSlash(p.x,p.y,p.aim+1.6,SR+8,2.5,'#ff9a5a');areaDmg(p.x,p.y,SR+8,.8,p.aim+1.6,2.5,null,6);}
       // v1.4需求5：刀系残影震动+暗红刀光
       fxSlash(p.x,p.y,p.aim+.3,SR+12,2.2,'#ff4a4a');fxRing(p.x,p.y,8,SR*.8,'#ffd27a',2);shakeN(3);
       for(let i=0;i<4;i++)parts.push({x:p.x+Math.cos(p.aim+rnd(-1,1))*(SR*.4),y:p.y+Math.sin(p.aim+rnd(-1,1))*(SR*.4),vx:Math.cos(p.aim)*rnd(1,4),vy:Math.sin(p.aim)*rnd(1,4)-1,col:'#ff4a4a',t:14,s:3});
-      sfx(200,.09,'sawtooth',.04);}
+      asfx(200,.09,'sawtooth',.04);}
   }
   if(pass(21)&&t%60===0&&p.hp<maxHp())healPlayer(2);
   if(p.inv>0)p.inv--;if(p.flash>0)p.flash--;
@@ -4202,7 +4250,7 @@ function draw(){
   hot=[];
   if(setOpen&&(bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen))setOpen=false; // V1.8需求1：与其它面板互斥收起
   const anyPanel=bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.4需求16；v1.5.3需求11；V1.8：设置面板
-  drawHUD();drawSkillBar();drawMinimap();drawSetBtn();drawMsgs();drawKillFeed();drawZoneBanner();drawBlessBand();drawClockChip(anyPanel);hotBase=hot.length; // V1.8需求3：祝福播报区（在面板与暗化遮罩之下）；V1.9需求1：时辰/天气顶栏读数
+  drawHUD();drawSkillBar();drawMinimap();drawSetBtn();drawMsgs();drawKillFeed();drawZoneBanner();drawWxBan();drawBlessBand();drawClockChip(anyPanel);hotBase=hot.length; // V1.8需求3：祝福播报区（在面板与暗化遮罩之下）；V1.9需求1：时辰/天气顶栏读数
   if(!anyPanel)drawQuestTracker(); // 需求67：常驻任务列表（面板开启时不画）
   if(p.runT>=150&&!anyPanel)drawRunWind(); // 需求62：长距离奔跑风向速度线
   /* v1.4需求16：面板打开时——固定HUD模块全部压到底层（暗化遮罩），面板置于最上层，避免遮挡冲突 */
@@ -5284,7 +5332,7 @@ function drawSetBtn(){
   txt('⚙',x+15,y+h/2+1,17,setOpen?'#fff2c8':'#e8c86a','center','bold');
   txt('设置 · 播报与祝福弹幕',x+30,y+h/2+1,10.5,setOpen?'#fff2c8':'#c9b96a','left',null,true);
   txt('O',x+w-11,y+h/2+1,10,'#8899aa','center',null,true);
-  if(!setOpen&&mouse.x>x&&mouse.x<x+w&&mouse.y>y&&mouse.y<y+h)txt('打开设置面板（播报分级 / 拾取播报 / 祝福弹幕与密度）',x-10,y+h/2+1,10.5,'#e8dcc0','right',null,true);
+  if(!setOpen&&mouse.x>x&&mouse.x<x+w&&mouse.y>y&&mouse.y<y+h)txt('打开设置面板（播报分级 / 音乐音效 / 祝福弹幕与密度）',x-10,y+h/2+1,10.5,'#e8dcc0','right',null,true);
   hot.push({x:x,y:y,w:w,h:h,fn:function(){if(setOpen){setOpen=false;sfx(420,.06,'square',.03);}else openSet();}});
 }
 function drawMsgs(){
@@ -5365,23 +5413,33 @@ function drawCosmetics(x,y){
   }
 }
 /* ===== 需求67：界面常驻任务列表（HUD 下方，随时看进度；J 看全量） ===== */
+let qTrackOpen=true; // V1.10.1需求6：左侧任务追踪可收起/展开（点标题行切换）
 function drawQuestTracker(){
   const md=MAINLIN[p.main]; // v1.5.3需求13：主线置顶常驻追踪
   if(!md&&!p.qs.length)return;
-  const x=10,y=230,w=252,rows=Math.min(p.qs.length,8),mt=p.lvl>=5?15:0,h=28+rows*17+(md?26:0)+mt; // 需求74：下移避开扩展后的 HUD；V1.7：坐骑任务常驻一行
+  const x=10,y=230,w=300; // V1.10.1需求6：加宽容纳放大字体
+  if(!qTrackOpen){ // 收起态：仅一条标题栏，点击展开
+    C.save();C.globalAlpha=.94;
+    rr(x,y,w,26,7);C.fillStyle='rgba(8,10,6,.74)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.2;C.stroke();
+    txt('📜 任务追踪（'+p.qs.length+'）▸ 展开',x+w/2,y+13,13,'#ffd700','center',null,true);
+    C.restore();
+    hot.push({x:x,y:y,w:w,h:26,fn:function(){qTrackOpen=true;sfx(760,.06,'triangle',.03);}});
+    return;}
+  const rows=Math.min(p.qs.length,8),mt=p.lvl>=5?18:0,h=32+rows*20+(md?32:0)+mt; // V1.10.1需求6：字号行高整体放大
   C.save();C.globalAlpha=.94;
   rr(x,y,w,h,7);C.fillStyle='rgba(8,10,6,.74)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.2;C.stroke();
+  hot.push({x:x,y:y,w:w,h:24,fn:function(){qTrackOpen=false;sfx(420,.06,'square',.03);}}); // 点标题行收起
   let oy=0;
   if(md){const mnm=md.k==='tower'?'登塔':(MT[md.k]?MT[md.k].name:'');
-    txt('📖 主线 '+md.c+'《'+md.t+'》',x+w/2,y+10,10,'#ff9ad5','center',null,true);
-    txt((p.lvl<md.lv?'⛔ 解锁需 Lv'+md.lv:'🎯 '+mnm+' '+mainProg()+'/'+md.n),x+w/2,y+24,9,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);oy=26;}
-  txt('📜 支线 '+p.qs.length+'/'+QMAX+' · J 看详情',x+w/2,y+10+oy,10,'#ffd700','center',null,true);
+    txt('📖 主线 '+md.c+'《'+md.t+'》',x+w/2,y+11,12.5,'#ff9ad5','center',null,true);
+    txt((p.lvl<md.lv?'⛔ 解锁需 Lv'+md.lv:'🎯 '+mnm+' '+mainProg()+'/'+md.n),x+w/2,y+26,11.5,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);oy=32;}
+  txt('📜 支线 '+p.qs.length+'/'+QMAX+' · ▾ 收起',x+w/2,y+12+oy,12.5,'#ffd700','center',null,true);
   for(let s=0;s<rows;s++){const q=p.qs[s],st=STORY[q.qi].st[q.sj],prog=qProg(q.qi),ok=prog>=st.t;
     const zc=zoneCoord(STORY[q.qi].zone); // 需求75：目标坐标
-    txt((s+1)+'. '+STORY[q.qi].name+' 🧭'+zc.x+','+zc.y,x+8,y+24+oy+s*17,9,ok?'#8fd08f':'#dfe4da',null,null,true);
-    txt(prog+'/'+st.t+(ok?' ✓':''),x+w-8,y+24+oy+s*17,9,ok?'#ffd700':'#8a9a7a','right',null,true);}
-  if(p.qs.length>rows)txt('…另有 '+(p.qs.length-rows)+' 项（J 查看）',x+w/2,y+h-5-mt,9,'#8a9a7a','center',null,true);
-  if(mt){const mn=mntCur();txt(mn?'🏇 坐骑：讨伐 '+mn.mkn:'🏇 '+MOUNTS.length+'骑已齐',x+w/2,y+h-5,9,'#e8c86a','center',null,true);}
+    txt((s+1)+'. '+STORY[q.qi].name+' 🧭'+zc.x+','+zc.y,x+8,y+28+oy+s*20,11.5,ok?'#8fd08f':'#dfe4da',null,null,true);
+    txt(prog+'/'+st.t+(ok?' ✓':''),x+w-8,y+28+oy+s*20,11.5,ok?'#ffd700':'#8a9a7a','right',null,true);}
+  if(p.qs.length>rows)txt('…另有 '+(p.qs.length-rows)+' 项（J 查看）',x+w/2,y+h-6-mt,11,'#8a9a7a','center',null,true);
+  if(mt){const mn=mntCur();txt(mn?'🏇 坐骑：讨伐 '+mn.mkn:'🏇 '+MOUNTS.length+'骑已齐',x+w/2,y+h-6,11,'#e8c86a','center',null,true);}
   C.restore();
 }
 /* ===== 需求62：长时间移动后全屏风向速度线，表达奔跑如飞 ===== */
@@ -5830,7 +5888,7 @@ function doLoad(quiet,slot){
   /* V1.6/V1.7：四条新成就线计数 + 坐骑图鉴读档（旧档自动补零） */
   for(const ak of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[ak]=(q.ach2&&q.ach2[ak])|0;
   /* V1.8需求1/2：播报设置读档（旧档一律默认全开）；祝福轮次进度非法/缺失则重开一轮 */
-  p.set=q.set?{kN:q.set.kN|0,kE:q.set.kE|0,kB:q.set.kB|0,drop:q.set.drop|0,bless:q.set.bless|0,bd:q.set.bd|0}:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1};
+  p.set=q.set?{kN:q.set.kN|0,kE:q.set.kE|0,kB:q.set.kB|0,drop:q.set.drop|0,bless:q.set.bless|0,bd:q.set.bd|0,mus:q.set.mus==null?1:q.set.mus|0,mv:q.set.mv|0||3,sv:q.set.sv|0||5,asfx:q.set.asfx==null?1:q.set.asfx|0}:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1};
   if(q.set&&q.set.kN==null&&!q.set.kE&&!q.set.kB&&!q.set.drop&&!q.set.bless)p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1}; // 全零旧档回退默认（避免读不到字段的误关机）
   p.bless=q.bless&&Array.isArray(q.bless.q)?{q:q.bless.q.slice(0),done:q.bless.done|0,r:q.bless.r|0}:null;
   blessInit();blessFly.length=0;blessP.length=0;
@@ -5861,7 +5919,7 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   p.pets=[null,null,null,null]; // v1.4需求21：4个宠物槽初始空
   p.mounts={un:{},sel:''};p.mr=false; // V1.7：新角无任何坐骑
   for(const mk2 of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[mk2]=0;
-  p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库
+  p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库
   for(let i=0;i<BAGCAP;i++)bag[i]=null;
   for(let i=0;i<chest.length;i++)chest[i]=null;
   mobs.length=0;items.length=0;coins.length=0;projs.length=0;parts.length=0;floats.length=0;fx.length=0;clones.length=0;respawns.length=0;sched.length=0;
@@ -5995,6 +6053,7 @@ function drawStart(){
 function loop(){
   t++;
   updateClock(); // V1.9需求1/4：推十二时辰与天气轮换（面板暂停时时间照流，与祝福弹幕同构）
+  updateMusic(); // V1.10.1需求5：背景音乐循环（面板暂停时照常演奏）
   if(press.on&&!drag.on&&bagOpen&&performance.now()-press.t0>=HOLD){ // bug1-新37：长按满2秒进入拖动模式
     if(press.cell>=0&&bag[press.cell]){drag.from=press.cell;drag.on=true;}else press.on=false;}
   const paused=bagOpen||skPanel||charPanel||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.5.2需求9；v1.5.3需求11：选层面板也暂停；V1.8：设置面板也暂停
