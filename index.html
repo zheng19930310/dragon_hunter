@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.10.2</title>
+<title>降龙猎手 · 五行觉醒 V1.11.0</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -334,32 +334,34 @@ const CAST_CD=1;                      // V1.10.2需求3：技能频次不再整�
 const RANGED_R=560;                   // 远程弹飞行触发上限（不超过其索敌圈）
 /* V1.9.12需求2：攻击/施法动作计时（帧）——人怪共用，驱动 drawPlayer/drawMobArt 的整组变换 */
 const ACT_MELEE=14,ACT_RANGED=10,ACT_CAST=22;
+/* V1.11.0需求1/7：三档怪物倍率（血 / 伤分离）——spawnMob 按 kind 取用 */
+const MOB_HP_MUL=[1,5,14],MOB_DMG_MUL=[1,1.7,2.8];
 const MT={
-  slime: {name:'史莱姆',zone:'slime', lvl:2,hp:34, spd:.55,dmg:6, exp:12,coin:[3,9], n:35,rate:.32,q:[62,28,8,2,0,0,0],r:9, aggro:95, el:'wood'},
-  goblin:{name:'哥布林',zone:'goblin',lvl:5,hp:85, spd:.95,dmg:11,exp:30,coin:[8,18],n:30,rate:.45,q:[22,32,24,14,6,2,0],r:9, aggro:140,el:'earth'},
-  fire:  {name:'烈焰史莱姆',zone:'firecamp',lvl:10,hp:150,spd:.7, dmg:15,exp:60,coin:[15,30],n:15,rate:.5, q:[4,16,32,28,14,5,1],r:10,aggro:120,el:'fire'},
-  knight:{name:'暗影骑士',zone:'arena',   lvl:5,hp:260,spd:1.05,dmg:16,exp:180,coin:[60,110],n:0,rate:1, q:[0,6,24,32,22,11,3],r:10,aggro:170,fixed:[860,150],resp:900,el:'metal'},
-  turtle:{name:'龙溪龟',  zone:'creek',   lvl:10,hp:420,spd:.5, dmg:13,exp:240,coin:[80,140],n:0,rate:.6, q:[0,4,18,34,26,13,5],r:15,aggro:110,fixed:[1305,790],resp:1200,shield:240,el:'water'},
-  miner: {name:'黄金矿工',zone:'mine',    lvl:15,hp:620,spd:.7, dmg:24,exp:420,coin:[120,220],n:15,rate:.65,q:[0,3,16,32,28,15,6],r:11,aggro:150,el:'metal'},
-  bandit:{name:'法外狂徒',zone:'badlands',lvl:20,hp:900,spd:1.1, dmg:32,exp:700,coin:[200,360],n:15,rate:.75,q:[0,0,8,28,30,22,12],r:11,aggro:200,el:'fire'},
+  slime: {name:'史莱姆',zone:'slime', lvl:2,hp:110, spd:.55,dmg:23, exp:39,coin:[3,9], n:35,rate:.32,q:[62,28,8,2,0,0,0],r:9, aggro:95, el:'wood'},
+  goblin:{name:'哥布林',zone:'goblin',lvl:5,hp:270, spd:.95,dmg:41,exp:95,coin:[8,18],n:30,rate:.45,q:[22,32,24,14,6,2,0],r:9, aggro:140,el:'earth'},
+  fire:  {name:'烈焰史莱姆',zone:'firecamp',lvl:10,hp:480,spd:.7, dmg:143,exp:192,coin:[15,30],n:15,rate:.5, q:[4,16,32,28,14,5,1],r:10,aggro:120,el:'fire'},
+  knight:{name:'暗影骑士',zone:'arena',   lvl:5,hp:610,spd:1.05,dmg:41,exp:422,coin:[60,110],n:0,rate:1, q:[0,6,24,32,22,11,3],r:10,aggro:170,fixed:[860,150],resp:900,el:'metal'},
+  turtle:{name:'龙溪龟',  zone:'creek',   lvl:10,hp:1010,spd:.5, dmg:72,exp:577,coin:[80,140],n:0,rate:.6, q:[0,4,18,34,26,13,5],r:15,aggro:110,fixed:[1305,790],resp:1200,shield:240,el:'water'},
+  miner: {name:'黄金矿工',zone:'mine',    lvl:15,hp:1520,spd:.7, dmg:156,exp:1030,coin:[120,220],n:15,rate:.65,q:[0,3,16,32,28,15,6],r:11,aggro:150,el:'metal'},
+  bandit:{name:'法外狂徒',zone:'badlands',lvl:20,hp:2010,spd:1.1, dmg:529,exp:1563,coin:[200,360],n:15,rate:.75,q:[0,0,8,28,30,22,12],r:11,aggro:200,el:'fire'},
   /* ===== v2.0 新大陆：Lv25→50 六物种，爆率向高品质递增 ===== */
-  wind:  {name:'被污染的风精灵',zone:'wind', lvl:25,hp:1500,spd:1.25,dmg:44,exp:1200,coin:[360,600], n:18,rate:.8, q:[0,0,4,20,30,28,18],r:11,aggro:230,el:'wood'},
-  scorp: {name:'沙漠毒蝎',  zone:'scorp', lvl:30,hp:2400,spd:1.0, dmg:58,exp:1900,coin:[480,820], n:16,rate:.82,q:[0,0,2,14,30,32,22],r:12,aggro:235,el:'earth'},
-  rock:  {name:'岩石巨人',  zone:'rock',  lvl:35,hp:4200,spd:.6,  dmg:72,exp:2800,coin:[600,1050],n:14,rate:.84,q:[0,0,2,10,28,34,26],r:15,aggro:205,el:'earth'},
-  mage:  {name:'暗影法师',  zone:'mage',  lvl:40,hp:3200,spd:.9,  dmg:88,exp:4000,coin:[800,1400], n:14,rate:.86,q:[0,0,1,8,24,34,33],r:11,aggro:270,el:'metal',ranged:1},
-  lava:  {name:'熔岩领主',  zone:'lava',  lvl:45,hp:5200,spd:.8,  dmg:104,exp:5600,coin:[1000,1800],n:14,rate:.88,q:[0,0,0,6,20,34,40],r:13,aggro:245,el:'fire'},
-  ascend:{name:'飞升神龟',  zone:'ascend',lvl:50,hp:9000,spd:.5,  dmg:120,exp:9000,coin:[1500,2600],n:0, rate:.9, q:[0,0,0,4,14,34,48],r:20,aggro:170,fixed:[190,926],resp:1500,shield:600,el:'water'}, // v1.5.2需求10：随区域同步迁至西南
+  wind:  {name:'被污染的风精灵',zone:'wind', lvl:25,hp:2160,spd:1.25,dmg:667,exp:1728,coin:[360,600], n:18,rate:.8, q:[0,0,4,20,30,28,18],r:11,aggro:230,el:'wood'},
+  scorp: {name:'沙漠毒蝎',  zone:'scorp', lvl:30,hp:3730,spd:1.0, dmg:807,exp:2953,coin:[480,820], n:16,rate:.82,q:[0,0,2,14,30,32,22],r:12,aggro:235,el:'earth'},
+  rock:  {name:'岩石巨人',  zone:'rock',  lvl:35,hp:5130,spd:.6,  dmg:473,exp:3420,coin:[600,1050],n:14,rate:.84,q:[0,0,2,10,28,34,26],r:15,aggro:205,el:'earth'},
+  mage:  {name:'暗影法师',  zone:'mage',  lvl:40,hp:5440,spd:.9,  dmg:1085,exp:6800,coin:[800,1400], n:14,rate:.86,q:[0,0,1,8,24,34,33],r:11,aggro:270,el:'metal',ranged:1},
+  lava:  {name:'熔岩领主',  zone:'lava',  lvl:45,hp:8600,spd:.8,  dmg:1223,exp:9262,coin:[1000,1800],n:14,rate:.88,q:[0,0,0,6,20,34,40],r:13,aggro:245,el:'fire'},
+  ascend:{name:'飞升神龟',  zone:'ascend',lvl:50,hp:11500,spd:.5,  dmg:682,exp:11500,coin:[1500,2600],n:0, rate:.9, q:[0,0,0,4,14,34,48],r:20,aggro:170,fixed:[190,926],resp:1500,shield:600,el:'water'}, // v1.5.2需求10：随区域同步迁至西南
   /* ===== 需求44/45：Lv55→75 五阶段新怪，数值逐阶段递增 ===== */
-  marsh: {name:'瘴幽沼泽蛙',zone:'marsh',lvl:55,hp:12000,spd:.85,dmg:140,exp:12000,coin:[2200,3800], n:14,rate:.9, q:[0,0,0,4,12,34,50],r:13,aggro:250,el:'water'},
-  cliff: {name:'雷霆崖鹰',zone:'cliff',lvl:60,hp:15500,spd:1.35,dmg:168,exp:16500,coin:[2800,4900], n:13,rate:.91,q:[0,0,0,3,9,32,56],r:12,aggro:285,el:'metal',ranged:1},
-  icef:  {name:'秘蓝冰帝',zone:'icef', lvl:65,hp:20500,spd:.7, dmg:196,exp:22000,coin:[3600,6300], n:13,rate:.92,q:[0,0,0,2,7,30,61],r:15,aggro:245,el:'water',shield:2600},
-  altar: {name:'血月祭祭司',zone:'altar',lvl:70,hp:27000,spd:.9, dmg:228,exp:30000,coin:[4800,8400], n:13,rate:.93,q:[0,0,0,2,5,28,65],r:12,aggro:290,el:'fire',ranged:1},
-  god:   {name:'神陨石巨人',zone:'god',  lvl:75,hp:36000,spd:.55,dmg:262,exp:40000,coin:[6500,11500],n:12,rate:.94,q:[0,0,0,1,4,26,69],r:17,aggro:260,el:'earth'},
+  marsh: {name:'瘴幽沼泽蛙',zone:'marsh',lvl:55,hp:10800,spd:.85,dmg:1500,exp:10800,coin:[2200,3800], n:14,rate:.9, q:[0,0,0,4,12,34,50],r:13,aggro:250,el:'water'},
+  cliff: {name:'雷霆崖鹰',zone:'cliff',lvl:60,hp:13950,spd:1.35,dmg:1640,exp:14850,coin:[2800,4900], n:13,rate:.91,q:[0,0,0,3,9,32,56],r:12,aggro:285,el:'metal',ranged:1},
+  icef:  {name:'秘蓝冰帝',zone:'icef', lvl:65,hp:18920,spd:.7, dmg:1778,exp:20304,coin:[3600,6300], n:13,rate:.92,q:[0,0,0,2,7,30,61],r:15,aggro:245,el:'water',shield:2600},
+  altar: {name:'血月祭祭司',zone:'altar',lvl:70,hp:24300,spd:.9, dmg:1918,exp:27000,coin:[4800,8400], n:13,rate:.93,q:[0,0,0,2,5,28,65],r:12,aggro:290,el:'fire',ranged:1},
+  god:   {name:'神陨石巨人',zone:'god',  lvl:75,hp:32400,spd:.55,dmg:2056,exp:36000,coin:[6500,11500],n:12,rate:.94,q:[0,0,0,1,4,26,69],r:17,aggro:260,el:'earth'},
   /* ===== 需求48：四方之神，等级往上叠加，每次仅存在1只，boss级别 ===== */
-  xuanwu:{name:'玄武·北方神武',zone:'north',lvl:62,hp:30000,spd:.5, dmg:210,exp:60000,coin:[9000,16000],n:0,rate:1,q:[0,0,0,2,8,30,60],r:20,aggro:200,fixed:[1925,125],resp:2400,onlyBoss:1,shield:5000,el:'water'},
-  qinglong:{name:'青龙·东方神武',zone:'east',lvl:66,hp:38000,spd:1.1,dmg:240,exp:80000,coin:[11000,19000],n:0,rate:1,q:[0,0,0,2,6,28,64],r:18,aggro:240,fixed:[1925,520],resp:2400,onlyBoss:1,el:'wood',ranged:1},
-  baihu: {name:'白虎·西方神武',zone:'west',lvl:70,hp:48000,spd:1.0,dmg:270,exp:110000,coin:[14000,24000],n:0,rate:1,q:[0,0,0,1,5,26,68],r:17,aggro:260,fixed:[170,1400],resp:2400,onlyBoss:1,el:'metal'},
-  zhuque:{name:'朱雀·南方神武',zone:'south',lvl:74,hp:60000,spd:1.25,dmg:300,exp:150000,coin:[18000,30000],n:0,rate:1,q:[0,0,0,1,4,24,71],r:18,aggro:280,fixed:[870,1400],resp:2400,onlyBoss:1,el:'fire',ranged:1},
+  xuanwu:{name:'玄武·北方神武',zone:'north',lvl:62,hp:7550,spd:.5, dmg:848,exp:36000,coin:[9000,16000],n:0,rate:1,q:[0,0,0,2,8,30,60],r:20,aggro:200,fixed:[1925,125],resp:2400,onlyBoss:1,shield:5000,el:'water'},
+  qinglong:{name:'青龙·东方神武',zone:'east',lvl:66,hp:9500,spd:1.1,dmg:1807,exp:48000,coin:[11000,19000],n:0,rate:1,q:[0,0,0,2,6,28,64],r:18,aggro:240,fixed:[1925,520],resp:2400,onlyBoss:1,el:'wood',ranged:1},
+  baihu: {name:'白虎·西方神武',zone:'west',lvl:70,hp:12000,spd:1.0,dmg:959,exp:66000,coin:[14000,24000],n:0,rate:1,q:[0,0,0,1,5,26,68],r:17,aggro:260,fixed:[170,1400],resp:2400,onlyBoss:1,el:'metal'},
+  zhuque:{name:'朱雀·南方神武',zone:'south',lvl:74,hp:15000,spd:1.25,dmg:2029,exp:90000,coin:[18000,30000],n:0,rate:1,q:[0,0,0,1,4,24,71],r:18,aggro:280,fixed:[870,1400],resp:2400,onlyBoss:1,el:'fire',ranged:1},
 };
 for(const k in MT)if(MT[k].fixed)MT[k].fixed=MT[k].fixed.map(function(v){return v*WS;}); // 新29：固定点换算世界坐标
 /* V1.10.2需求2：远程普通攻击白名单——按设定重评，只有"会吐息/投射/施法"的物种才有远程平A，
@@ -370,6 +372,8 @@ for(const k in MT)if(MT[k].fixed)MT[k].fixed=MT[k].fixed.map(function(v){return 
    星灵兽按星座特质：巨蟹吐泡、处女飞针、天蝎毒尾、射手流矢、水瓶倾水、双鱼光弹 = 远程，余皆近战。 */
 const RATK=new Set(['fire','wind','scorp','bandit','mage','lava','marsh','cliff','icef','altar','god','qinglong','zhuque','zod6','zod8','zod9','zod11','zod12']);
 /* 需求49：十二星座区域（南大陆 6列×2行），每区 4只小怪 + 2只精英，杀20精英出BOSS，等级逐座往上叠加 */
+const ZOD_BAL=[{hp:3730,dmg:404,exp:6217},{hp:3910,dmg:459,exp:6999},{hp:5660,dmg:515,exp:10883},{hp:6180,dmg:570,exp:12764},{hp:7560,dmg:626,exp:16768},{hp:8850,dmg:1363,exp:21083},{hp:10310,dmg:737,exp:26382},{hp:11480,dmg:1585,exp:31551},{hp:12060,dmg:1696,exp:35602},{hp:16080,dmg:904,exp:50987},{hp:21720,dmg:1918,exp:73968},{hp:29320,dmg:2029,exp:107247}]; // V1.11.0需求1：12 星灵兽标定表（Lv30→74）
+
 const ZOD=(function(){
   const N=['白羊','金牛','双子','巨蟹','狮子','处女','天秤','天蝎','射手','摩羯','水瓶','双鱼'],
         S=['♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓'],
@@ -378,8 +382,11 @@ const ZOD=(function(){
         L=[];
   for(let i=0;i<12;i++){const k='zod'+(i+1),lvl=30+i*4;
     ZONES[k]={x:XS[i%6],y:i<6?990:1160,w:200,h:150,label:N[i]+'座 Lv'+lvl,col:CL[i]};
-    MT[k]={name:N[i]+'座·星灵兽',zone:k,lvl:lvl,hp:Math.round(1200*Math.pow(1.35,i)),spd:.7+i*.035,dmg:60+i*16,
-      exp:Math.round(2000*Math.pow(1.45,i)),coin:[600+i*500,1100+i*900],n:4,_elite:2,rate:.8+i*.015,
+    /* V1.11.0需求1：星灵兽并入统一标定公式（旧 1200×1.35^i 的 HP 曲线在 zod12 已冲到 32573，
+       同级正常练度玩家要 96 秒才能单杀一只小怪，严重脱离主线节奏）。数值直接取自 /tmp/t/bal8.py 标定表。 */
+    const ZB=ZOD_BAL[i];
+    MT[k]={name:N[i]+'座·星灵兽',zone:k,lvl:lvl,hp:ZB.hp,spd:.7+i*.035,dmg:ZB.dmg,
+      exp:ZB.exp,coin:[600+i*500,1100+i*900],n:4,_elite:2,rate:.8+i*.015,
       q:[0,0,Math.max(0,12-i),18,28,20+i,16+i],r:11+(i%3),aggro:210+i*6,el:ELKEYS[i%5],sym:S[i],col:CL[i]};
     L.push(k);}
   return L;})();
@@ -1031,7 +1038,7 @@ const RIDE_DEST=(function(){const a=[];for(const z in ZONES){if(z==='town')conti
 let rideOpen=false,ridePage=0,towerSelOpen=false,towerSelPage=0,mountOpen=false,mountPage=0;
 function nearHorse(){return !INST.on&&!p.ride&&p.dead===0&&dist(p.x,p.y,HORSE.x,HORSE.y)<150;}
 function startRide(dd){rideOpen=towerSelOpen=false;mountOpen=false;p.ride={tx:dd.x,ty:dd.y,dest:dd.n,lx:0,ly:0,det:0,side:1};
-  msg('🏇 上马！自动疾驰前往【'+dd.n+'】——移速+10、沿途自动绕行魔物群；再按 E / 💬 下马','#e8c86a');arp([392,494,587],70);}
+  msg('🏇 上马！自动疾驰前往【'+dd.n+'】——疾驰速度 '+(5+mntSpdAdd()).toFixed(0)+'（V1.11.0 已减半）、沿途自动绕行魔物群；再按 E / 💬 下马','#e8c86a');arp([392,494,587],70);}
 function endRide(s){if(!p.ride)return;p.ride=null;msg(s,'#e8c86a');sfx(420,.08,'triangle',.04);}
 function updateRide(){
   if(!p.ride||!started||p.dead>0){if(p.dead>0)p.ride=null;return;}
@@ -1046,7 +1053,7 @@ function updateRide(){
   const step=Math.hypot(p.x-(R.lx||p.x),p.y-(R.ly||p.y));R.lx=p.x;R.ly=p.y; // 卡墙侧移：连续原地则垂直绕行
   if(step<1.6){R.det=90;R.side=R.side||(Math.random()<.5?1:-1);}else if(R.det>0)R.det--;
   if(R.det>0)best+=R.side*1.15;
-  const rs=(10+mntSpdAdd())*(p.scn==='ice'?.78:1); // V1.7需求6：坐骑移速加成（凡马+10）
+  const rs=(5+mntSpdAdd())*(p.scn==='ice'?.78:1); // V1.11.0需求6：马车基础 10→5，坐骑加成同步减半（凡马疾驰 20→10 像素/帧）
   p.x+=Math.cos(best)*rs;p.y+=Math.sin(best)*rs;p.walk+=3;p.dir=Math.cos(best)>0?1:-1;
   if(t%4===0)parts.push({x:p.x+p.dir*-rnd(4,16),y:p.y+10,vx:rnd(-.4,.4),vy:-rnd(.3,1),col:'#c9b18a',t:16,s:rnd(2,4)}); // 蹄下尘土
   if(t%13===0)sfx(170,.03,'triangle',.02);
@@ -1064,19 +1071,21 @@ function drawHorseShape(x,y,ph,col){ // 侧视小马：四蹄/躯干/颈首/鬃�
   C.fillStyle='#e8d8b0';C.beginPath();C.moveTo(17,-20);C.quadraticCurveTo(23,-30,27,-33);C.lineTo(21,-24);C.closePath();C.fill();
   C.restore();}
 const MOUNTS=[
- {key:'broom', n:'灵光飞扫把', ic:'🧹', lv:5, spd:8,  mk:'slime',  mkn:'史莱姆王',   col:'#a8763e'},
- {key:'carpet',n:'流云飞毯',   ic:'🟫', lv:10,spd:10, mk:'goblin', mkn:'哥布林王',   col:'#c0392b'},
- {key:'horse', n:'追风骏马',   ic:'🐎', lv:15,spd:12, mk:'knight', mkn:'暗影骑士长', col:'#7a4a26'},
- {key:'ox',    n:'铁角青牛',   ic:'🐂', lv:20,spd:14, mk:'miner',  mkn:'铁角金牛王', col:'#6a8a5a'},
- {key:'tiger', n:'啸风飞虎',   ic:'🐯', lv:25,spd:16, mk:'bandit', mkn:'虎山大王',   col:'#e08a3a'},
- {key:'dragon',n:'凌霄飞龙',   ic:'🐲', lv:30,spd:19, mk:'lava',   mkn:'熔岩古龙',   col:'#4ab86a'},
- {key:'gourd', n:'葫芦仙藤',   ic:'🎃', lv:35,spd:22, mk:'ascend', mkn:'葫芦大仙',   col:'#e8a33a'},
- {key:'sword', n:'御剑青霄',   ic:'⚔️', lv:40,spd:26, mk:'cliff',  mkn:'剑崖之主',   col:'#7ecfff'},
- {key:'ostrich',n:'疾影鸵鸟',  ic:'🦃', lv:45,spd:30, mk:'scorp',  mkn:'沙海蝎皇',   col:'#d8c0a0'},
- {key:'eagle', n:'金翅苍鹰',   ic:'🦅', lv:50,spd:33, mk:'cliff',  mkn:'雷霆崖鹰王', col:'#c9a24a'},
- {key:'phoenix',n:'涅槃火凤',  ic:'🦚', lv:55,spd:37, mk:'zhuque', mkn:'业火朱雀',   col:'#ff5a3a'}];
+ /* V1.11.0需求6：马车（营地马桩自动疾驰）与全部坐骑移速数据整体减半——
+    旧值最高 37 + 基础 10 = 47 像素/帧，跑图快到看不清世界、也架空了传送与坐骑任务的意义。 */
+ {key:'broom', n:'灵光飞扫把', ic:'🧹', lv:5, spd:4,  mk:'slime',  mkn:'史莱姆王',   col:'#a8763e'},
+ {key:'carpet',n:'流云飞毯',   ic:'🟫', lv:10,spd:5, mk:'goblin', mkn:'哥布林王',   col:'#c0392b'},
+ {key:'horse', n:'追风骏马',   ic:'🐎', lv:15,spd:6, mk:'knight', mkn:'暗影骑士长', col:'#7a4a26'},
+ {key:'ox',    n:'铁角青牛',   ic:'🐂', lv:20,spd:7, mk:'miner',  mkn:'铁角金牛王', col:'#6a8a5a'},
+ {key:'tiger', n:'啸风飞虎',   ic:'🐯', lv:25,spd:8, mk:'bandit', mkn:'虎山大王',   col:'#e08a3a'},
+ {key:'dragon',n:'凌霄飞龙',   ic:'🐲', lv:30,spd:10, mk:'lava',   mkn:'熔岩古龙',   col:'#4ab86a'},
+ {key:'gourd', n:'葫芦仙藤',   ic:'🎃', lv:35,spd:11, mk:'ascend', mkn:'葫芦大仙',   col:'#e8a33a'},
+ {key:'sword', n:'御剑青霄',   ic:'⚔️', lv:40,spd:13, mk:'cliff',  mkn:'剑崖之主',   col:'#7ecfff'},
+ {key:'ostrich',n:'疾影鸵鸟',  ic:'🦃', lv:45,spd:15, mk:'scorp',  mkn:'沙海蝎皇',   col:'#d8c0a0'},
+ {key:'eagle', n:'金翅苍鹰',   ic:'🦅', lv:50,spd:17, mk:'cliff',  mkn:'雷霆崖鹰王', col:'#c9a24a'},
+ {key:'phoenix',n:'涅槃火凤',  ic:'🦚', lv:55,spd:19, mk:'zhuque', mkn:'业火朱雀',   col:'#ff5a3a'}];
 function myMnt(){if(!p||!p.mounts)return null;return MOUNTS.find(function(x){return x.key===p.mounts.sel&&p.mounts.un[x.key];})||null;}
-function mntSpdAdd(){const m=myMnt();return m?m.spd:10;} // 未解锁坐骑=老马桩凡马 +10
+function mntSpdAdd(){const m=myMnt();return m?m.spd:5;} // V1.11.0需求6：未解锁坐骑=老马桩凡马 +10→+5
 function mntUn(k){return !!(p.mounts&&p.mounts.un&&p.mounts.un[k]);}
 function selMount(k){if(!mntUn(k))return;p.mounts.sel=k;msg('🏇 换骑【'+MOUNTS.find(function(x){return x.key===k;}).n+'】——移速+'+MOUNTS.find(function(x){return x.key===k;}).spd,'#e8c86a');sfx(660,.1,'triangle',.04);doSave(true);}
 const MILE={mk:[3,10,25],ex:[1,2,4],pk:[6,18,40],mt:[3,7,11]}; // V1.6/V1.7 分阶段成就阈值（与四条成就线三档一致）；V1.8需求10：坐骑 8→11 骑，御骑宗师档位同步上调
@@ -1865,18 +1874,18 @@ const SK=[
  {n:'旋风斩',  w:'blade', i:'s_whirl',   lv:6,cd:540,mp:16,p:0,d:'多连360°旋身斩并击退'},
  {n:'爆裂陷阱',w:'blade', i:'s_trap',    lv:9,cd:480,mp:14,p:0,d:'脚下埋设地雷，敌人踩中爆炸'},
  {n:'火墙',    w:'any',   i:'m_fire',    lv:1,cd:600,mp:26,p:0,book:'fire',src:'烈焰技能书：烈焰史莱姆（史莱姆营地 Lv10）掉落',d:'法术：灼烧地面持续伤害（不受武器限制）'},
- {n:'雷霆万钧',w:'any',   i:'s_thor2',   lv:1,cd:720,mp:34,p:0,book:'thunder',src:'雷法秘籍：法外狂徒（法外荒原 Lv20）掉落',d:'法术：雷暴轰击周围多敌，眩晕+连锁闪电'},
+ {n:'雷霆万钧',w:'any',   i:'s_thor2',   lv:1,cd:720,mp:34,p:0,book:'thunder',src:'雷法秘籍：法外狂徒（法外荒原 Lv20）掉落',d:'法术：以自身为中心降下10波雷环，每波20道落雷逐圈外扩、每道驻留8秒'},
  {n:'要你命三千',w:'any', i:'s_poison',  lv:1,cd:660,mp:30,p:0,book:'poison',src:'毒功密卷：黄金矿工（黄金矿洞 Lv15）掉落',d:'法术：抛出毒云，剧毒持续侵蚀'},
- {n:'疾风步',  w:'any',   i:'s_swift',   lv:1,cd:0,mp:0,p:1,d:'被动：移动速度+15%'},
- {n:'嗜血本能',w:'any',   i:'s_blood',   lv:1,cd:0,mp:0,p:1,d:'被动：攻击吸血5%'},
- {n:'狂暴之力',w:'any',   i:'s_rage',    lv:3,cd:0,mp:0,p:1,d:'被动：伤害+15%'},
+ {n:'疾风步',  w:'any',   i:'s_swift',   lv:1,cd:0,mp:0,p:1,d:'被动：移动速度+10%/档（V1.11.0增益收敛）'},
+ {n:'嗜血本能',w:'any',   i:'s_blood',   lv:1,cd:0,mp:0,p:1,d:'被动：攻击吸血4%'},
+ {n:'狂暴之力',w:'any',   i:'s_rage',    lv:3,cd:0,mp:0,p:1,d:'被动：伤害+10%/档'},
  {n:'荆棘护体',w:'any',   i:'s_thorns',  lv:3,cd:0,mp:0,p:1,d:'被动：受击反弹30%伤害'},
  {n:'猎手直觉',w:'any',   i:'s_hunter',  lv:5,cd:0,mp:0,p:1,d:'被动：暴击率+10%'},
  {n:'财富嗅觉',w:'any',   i:'s_fortune', lv:5,cd:0,mp:0,p:1,d:'被动：金币获取+25%'},
- {n:'龙魂护体',w:'any',   i:'s_dragon',  lv:8,cd:0,mp:0,p:1,d:'被动：生命上限+25%且每秒回血'},
- {n:'时光余裕',w:'any',   i:'s_time',    lv:8,cd:0,mp:0,p:1,d:'被动：技能冷却-20%'},
+ {n:'龙魂护体',w:'any',   i:'s_dragon',  lv:8,cd:0,mp:0,p:1,d:'被动：生命上限+18%/档且每秒回血'},
+ {n:'时光余裕',w:'any',   i:'s_time',    lv:8,cd:0,mp:0,p:1,d:'被动：技能冷却-12%/档（下限-40%）'},
  {n:'龙卷风',  w:'any',   i:'s_tornado', lv:1,cd:900,mp:36,p:0,book:'storm',src:'被污染的风精灵（风之谷 Lv25）掉落',d:'法术：召唤会分化的龙卷风，持续卷飞敌人'},
- {n:'万象变身',w:'any',   i:'s_morph',   lv:1,cd:1800,mp:20,p:0,special:1,d:'法术：变成已解锁成就的怪物（解锁1/2/3档→普通/精英/BOSS形态，属性×10/16/24），持续60秒，冷却30秒'}, // 需求71；v1.4需求9：反转为需完整成就
+ {n:'万象变身',w:'any',   i:'s_morph',   lv:1,cd:1800,mp:20,p:0,special:1,d:'法术：变成已解锁成就的怪物（解锁1/2/3档→普通/精英/BOSS形态，攻×1.5/2.6/4.2·血×25%/45%/80%），持续60秒，冷却30秒'}, // 需求71；v1.4需求9：反转为需完整成就
  /* v1.4需求1：枪械/法杖伴生技能（遵循旧伴生技逻辑：到级解锁/次数升级/本武器×1.5/逐级成长表） */
  {n:'弹幕全开',w:'gun',   i:'s_barrage', lv:3,cd:360,mp:14,p:0,d:'枪系：扇形泼洒弹幕，等级越高弹幕越密'},
  {n:'破甲重炮',w:'gun',   i:'s_cannon',  lv:7,cd:540,mp:22,p:0,d:'枪系：贯穿一切的爆炸弹，命中击退'},
@@ -1910,9 +1919,9 @@ const SKGROW=[
   [1,1.30,1.66,2.10,2.62,3.26,4.02,4.90,6.40,7.60], // 9  血怒
   [1,1.27,1.58,1.96,2.42,3.00,3.66,4.44,5.50,7.20], // 10 旋风斩
   [1,1.30,1.64,2.06,2.56,3.18,3.92,4.78,5.90,7.80], // 11 爆裂陷阱
-  [1,1.28,1.60,2.00,2.50,3.10,3.80,4.62,5.70,7.40], // 12 火墙
-  [1,1.32,1.68,2.12,2.66,3.32,4.08,4.98,6.10,8.20], // 13 雷霆万钧
-  [1,1.29,1.62,2.04,2.54,3.16,3.88,4.72,5.80,7.60], // 14 要你命三千
+  [1,1.34,1.78,2.32,2.98,3.82,4.86,6.12,7.70,10.80], // 12 火墙（V1.11.0需求2：满级 7.40→10.80）
+  [1,1.38,1.90,2.52,3.30,4.28,5.52,7.10,9.10,13.00], // 13 雷霆万钧（V1.11.0需求2/5：满级 8.20→13.00）
+  [1,1.33,1.74,2.24,2.86,3.66,4.68,5.96,7.60,10.60], // 14 要你命三千（V1.11.0需求2：满级 7.60→10.60）
   [1,1.28,1.60,2.02,2.52,3.14,3.86,4.70,5.80,7.60], // 25 弹幕全开（v1.4）
   [1,1.30,1.64,2.06,2.58,3.22,3.98,4.86,6.10,8.00], // 26 破甲重炮（v1.4）
   [1,1.26,1.56,1.94,2.40,2.96,3.62,4.40,5.50,7.20], // 27 子弹时间（v1.4）
@@ -1923,6 +1932,10 @@ const SKGROW=[
   [1,1.28,1.60,2.00,2.50,3.10,3.80,4.65,5.70,7.60], // 32 奥术洪流（v1.4）
 ];
 const SKCD=.5; // bug1-新36：全部技能CD缩短一半
+/* V1.11.0需求2：书本技能（idx12 火墙 / idx13 雷霆万钧 / idx14 要你命三千 / idx23 龙卷风）要有高额伤害——
+   书本技能不吃"本武器×1.5"，又要靠刷怪掉书才学得会，旧版伤害与伴生技几乎没有拉开差距。
+   这里给 2.4~3.2 倍的专属增幅，并把 SKGROW 对应成长表的满级段同步抬高。 */
+const SK_BOOK_MUL={12:2.6,13:3.2,14:2.4,23:2.8};
 /* ===== v2.0：技能等级解锁无限（需求18）+ 逐级多维成长（需求16）+ 被动使用次数升级（需求23）===== */
 function skMaxed(i){return skLvlOf(i)>=10;}                // 突破Lv10里程碑
 function skDmgMul(i){const lv=skLvlOf(i),g=SKGROW[i];if(!g)return 1+.22*(lv-1);if(lv<=10)return g[lv-1];return g[9]+(g[9]-g[8])*(lv-10)*.8;} // 逐级固定表，>10线性外推
@@ -2005,7 +2018,8 @@ function atkTotal(){let a=5+(p.lvl-1)*2+p.st.str*2;
 function defTotal(){let d=p.st.def+p.st.vit*.5+achEff().def+morphDef()+petDef();for(const s of ARMSLOTS){const e=p.equip[s];if(e)d+=e.def+(e.enh||0);}const sw=p.equip.sweap;if(sw)d+=Math.round(sw.def*.6);if(setPieces('守护')>=2)d+=15;if(setPieces('守护')>=4)d+=Math.round(maxHp()*.05);if(setPieces('守护')>=6)d+=40; // 需求74：守护6件防御+40
   return Math.round(d+tbV('def')*2);} // 需求27：体力挂钩防御力；需求71：变身防御加成；v1.4需求6：宠物防御
 /* v2.0 修复强化 bug：武器强化只加攻，不再错误获得生命；生命加成仅防具/饰品 */
-function maxHp(){let h=100+(p.lvl-1)*10+p.st.vit*12;for(const s of EQSLOTS){const e=p.equip[s];if(e)h+=e.hp+((s==='mweap'||s==='sweap')?0:(e.enh||0)*8);}if(setPieces('守护')>=6)h=Math.round(h*1.18);else if(setPieces('守护')>=4)h=Math.round(h*1.10);if(pass(21))h=Math.round(h*(1+.25*pv(21)));h=Math.round(h*(1+achEff().hp/100)*(1+tbV('hp')*.03));return h+morphHp()+petHp();} // 需求71：变身生命10倍；v1.4需求6：宠物生命
+function maxHp(){let h=100+(p.lvl-1)*10+p.st.vit*12;for(const s of EQSLOTS){const e=p.equip[s];if(e)h+=e.hp+((s==='mweap'||s==='sweap')?0:(e.enh||0)*8);}if(setPieces('守护')>=6)h=Math.round(h*1.18);else if(setPieces('守护')>=4)h=Math.round(h*1.10);if(pass(21))h=Math.round(h*(1+.18*pv(21))); // V1.11.0需求3：增益被动适度收敛（+25%/档→+18%/档）
+  h=Math.round(h*(1+achEff().hp/100)*(1+tbV('hp')*.03));return h+morphHp()+petHp();} // 需求71：变身生命10倍；v1.4需求6：宠物生命
 function maxMp(){return Math.round((50+(p.lvl-1)*15+p.st.spi*9)*(1+achEff().mp/100));}
 function goldBonus(){let g=pass(20)?Math.round(25*pv(20)):0;for(const s of EQSLOTS)if(p.equip[s])g+=p.equip[s].gold||0;return g+affSum('goldP')+(setPieces('贪婪')>=6?50:setPieces('贪婪')>=4?35:setPieces('贪婪')>=2?20:0)+achEff().gold+petGold()+(wfx('e')==='goldAura'?Math.round(Math.min(60,(wfxPw()||0)*4)):0);} // v1.4：金币掠夺光环 + 宠物金币
 function affSum(k){let s=0;for(const sl of EQSLOTS){const e=p.equip[sl];if(e&&e.aff)for(const a of e.aff)if(a.k===k)s+=a.v*(1+(e.holes||0)*.08); // 需求55：孔数放大词条强度（每孔+8%）
@@ -2020,7 +2034,7 @@ function setCnt(tag){return setPieces(tag);}
 /* v2.0 需求9：各套装 2件触发 / 多件不同（仅防具+饰品，不含武器） */
 function dodgeRate(){return Math.min(.6,(affSum('dodge')+(setPieces('疾风')>=2?8:0)+(setPieces('疾风')>=4?7:0)+(setPieces('疾风')>=6?10:0)+p.st.agi*.05)/100);} // 需求25：敏捷挂钩闪避；需求74：疾风6件再+10%
 function critDmgBonus(){return affSum('critDmg')+(setPieces('暗影')>=2?18:0)+(setPieces('暗影')>=4?30:0)+(setPieces('暗影')>=6?60:0)+Math.max(0,critRaw()-1)*150;} // 需求25：暴击超过100%部分转化为暴击伤害；需求74：暗影6件爆伤+60
-function dmgMult(){return (pass(17)?1+.15*pv(17):1)*(p.fury>0?2:1)*(1+maxedW()*.02);}
+function dmgMult(){return (pass(17)?1+.10*pv(17):1)*(p.fury>0?2:1)*(1+maxedW()*.02);} // V1.11.0需求3：狂暴之力 +15%/档→+10%/档
 function wKind(){return p.equip.mweap?p.equip.mweap.w:'bow';}
 function wEl(){return p.equip.mweap?p.equip.mweap.el:null;}
 function swEl(){return p.equip.sweap?p.equip.sweap.el:null;}
@@ -2055,6 +2069,44 @@ function burst(x,y,col,n){for(let i=0;i<(n||8);i++)parts.push({x:x,y:y,vx:rnd(-2
 function fxSlash(x,y,ang,r,arc,col){fx.push({k:'slash',x:x,y:y,ang:ang,r:r,arc:arc,col:col,t:12,max:12});}
 function fxRing(x,y,r0,r1,col,w){fx.push({k:'ring',x:x,y:y,r0:r0,r1:r1,col:col,w:w||3,t:16,max:16});}
 function fxLightning(x,y){fx.push({k:'bolt',x:x,y:y,t:12,max:12,seed:ri(0,999)});}
+/* V1.11.0需求5：雷霆万钧重建的参数——一次释放 10 波、每波 20 道落雷、逐波向外扩散（逐渐变远）、
+   每道落雷在场驻留 8 秒（480 帧）。旧版是"瞬间挑最近的 6 个怪各劈一下"，既没有范围压迫感，
+   也不符合用户描述的释放效果。落雷做成常驻弹道实体（k:'thor'），每道对同一目标只击穿一次；
+   密集成群时一道雷周围会覆盖多道，单敌最多被 ~15 道命中，故每道系数定在 0.1×mul（旧版为 2.2×mul 一次性）。 */
+const THOR_WAVES=10,THOR_N=20,THOR_GAP=38,THOR_LIFE=480,THOR_IV=26;
+function thorBolt(x,y,d,r,stun,col){projs.push({k:'thor',x:x,y:y,r:r,d:d,stun:stun,col:col,
+  t:THOR_LIFE,max:THOR_LIFE,iv:THOR_IV,tick:ri(0,THOR_IV),hit:new Set(),seed:ri(0,9999)});}
+/* V1.11.0需求7：三档怪物的"攻击手感"必须拉开——旧版普通/精英/BOSS 除数值倍率外是同一套表现，
+   BOSS 的压迫感只剩血条和体型。现在按 kind 分级：
+     普通＝轻拍（小弧痕 + 零星火星 + 轻响，不震屏）
+     精英＝蓝刃挥痕 + 命中冲击环 + 中震屏（伤害不变，只加观感）
+     BOSS＝红金双弧 + 提前 0.3 秒亮出红色预警圈 + 强震屏/白闪，随后炸开一道"可闪避"的裂地震波
+   震波伤害为面板的 45%，跑出 150 半径就不会吃到——把 BOSS 的近身战变成走位博弈而不是纯数值碾压。 */
+function mobSwingFx(m,a,hit){
+  const k=m.kind||0,col=k===2?'#ff3a2a':k===1?'#7ec8ff':'#ff6a5a';
+  fxSlash(m.x,m.y-6,a,k===2?74:k===1?52:34,k===2?2.4:1.9,col);
+  if(k===0){burst(p.x,p.y-6,'#ff6a5a',3);asfx(220,.04,'square',.02);return;}
+  fxRing(p.x,p.y,k===2?8:4,k===2?58:36,col,k===2?4:2.4);
+  if(k===1){shakeN(4);sfx(150,.07,'sawtooth',.04);floatTxt(p.x,p.y-52,'★ 精英重击','#7ec8ff');return;}
+  fxSlash(m.x,m.y-6,a+.3,88,2.6,'#ffd700');
+  fxRing(m.x,m.y,132,152,'rgba(255,58,42,.75)',3); // 预警圈：0.3 秒后此处炸裂
+  flashS=Math.max(flashS,.16);shakeN(9);sfx(70,.22,'sawtooth',.08);
+  floatTxt(p.x,p.y-56,'☠ BOSS 裂地斩·快躲开！','#ff6a5a');
+  const bx=m.x,by=m.y;
+  later(function(){
+    if(m.hp<=0||p.dead>0||dist(m.x,m.y,bx,by)>40)return;
+    fxRing(bx,by,10,150,'#ff3a2a',5);fxRing(bx,by,10,118,'#ffd700',3);burst(bx,by,'#ff7a3a',16);
+    shakeN(7);sfx(50,.26,'sawtooth',.08);flashS=Math.max(flashS,.1);
+    if(hit>0&&dist(bx,by,p.x,p.y)<150)hurtPlayer(hit,m);
+  },18);}
+/* V1.11.0需求7：远程平A 同样分档——弹体更大更快、枪口焰与后座冲击更明显；伤害公式不变 */
+function mobShotFx(m,a){
+  const k=m.kind||0,col=k===2?'#ff5a3a':k===1?'#7ec8ff':null;
+  if(k===0){asfx(520,.03,'square',.02);return;}
+  fxRing(m.x,m.y-8,3,k===1?16:26,col||'#ffd700',k===1?2:3);
+  burst(m.x+Math.cos(a)*14,m.y-8+Math.sin(a)*14,col||'#ffd700',k===1?4:8);
+  if(k===1){sfx(420,.05,'square',.03);floatTxt(m.x,m.y-30,'★ 精准射击','#7ec8ff');}
+  else{shakeN(4);flashS=Math.max(flashS,.07);sfx(120,.12,'sawtooth',.05);floatTxt(m.x,m.y-34,'☠ BOSS 狙击','#ff6a5a');}}
 function shakeN(n){shake=Math.max(shake,n);}
 function later(f,d){sched.push({f:f,t:d||0});}
 function bagFirst(){const i=bag.indexOf(null);return (i>=0&&i<bagMax())?i:-1;}
@@ -2433,16 +2485,21 @@ let questOpen=false;
 let morphOpen=false;
 const MORPH_DUR=3600,MORPH_CD=1800; // 60秒持续 / 30秒冷却（60帧每秒）
 /* v1.4需求18：变身池按 MT 键覆盖全部怪物（含精英/定点BOSS/四神/星座）。v1.4需求19：解锁进度——每怪3档成就，解锁1档→普通变身，2档→精英变身，3档→BOSS变身 */
-const MORPH_FORM=['普通','精英','BOSS'],MORPH_MUL=[10,16,24]; // 形态对应属性倍率（随成就递增）
+const MORPH_FORM=['普通','精英','BOSS'];
+/* V1.11.0需求4：变身确认按"普通 / 精英 / BOSS"三档形态解锁（成就 10/50/150 杀），
+   但倍率不再用旧的固定 10/16/24——需求1 已把怪物本体伤害抬到"一刀秒低 10 级白板"的量级，
+   再乘 24 会让变身后的攻值顶到十万，完全溢出。改为血/攻/防各自独立、且以"等效秒数"为准：
+   攻击≈该怪一档平A伤害的 1.4~4.2 倍（换算成玩家攻值），生命≈该怪一档血量的 0.25~0.8 倍。 */
+const MORPH_MUL=[1.5,2.6,4.2],MORPH_HP_MUL=[.25,.45,.8],MORPH_DEF_MUL=[.06,.10,.16];
 function morphTier(k){const n=p.kills[k]||0;return n>=QTGT[2]?2:n>=QTGT[1]?1:n>=QTGT[0]?0:-1;} // 已解锁最高形态档（-1=未解锁）
 function morphUnlocked(k){return morphTier(k)>=0;} // 至少解锁1档成就才能变身
 function morphPool(){return Object.keys(MT);} // 全怪物池
 function morphCands(){return morphPool().filter(morphUnlocked);} // 已解锁可变身的怪物
 function morphList(){return morphPool().sort(function(a,b){return (morphUnlocked(b)?1:0)-(morphUnlocked(a)?1:0)||MT[a].lvl-MT[b].lvl;});} // 面板列表：已解锁在前，同级按等级
 function morphMul(){return MORPH_MUL[(p.morph&&p.morph.tier)||0];}
-function morphAtk(){return p.morph?Math.round(MT[p.morph.key].dmg*morphMul()):0;}
-function morphHp(){return p.morph?Math.round(MT[p.morph.key].hp*morphMul()):0;}
-function morphDef(){return p.morph?Math.round(MT[p.morph.key].dmg*(1+(p.morph.tier||0))):0;}
+function morphAtk(){return p.morph?Math.round(MT[p.morph.key].dmg*morphMul()):0;} // V1.11.0需求4：倍率见 MORPH_MUL
+function morphHp(){return p.morph?Math.round(MT[p.morph.key].hp*MORPH_HP_MUL[(p.morph.tier)||0]):0;} // V1.11.0需求4：生命改按怪物血量的 25%/45%/80% 折算
+function morphDef(){return p.morph?Math.round(MT[p.morph.key].dmg*MORPH_DEF_MUL[(p.morph.tier)||0]):0;} // V1.11.0需求4：旧值 dmg×(1+tier) 在新标定下等于直接免疫，改为怪物攻值的 6%/10%/16%
 function setMorphCd(){p.morphCd=MORPH_CD;} // 变身结束后进入冷却
 /* ===== v1.4需求22：BOSS专属技能表 + 变身后自动释放 ===== */
 const BOSS_SKILL={
@@ -2582,7 +2639,7 @@ function drawMorphPanel(){ // v1.4需求9：变身面板——列出全部怪物
       if(hov){C.fillStyle=pUnlock?'rgba(176,106,232,.16)':'rgba(120,120,120,.10)';rr(px,py,hw,hh,5);C.fill();}
       C.fillStyle=pUnlock?(tt===2?'#ff3a2a':tt===1?'#4aa8ff':(m.col||'#c9a2ff')):'#5a5a5a';C.beginPath();C.arc(px+9,py+10,4.2,0,7);C.fill(); // 形态色点：BOSS红/精英蓝/普通本体色/未解锁灰
       txt((pUnlock?'':'🔒 ')+m.name+' Lv'+m.lvl,px+20,py+10,10,pUnlock?'#8fd08f':'#77807a');
-      if(pUnlock)txt(MORPH_FORM[tt]+' 攻+'+(m.dmg*MORPH_MUL[tt])+' 血+'+(m.hp*MORPH_MUL[tt]),px+hw-6,py+10,8.5,'#9adcfa','right');
+      if(pUnlock)txt(MORPH_FORM[tt]+' 攻+'+Math.round(m.dmg*MORPH_MUL[tt])+' 血+'+Math.round(m.hp*MORPH_HP_MUL[tt]),px+hw-6,py+10,8.5,'#9adcfa','right');
       else txt('击杀'+(p.kills[kk]||0)+'/'+QTGT[0]+' 解锁',px+hw-6,py+10,8.5,'#b06a5a','right');
       hot.push({x:px,y:py,w:hw,h:hh,cell:1,fn:function(){doMorph(kk);}}); // 未解锁点击→doMorph内提示“请解锁XX成就”
     })(key,px0,py0,mm);
@@ -2796,10 +2853,13 @@ function itemIcon(it){if(it.ic)return it.ic;if(it.slot==='pot')return 'potion';
 /* ============ 怪物生成：普通/精英（5倍蓝光爆5件）/BOSS（精英3倍红光爆10件） ============ */
 function zonePos(z){const r=ZR(z);return{x:r.x+rnd(18,r.w-18),y:r.y+rnd(18,r.h-18)};}
 function spawnMob(key,kind,at){kind=kind||0;const m=MT[key],pos=at||(m.fixed?{x:m.fixed[0]+rnd(-10,10),y:m.fixed[1]+rnd(-8,8)}:zonePos(m.zone));
-  const hm=kind===2?15:kind===1?5:1; // 精英=普怪全数值5倍；BOSS=精英3倍
+  /* V1.11.0需求1/7：血量与伤害不再共用一个倍率——普通怪定标为"同级正常练度 3~9 秒单杀"，
+     精英 ×5 血 / ×1.7 伤，BOSS ×14 血 / ×2.8 伤（旧版 15 倍同乘血量与伤害，
+     导致 BOSS 一刀就把同级玩家秒了、而血量却脆得和精英差不多，档位完全没有层次）。 */
+  const hm=MOB_HP_MUL[kind],dm=MOB_DMG_MUL[kind];
   /* v1.4需求7：个体怪物等级在阶段基准 ±2 浮动（精英 +1，BOSS +2）*/
   const mlv=Math.max(1,m.lvl+ri(-2,2)+(kind===2?2:kind===1?1:0));
-  mobs.push({id:++mobId,key:key,kind:kind,lvl:mlv,x:pos.x,y:pos.y,hp:Math.round(m.hp*hm*(1+(mlv-m.lvl)*.04)),maxhp:Math.round(m.hp*hm*(1+(mlv-m.lvl)*.04)),dmgMul:hm*(1+(mlv-m.lvl)*.03),r:(m.r||9)*(kind===2?1.55:kind===1?1.12:1),
+  mobs.push({id:++mobId,key:key,kind:kind,lvl:mlv,x:pos.x,y:pos.y,hp:Math.round(m.hp*hm*(1+(mlv-m.lvl)*.04)),maxhp:Math.round(m.hp*hm*(1+(mlv-m.lvl)*.04)),dmgMul:dm*(1+(mlv-m.lvl)*.03),r:(m.r||9)*(kind===2?1.55:kind===1?1.12:1),
     frost:0,stun:0,aggro:false,shT:0,shCd:m.shield?180:null,dealt:0,
     hopT:ri(30,90),hopGo:0,cool:0,scool:ri(60,240),acool:ri(40,140),skcdT:ri(120,300),flash:0,wanderA:rnd(0,6.28)});}
 function bossAlive(key){return mobs.some(function(m){return m.key===key&&m.kind===2;});}
@@ -3205,7 +3265,7 @@ function hitMob(m,mult,opts){
   const ecol=el&&EL[el]?EL[el].col:'#ffd27a';
   floatTxt(m.x+rnd(-6,6),m.y-24,(crit?'暴击 ':'')+(em>1?'克!':'')+(em<1?'  resist':'')+d,crit?'#ffe14a':(em===1?ecol:(em>1?ecol:'#b8b8b8')));
   burst(m.x,m.y,opts.col||ecol,5);sfx(220,.05,'square',.03);
-  let vamp=pass(16)?5:0;vamp+=mLeech();if(setCnt('吸血')>=2)vamp+=5;if(setCnt('吸血')>=3)vamp+=5;if(setCnt('吸血')>=6)vamp+=10; // 需求16：技能精通附带吸血；需求74：吸血6件+10%
+  let vamp=pass(16)?4:0;vamp+=mLeech(); // V1.11.0需求3：嗜血本能 5%→4%if(setCnt('吸血')>=2)vamp+=5;if(setCnt('吸血')>=3)vamp+=5;if(setCnt('吸血')>=6)vamp+=10; // 需求16：技能精通附带吸血；需求74：吸血6件+10%
   if(vamp>0)healPlayer(Math.max(1,Math.round(d*Math.min(50,vamp)/100)));
   if(opts.stun)m.stun=opts.stun;
   if(opts.kb){const a=Math.atan2(m.y-p.y,m.x-p.x);m.x+=Math.cos(a)*opts.kb;m.y+=Math.sin(a)*opts.kb;}
@@ -3253,6 +3313,9 @@ function mvpFx(m,x,y){ // 凝滞中的怪物：石灰色蒙层+眨眼（美杜�
 /* 需求81：每技专属施法特效——主色 + 光柱/冲击波/旋涡/符文环 + 光离子螺旋升腾 */
 const SKFX={0:'#e8dcc0',1:'#ffd27a',2:'#9adcfa',3:'#e8cf4a',4:'#cfe8ff',5:'#9adcfa',6:'#ffe14a',7:'#9a8ae8',8:'#eef4fa',9:'#e85a5a',10:'#ff9a5a',11:'#8a8f96',12:'#ff7a3a',13:'#c9b3ff',14:'#7ee84a',23:'#a8e8d8',24:'#c9a2ff',25:'#ffcf6a',26:'#ff9a3a',27:'#8affff',28:'#ff4a6a',29:'#ff6a2a',30:'#7ee0ff',31:'#a0c8ff',32:'#c9a2ff'};
 /* v1.4需求15：技能范围分类——AoE每击降低(×0.75)但总量高；单体/少量提升单次(×1.35) */
+/* V1.11.0需求3：范围系数重做——旧值 单体1.35 / 群体0.75（比 1.8:1）导致单体技能形同虚设。
+   现按需求取严格 5:1：单体 ×2.5、群体 ×0.5，其余（自身/召唤/位移类）×1。 */
+const SK_SCOPE_MUL={single:2.5,aoe:.5,none:1};
 const SKSCOPE={0:'aoe',2:'aoe',3:'aoe',4:'aoe',5:'aoe',6:'aoe',10:'aoe',12:'aoe',13:'aoe',14:'aoe',23:'aoe',25:'aoe',27:'aoe',29:'aoe',30:'aoe',31:'aoe',1:'single',8:'single',11:'single',26:'single',28:'single',32:'single'};
 function fxCast(idx){
   if(p.morph)fxRing(p.x,p.y,10,60,'#c9a2ff',2);
@@ -3366,14 +3429,14 @@ function castSkill(si){
   else{
     if(p.mp<mpc){msg('MP不足：'+s.n+' 需 '+mpc+' MP','#5a9de8');sfx(160,.08,'square',.03);return;}
     p.mp-=mpc;
-    p.skcd[si]=Math.round(s.cd*SKCD*skCdMul(idx)*(pass(22)?Math.max(.5,1-.2*pv(22)):1)); // 新36：CD×0.5（需求23：时光余裕逐级+5%）
+    p.skcd[si]=Math.round(s.cd*SKCD*skCdMul(idx)*(pass(22)?Math.max(.6,1-.12*pv(22)):1)); // 新36：CD×0.5（V1.11.0需求3：时光余裕 -20%/档→-12%/档，下限 50%→60%）
     if(pass(22))bumpPass(22); // 需求23：时光余裕被动按施法次数熟练升级
   }
   const A=p.aim;
   p.castAct=ACT_CAST; // V1.9.12需求2：施法起手——升腾蓄势+手前光核
   /* 需求87：技能伤害结合主角属性增幅——伴生技吃力量+敏捷，法术技吃精神+体质（每点+0.5%/+0.2%） */
   const skAmp=s.book?(1+p.st.spi*.005+p.st.vit*.002):(1+p.st.str*.005+p.st.agi*.002);
-  const mul=((s.w!=='any'&&s.w===wKind())?1.5:1)*skDmgMul(idx)*skAmp*(SKSCOPE[idx]==='single'?1.35:SKSCOPE[idx]==='aoe'?0.75:1); // 本武器×1.5 × 逐级固定表 × 属性增幅 × v1.4需求15范围平衡
+  const mul=((s.w!=='any'&&s.w===wKind())?1.5:1)*skDmgMul(idx)*skAmp*(SK_SCOPE_MUL[SKSCOPE[idx]]||1)*(SK_BOOK_MUL[idx]||1); // 本武器×1.5 × 逐级固定表 × 属性增幅 × V1.11.0需求3范围系数(单:群=5:1) × 需求2书本技能高额加成
   const lv=skLvlOf(idx),tag=(lv>1?' Lv'+lv:'')+((s.w!=='any'&&s.w===wKind())?'（本武器×1.5！）':'');
   const ex=skExtra(idx); // 里程碑总档（保留作额外段数 gate）
   fxCast(idx); // 需求81：施法光影/光离子专属特效
@@ -3400,10 +3463,13 @@ function castSkill(si){
     case 10:{const n=5+more*2;for(let i=0;i<n;i++)later(function(){fxRing(p.x,p.y,8,44,'#ff9a5a',3);fxSlash(p.x,p.y,i*1.3,44,6.28,'#ff9a5a');areaDmg(p.x,p.y,46+rg,.9*mul,null,null,ex>=2?30:null,10);shakeN(2);sfx(260,.08,'sawtooth');},i*8);msg('旋风斩！'+n+'连 '+tag,'#ff9a5a');break;}
     case 11:projs.push({k:'mine',x:p.x,y:p.y+6,t:99999,r:6,d:3.2*mul*(p.books.trap?1.5:1),col:'#e8b33a'});msg(p.books.trap?'陷阵陷阱已布下':'埋设爆裂陷阱'+tag,'#e8b33a');sfx(420,.1,'triangle');break;
     case 12:{const bx=p.x+Math.cos(A)*64,by=p.y+Math.sin(A)*64;const bR2=(145+big*14)*sm.sz;projs.push({k:'burn',sq:1,x:bx,y:by,t:200+ex*60,r:bR2,d:.5*mul,iv:28,tick:20,col:sm.col||'#ff7a3a'});fxRing(bx,by,6,bR2,sm.col||'#ff7a3a',3);if(sm.col)burst(bx,by,sm.col,6);sfx(300,.25,'sawtooth',.06);msg('火墙升起！'+tag,sm.col||'#ff7a3a');break;}
-    case 13:{const n=6+more*2,mets=mobs.slice().sort((a,b)=>dist(a.x,a.y,p.x,p.y)-dist(b.x,b.y,p.x,p.y)).slice(0,n);
-      fxRing(p.x,p.y,10,150*sm.sz,sm.col||'#9adcfa',4);flashS=.4;shakeN(8);sfx(70,.35,'sawtooth',.09);
-      mets.forEach(function(m,i){later(function(){fxLightning(m.x,m.y);hitMob(m,2.2*mul,{stun:70+ex*20,col:sm.col||'#ffe14a'});if(ex>=1)for(const o of mobs)if(o!==m&&dist(o.x,o.y,m.x,m.y)<70+rg)hitMob(o,1*mul,{col:sm.col||'#9adcfa'});},i*6);});
-      msg('雷霆万钧！轰击'+mets.length+'敌'+tag,sm.col||'#9adcfa');break;}
+    case 13:{ /* V1.11.0需求5：以施法点为中心，向外铺开 10 波雷环 */
+      const tr0=64+big*8+rg*.35,tr1=430+big*62+rg*3;
+      projs.push({k:'thorstorm',x:p.x,y:p.y,t:THOR_GAP*THOR_WAVES+10,iv:1,w:0,rot:rnd(0,6.2832),
+        r0:tr0,r1:tr1,d:.10*mul,br:26+big*2,stun:30+ex*10,col:sm.col||'#9adcfa'});
+      fxRing(p.x,p.y,10,150*sm.sz,sm.col||'#9adcfa',4);fxRing(p.x,p.y,10,tr1,sm.col||'#ffe14a',2);
+      flashS=.4;shakeN(8);sfx(70,.35,'sawtooth',.09);
+      msg('雷霆万钧！'+THOR_WAVES+'波×'+THOR_N+'道 雷暴降临（每道8秒）'+tag,sm.col||'#9adcfa');break;}
     case 14:{const bx=p.x+Math.cos(A)*56,by=p.y+Math.sin(A)*56;const clR=(166+big*32)*sm.sz;projs.push({k:'cloud',x:bx,y:by,t:240+ex*60,r:clR,d:.3*mul,iv:24,tick:12,col:sm.col||'#7ee84a'});
       fxRing(bx,by,6,clR,sm.col||'#7ee84a',3);if(sm.col)burst(bx,by,sm.col,5);sfx(240,.3,'sine',.05);msg('要你命三千！毒云弥漫'+tag,sm.col||'#7ee84a');break;}
     case 23:{const n=1+Math.min(2,Math.floor(ex/2));
@@ -3463,7 +3529,7 @@ function updatePlayer(){
       if(r2&&p.inv<=0){hurtPlayer(Math.max(3,Math.round(maxHp()*r2/100)),null,1);floatTxt(p.x,p.y-48,(p.scn==='lava'?'🔥 灼伤':p.scn==='pest'?'☠ 瘴气侵蚀':p.scn==='blood'?'🩸 血月反噬':'场景伤害'),SCENES[p.scn].col);}}
     if(p.scn==='holy'){healPlayer(Math.round(maxHp()*.03));p.mp=Math.min(maxMp(),p.mp+Math.round(maxMp()*.04));floatTxt(p.x,p.y-48,'✨ 圣泉治愈','#8ab8d8');}
     if(p.scn==='thunder'&&Math.random()<.22&&p.inv<=0){hurtPlayer(Math.max(4,Math.round(maxHp()*.05)),null,1);fxLightning(p.x,p.y);shakeN(7);flashS=.12;sfx(70,.4,'sawtooth',.07);floatTxt(p.x,p.y-56,'⚡ 裂天雷罚!','#8a9ae8');}}
-  const spd=4.6*(pass(15)?(1+.15*pv(15)):1)*(1+agiSpd()+achEff().spd/100)*(p.morph?.8:1)*(1+(setPieces('疾风')>=6?.08:0))*(p.scn==='wind'?1.12:1)*(p.scn==='ice'?.78:1)*(p.scn==='sand'?.9:1)*(1+tbV('spd')*.02)+(p.mr?mntSpdAdd()*.3:0); // 需求25：移速无上限；成就勋章移速；需求71：变身体量大略降速；需求74：疾风6件+8%；v1.5.2需求7：场景移速；V1.7需求6：乘骑只加移速
+  const spd=4.6*(pass(15)?(1+.10*pv(15)):1)*(1+agiSpd()+achEff().spd/100)*(p.morph?.8:1)*(1+(setPieces('疾风')>=6?.08:0))*(p.scn==='wind'?1.12:1)*(p.scn==='ice'?.78:1)*(p.scn==='sand'?.9:1)*(1+tbV('spd')*.02)+(p.mr?mntSpdAdd()*.3:0); // 需求25：移速无上限；成就勋章移速；需求71：变身体量大略降速；需求74：疾风6件+8%；v1.5.2需求7：场景移速；V1.7需求6：乘骑只加移速
   let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
   if(vj.x||vj.y){dx+=vj.x*1.6;dy+=vj.y*1.6;}
   p.mv=(dx||dy)?1:0; // 新1：走路动画需知道是否在移动
@@ -3477,7 +3543,7 @@ function updatePlayer(){
     if(!p.inT){p.inT=true;p.hp=maxHp();p.mp=maxMp();msg('回到落鸦村基地：生命/魔法完全恢复！按 R 开启仓库','#59e85a');fxRing(p.x,p.y,6,60,'#59e85a',3);sfx(660,.2,'triangle',.05);}
     else if(p.hp<maxHp()||p.mp<maxMp()){p.hp=maxHp();p.mp=maxMp();}
   }else p.inT=false;
-  if(p.hp<maxHp()&&t%30===0){const rg=affSum('hpRegen')/2+mHpR()/4+(pass(21)?maxHp()*.004*pv(21):0);if(rg>0)healPlayer(rg);} // 需求16：血回复（词条+技能精通+龙魂被动）
+  if(p.hp<maxHp()&&t%30===0){const rg=affSum('hpRegen')/2+mHpR()/4+(pass(21)?maxHp()*.003*pv(21):0);if(rg>0)healPlayer(rg);} // V1.11.0需求3：龙魂回血 .004→.003 适度收敛；需求16：血回复（词条+技能精通+龙魂被动）
   if(t%45===0&&p.mp<maxMp())p.mp+=1+affSum('mpRegen')/2+mMpR()/4+p.st.spi*.05; // 需求16/26：蓝回复（词条+精通+精神）
   const ghost=p.dashT>0&&p.inv>0; // V1.8需求7：翻滚无敌期=相位体，可穿越障碍物
   if(p.dashT>0){p.x+=p.dvx;p.y+=p.dvy;p.dashT--;fx.push({k:'ghost',x:p.x,y:p.y,t:10,max:10,dir:p.dir});
@@ -3697,11 +3763,15 @@ function updateMobs(){
       m.aggro=true;
       if(d<aggroR(def))m.hateT=t; // V1.9.1：追击途中持续刷新仇恨，不再因 30s 脱仇而半路回家
       /* 近战平A：进入贴身判定圈才出手，冷却 4~8 秒（远程怪被逼到脸上时同样可挥击保底） */
-      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];m.aAct=ACT_MELEE;m.aDur=ACT_MELEE;m.aBack=0;burst(p.x,p.y-6,'#ff6a5a',3);asfx(220,.04,'square',.02);} // V1.9.12需求2：近战扑咬动作
+      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];m.aAct=ACT_MELEE;m.aDur=ACT_MELEE;m.aBack=0; // V1.9.12需求2：近战扑咬动作
+        /* V1.11.0需求7：BOSS 追加一道 0.3 秒后可闪避的裂地震波（45% 面板伤）；普通/精英仅特效分级 */
+        mobSwingFx(m,a,m.kind===2?Math.max(1,Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*.45)):0);}
       /* 远程平A：仅白名单物种，7~4 秒一发，且不超过 RANGED_R */
       if(m.acool>0)m.acool--;
       else if(isR&&d>50&&d<RANGED_R&&m.stun<=0&&m.cool<=0){m.acool=RANGED_CD[m.kind===2?2:m.kind===1?1:0];m.cool=m.acool;m.aAct=ACT_RANGED;m.aDur=ACT_RANGED;m.aBack=1; // V1.9.12需求2：远程后坐动作
-        projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*4.2,vy:Math.sin(a)*4.2,t:130,r:4,dmg:Math.round(def.dmg*.5*NB()*(m.dmgMul||1)*(m.scnAtk||1)),col:def.col||(EL[def.el]?EL[def.el].col:'#c9d0a8')});}
+        const sr=m.kind===2?7:m.kind===1?5.5:4,ss=m.kind===2?5.6:m.kind===1?4.8:4.2; // V1.11.0需求7：弹体/弹速分档（伤害公式不变）
+        projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*ss,vy:Math.sin(a)*ss,t:130,r:sr,dmg:Math.round(def.dmg*.5*NB()*(m.dmgMul||1)*(m.scnAtk||1)),col:(m.kind===2?'#ff5a3a':m.kind===1?'#7ec8ff':(def.col||(EL[def.el]?EL[def.el].col:'#c9d0a8')))});
+        mobShotFx(m,a);}
       mobCast(m,def,a,d); // v1.4需求36：每怪专属技能（普通怪也会施放）
       /* 需求73：精英/BOSS 专属技能——按五行分系；BOSS 额外六芒星爆 */
       if(m.kind&&m.stun<=0&&d<320)eliteSpell(m,def,a);
@@ -3829,6 +3899,22 @@ function updateProjs(){
         else areaDmg(a.x,a.y,a.r,a.d,null,null,null,null);
         for(let k=0;k<6;k++)parts.push({x:a.x+rnd(-a.r*.7,a.r*.7),y:a.y+rnd(-a.r*.5,a.r*.5),vx:rnd(-.5,.5),vy:PSN?rnd(-.2,-.9):rnd(-1.6,-.6),col:PSN?(k%2?'#7ee84a':'#3a8a2a'):(k%2?'#ffb04a':'#ff5a2a'),t:ri(12,24),s:rnd(2,4)});}
       if(a.t<=0)projs.splice(i,1);continue;}
+    if(a.k==='thorstorm'){a.t--; // V1.11.0需求5：雷暴控制器——每 THOR_GAP 帧向外扩一环，共 10 环（逐波变远）
+      if(--a.iv<=0&&a.w<THOR_WAVES){a.iv=THOR_GAP;a.w++;
+        const rad=a.r0+(a.r1-a.r0)*((a.w-1)/(THOR_WAVES-1)); // 第 10 波正好落在外缘半径
+        for(let bi=0;bi<THOR_N;bi++){const an=a.rot+bi*(6.2832/THOR_N)+a.w*.21;
+          thorBolt(a.x+Math.cos(an)*rad,a.y+Math.sin(an)*rad,a.d,a.br,a.stun,a.col);}
+        fxRing(a.x,a.y,Math.max(6,rad-16),rad+18,a.col,3);
+        if(a.w===1)fxRing(a.x,a.y,8,a.r1,a.col,2);
+        shakeN(3+a.w*.4);sfx(64+a.w*7,.14,'sawtooth',.05);flashS=Math.max(flashS,.08);
+        a.rot+=.31;}
+      if(a.t<=0)projs.splice(i,1);continue;}
+    if(a.k==='thor'){a.t--; // 单道落雷：8 秒内在小范围内持续威胁，同一目标只击穿一次
+      if(--a.tick<=0){a.tick=a.iv;
+        for(const m of mobs){if(m.hp>0&&!a.hit.has(m.id)&&dist(a.x,a.y,m.x,m.y)<a.r+(m.r||MT[m.key].r)){
+          a.hit.add(m.id);hitMob(m,a.d,{col:a.col,stun:a.stun});
+          fxLightning(m.x,m.y);burst(a.x,a.y,'#dff6ff',4);sfx(180,.04,'square',.02);}}}
+      if(a.t<=0)projs.splice(i,1);continue;}
     if(a.k==='tornado'){a.t--;a.x+=a.vx;a.y+=a.vy; // 需求21：龙卷风——持续卷击 + 到期一次性分裂（继承80%，最多3级，单次5个）
       if(a.x<20||a.x>W-20)a.vx*=-1;if(a.y<20||a.y>H-20)a.vy*=-1;
       if(--a.tick<=0){a.tick=a.iv;
@@ -3846,7 +3932,7 @@ function updateProjs(){
       if(a.gt>0)a.gt--;
       else if(nearObst(a.x,a.y,2)){burst(a.x,a.y,a.col||'#c8c0d8',5);fxRing(a.x,a.y,2,14,a.col||'#c8c0d8',1.4);if((t&3)===0)sfx(160,.04,'square',.02);projs.splice(i,1);continue;}
     } // 人物技能弹道（arrow/bullet/…）不设墙检，一律穿墙而过
-    if(a.k==='stone'){if(p.dead===0&&dist(a.x,a.y,p.x,p.y-6)<13){hurtPlayer(a.dmg,null,a.tru);burst(a.x,a.y,a.col||'#9a9aa5',4);projs.splice(i,1);}else if(a.t<=0)projs.splice(i,1);continue;}
+    if(a.k==='stone'){if(p.dead===0&&dist(a.x,a.y,p.x,p.y-6)<13+(a.r||4)*.6){hurtPlayer(a.dmg,null,a.tru);burst(a.x,a.y,a.col||'#9a9aa5',a.r&&a.r>6?10:a.r&&a.r>5?7:4);if(a.r&&a.r>6){shakeN(5);flashS=Math.max(flashS,.08);}projs.splice(i,1);}else if(a.t<=0)projs.splice(i,1);continue;} // V1.11.0需求7：大弹体命中更有分量（判定半径随弹体放大）
     let hit=false;
     for(const m of mobs){
       if(dist(a.x,a.y,m.x,m.y)<(m.r||MT[m.key].r)+a.r){
@@ -5187,7 +5273,7 @@ function drawProjs(){
         for(let k=1;k<=6;k++){const f=1-k/7;C.globalAlpha=.26*f;
           C.beginPath();C.arc(a.x-a.vx*k*1.15,a.y-a.vy*k*1.15,(a.r*.5+1.5)*f,0,7);C.fill();}
         C.restore();C.globalAlpha=1;}}
-    C.save();C.shadowColor=a.col||'#9adcfa';C.shadowBlur=(a.k==='burn'||a.k==='cloud'||a.k==='tornado')?0:12; // bug1-新31：弹道发光
+    C.save();C.shadowColor=a.col||'#9adcfa';C.shadowBlur=(a.k==='burn'||a.k==='cloud'||a.k==='tornado'||a.k==='thor'||a.k==='thorstorm')?0:12; // V1.11.0需求5：雷柱自带多层描边，不再叠 shadowBlur（200 道实体 × 发光会拖垮帧率） // bug1-新31：弹道发光
     if(a.k==='arrow'||a.k==='big'){const ang=Math.atan2(a.vy,a.vx),s=a.k==='big'?2:1;
       C.save();C.translate(a.x,a.y);C.rotate(ang);
       C.strokeStyle=a.col;C.lineWidth=2.5*s;C.beginPath();C.moveTo(-13*s,0);C.lineTo(7*s,0);C.stroke();
@@ -5196,6 +5282,34 @@ function drawProjs(){
       C.restore();}
     else if(a.k==='orb'){const rr2=a.r+4+Math.sin(t*.4)*1.5;const g=C.createRadialGradient(a.x,a.y,1,a.x,a.y,rr2);g.addColorStop(0,'#fff');g.addColorStop(.5,a.col||'#c9a2ff');g.addColorStop(1,'rgba(0,0,0,0)');C.fillStyle=g;C.beginPath();C.arc(a.x,a.y,rr2,0,7);C.fill();
       if(a.big){C.strokeStyle=a.col;C.globalAlpha=.6;C.lineWidth=2;C.beginPath();C.arc(a.x,a.y,rr2+3,(t*.3)%6.28,(t*.3)%6.28+4);C.stroke();C.globalAlpha=1;}}
+    else if(a.k==='thor'){ /* V1.11.0需求5：驻留落雷的两段式表现——
+       前 18% 寿命＝"天雷立柱"（双层折线 + 白芯 + 3 道径向电弧），砸下来那一下必须有辨识度；
+       其余寿命＝地面电弧场（1 圈 + 1 闪烁核）。200 道同屏时旧写法单帧 21.7ms（手机必掉帧），
+       这样分段后绝大多数落雷只花 2 次 stroke。 */
+      const u=a.t/a.max;
+      if(a.x>camX-150&&a.x<camX+LW+150&&a.y>camY-230&&a.y<camY+LH+150){
+        const al=clamp(u*1.8,0,1);
+        if(u>.82){
+          const A=al*(.55+.45*Math.abs(Math.sin(t*.42+a.seed*.13)));
+          const jag=[0,-11,8,-6,13,-8,4],H=138+(a.seed%5)*10;
+          C.lineCap='round';
+          C.globalAlpha=A*.5;C.strokeStyle=a.col;C.lineWidth=9;
+          C.beginPath();C.moveTo(a.x,a.y-H);
+          for(let i=1;i<=6;i++)C.lineTo(a.x+jag[(i+a.seed)%7]*(1-i/9),a.y-H+i*(H/6));
+          C.globalAlpha=A;C.strokeStyle='#fff';C.lineWidth=2.4;
+          C.beginPath();C.moveTo(a.x,a.y-H);
+          for(let i=1;i<=6;i++)C.lineTo(a.x+jag[(i+a.seed)%7]*(1-i/9),a.y-H+i*(H/6));
+          C.stroke();
+          C.globalAlpha=A*.6;C.strokeStyle=a.col;C.lineWidth=1.4;C.beginPath();
+          for(let i=0;i<3;i++){const an=a.seed*.01+i*2.09+t*.08;
+            C.moveTo(a.x+Math.cos(an)*a.r*.3,a.y+Math.sin(an)*a.r*.18);
+            C.lineTo(a.x+Math.cos(an+.5)*a.r*.92,a.y+Math.sin(an+.5)*a.r*.5);}
+          C.stroke();}
+        C.globalAlpha=al*.62;C.strokeStyle='#dff6ff';C.lineWidth=2; // 电弧场环（渐扩渐隐）
+        C.beginPath();C.arc(a.x,a.y,a.r*(.5+.5*(1-u)),0,7);C.stroke();
+        C.globalAlpha=al*.5;C.fillStyle=a.col;
+        C.beginPath();C.arc(a.x,a.y,2.4+1.6*Math.abs(Math.sin(t*.3+a.seed)),0,7);C.fill();
+        C.globalAlpha=1;}}
     else if(a.k==='tornado'){ // 需求31：修正朝向（底窄顶宽）+ 更好看的螺旋漏斗
       const al=clamp(a.t/40,0,1),H=a.r*2.6,lev=6;C.save();C.translate(a.x,a.y);
       C.globalAlpha=al*.5;
@@ -5914,7 +6028,7 @@ function drawChar(){
   function pair(a,b,c,d){L.push({t:a,v:''+b});R.push({t:c,v:''+d});}
   pair('攻击力',atkTotal(),'防御力',defTotal());
   pair('生命',Math.ceil(p.hp)+'/'+maxHp(),'魔法',Math.floor(p.mp)+'/'+maxMp());
-  pair('移速',(4.6*(pass(15)?(1+.15*pv(15)):1)*(1+agiSpd()+achEff().spd/100)).toFixed(2),'攻速','×'+(1/agiFast()).toFixed(2));
+  pair('移速',(4.6*(pass(15)?(1+.10*pv(15)):1)*(1+agiSpd()+achEff().spd/100)).toFixed(2),'攻速','×'+(1/agiFast()).toFixed(2));
   pair('暴击率',Math.round(critRate()*100)+'%'+(critRaw()>1?'(溢出转爆伤)':''),'暴击伤害','×'+(1.8+critDmgBonus()/100).toFixed(2));
   pair('技能连击',Math.round(skillCombo()*100)+'%','格挡',Math.round(blockRate()*100)+'%');
   pair('闪避',Math.round(dodgeRate()*100)+'%','致命一击',Math.round(lethalChance()*100)+'%');
