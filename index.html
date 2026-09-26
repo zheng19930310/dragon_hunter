@@ -257,7 +257,16 @@ const BEATS={metal:'wood',wood:'earth',earth:'water',fire:'metal',water:'fire'};
 const ELKEYS=['metal','wood','water','fire','earth'];
 function elMult(wEl,mEl){if(!wEl||!mEl)return 1;if(BEATS[wEl]===mEl)return 1.5;if(BEATS[mEl]===wEl)return .7;return 1;}
 /* v1.4需求24：全局主动索敌倍率——普通怪也需主动攻击玩家 */
-const AGGRO_MUL=1.6;
+/* V1.9.1需求A：全怪主动攻击——倍率 1.6→2.8 + 保底索敌半径 1000（约一屏半），怪一入圈即刻锁定追击；
+   配合追击途中持续刷新仇恨，彻底解决"追到一半脱仇回家"。超出 1000 再等 30s 才脱仇，避免全图怪无限堆积 */
+const AGGRO_MUL=2.8;
+const AGGRO_MIN=1000;
+function aggroR(def){return Math.max((def.aggro||120)*AGGRO_MUL,AGGRO_MIN);} // 统一索敌半径：AI 与头顶 👁 预警共用
+/* V1.9.1需求B：攻击频次总表——melee=近战、ranged=远程平A、cast=专属技能（[普通,精英,BOSS]） */
+const MELEE_CD=[40,22,16];            // 原 65 / 28 / 18
+const RANGED_CD=[50,28,20];           // 原 ri(100,160) / 70 / 55
+const CAST_CD=.55;                    // 专属技能冷却倍率（260~400 帧 → 143~220）
+const RANGED_R=520;                   // 远程弹触发距离上限（原 aggro×1.5 仅 140~430）
 const MT={
   slime: {name:'史莱姆',zone:'slime', lvl:2,hp:34, spd:.55,dmg:6, exp:12,coin:[3,9], n:35,rate:.32,q:[62,28,8,2,0,0,0],r:9, aggro:95, el:'wood'},
   goblin:{name:'哥布林',zone:'goblin',lvl:5,hp:85, spd:.95,dmg:11,exp:30,coin:[8,18],n:30,rate:.45,q:[22,32,24,14,6,2,0],r:9, aggro:140,el:'earth'},
@@ -337,7 +346,7 @@ function mobCast(m,def,a,d){
   const sk=MOB_SKILLS[m.key];if(!sk)return;
   if(m.skcdT>0){m.skcdT--;return;}
   if(m.stun>0||d>330)return;
-  m.skcdT=Math.round(sk.cd*(m.kind===2?.55:m.kind===1?.72:1))+ri(-25,25);
+  m.skcdT=Math.round(sk.cd*CAST_CD*(m.kind===2?.55:m.kind===1?.72:1))+ri(-15,15); // V1.9.1需求B：专属技能冷却整体 ×0.55
   const col=def.col||(EL[def.el]?EL[def.el].col:'#ffd27a'),f=Math.max(4,Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*sk.mul)); // v1.5.2需求7：场景攻强/攻减
   floatTxt(m.x,m.y-30,'✦ '+sk.n,col);fxRing(m.x,m.y-6,4,20,col,1.8);sfx(620,.06,'triangle',.03);
   if(sk.p==='rain'){for(let i=-2;i<=2;i++)projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a+i*.24)*4.4,vy:Math.sin(a+i*.24)*4.4,t:110,r:4,dmg:Math.round(f*.42),col:col});}
@@ -3282,7 +3291,7 @@ function hurtPlayer(dmg,src,tru){
   let d=tru?Math.max(1,dmg):Math.max(1,dmg-defTotal());
   if(!tru)d=Math.max(1,Math.round(d*(1-blockRate()))); // 需求28：格挡（真伤无视）
   if(p.books.shield)d=Math.round(d*.8); // 龟壳护体：减伤20%
-  p.hp-=d;p.inv=40;p.flash=14;shakeN(7);
+  p.hp-=d;p.inv=28;p.flash=14;shakeN(7); // V1.9.1需求B：受击硬直 40→28 帧，近战实际命中频率才跟着提高
   if(p.mr&&Math.random()<.35){p.mr=false;floatTxt(p.x,p.y-58,'💥 被扫下马!','#e8c86a');msg('🏇 坐骑挨了一下，你被扫落在地','#e8c86a');sfx(240,.1,'square',.04);} // V1.7：乘骑会被扫下马
   if(setPieces('守护')>=6&&src){hitMob(src,.15,{col:'#7ee0ff'});floatTxt(p.x,p.y-44,'圣光反伤','#7ee0ff');} // 需求74：守护6件反伤15%
   floatTxt(p.x,p.y-34,'-'+d,'#e85a5a');sfx(140,.15,'sawtooth',.06);
@@ -3339,7 +3348,7 @@ function eliteSpell(m,def,a){
   const boss=m.kind===2,f=m.dmgMul||1,nm=def.name;
   if(def.lvl>10){ // 需求11：仅大于10级的精英/BOSS 使用套装联动法术
     const fam=SETS[m.key]||'真伤';
-    m.scool2=boss?ri(90,150):ri(150,240); // 需求13：BOSS 施法更频繁
+    m.scool2=boss?ri(60,100):ri(95,150); // V1.9.1需求B：精英/BOSS 套装法术施放更密（原 90~150 / 150~240）
     if(fam==='烈焰'){ // 灼烧爆燃：环形焰弹幕 + 近身新星
       floatTxt(m.x,m.y-26,'🔥 '+nm+'·'+(boss?'焚天业火':'烈焰爆'),'#ff9a5a');fxRing(m.x,m.y,10,boss?150:105,'#ff7a3a',4);sfx(180,.2,'sawtooth',.06);
       const n=boss?12:6;for(let i=0;i<n;i++){const an=i/n*6.283+t*.02;projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(an)*4,vy:Math.sin(an)*4,t:110,r:5,dmg:Math.round(def.dmg*(boss?.7:.5)*f),col:'#ff7a3a'});}
@@ -3383,6 +3392,8 @@ function updateMobs(){
   for(let i=mobs.length-1;i>=0;i--){
     const m=mobs[i],def=MT[m.key];
     m.sqT=m.sqT||0; // V1.8.1：受击挤压计时（老存档 / 变身假怪对象上可能没有此字段）
+    m.frzT=m.frzT||0; // V1.9.1修复：spawnMob 从未初始化 frzT，而主动攻击分支要求 m.frzT<=0——undefined<=0 恒为 false，
+                      // 导致追击/近战/远程平A/专属技能整块对每只怪永不执行（怪物"不还手"的真正根因）
     if(m.frost>0)m.frost--;if(m.flash>0)m.flash--;if(m.stun>0)m.stun--;if(m.frzT>0)m.frzT--;if(m.sqT>0)m.sqT--; // v1.4：凝滞计时（美杜莎的凝视等）+ V1.8.1 挤压计时
     /* v1.5.2需求7：场景法则——本地怪吃好 buff，外来怪与主角吃坏 buff（15帧节流） */
     if((t&15)===0||m.scn==null){const sn=scnAt(m.x,m.y);m.scn=sn?sn.sn:'';m.scnOwn=!!(sn&&sn.own.indexOf(m.key)>=0);
@@ -3400,16 +3411,17 @@ function updateMobs(){
     const d=dist(m.x,m.y,p.x,p.y),sp=def.spd*NB()*(m.frost>0?.5:1)*(m.frzT>0?0:1)*(m.scnSpd||1); // v1.5.2需求7：场景移速加成/冻伤减速；V1.9需求2：夜战移速加成
     if(m.dot){if(--m.dot.t<=0)m.dot=null;else if(--m.dot.tick<=0){m.dot.tick=m.dot.iv;m.hp-=m.dot.dv;m.flash=2;floatTxt(m.x+8,m.y-14,''+m.dot.dv,m.dot.col);}} // 中毒/灼烧 DoT
     if(m.aggro&&t-(m.hateT||-9e9)>1800){m.aggro=false;floatTxt(m.x,m.y-20,'脱仇','#8a9a7a');} // 需求85：30秒未受击自动释放仇恨
-    if(m.stun<=0&&m.frzT<=0&&p.dead===0&&(d<def.aggro*AGGRO_MUL||m.aggro)){
+    /* V1.9.1需求A：全怪主动攻击——统一索敌半径 aggroR（2.8 倍 + 保底 1000），怪一入圈即锁定主角追击 */
+    if(m.stun<=0&&m.frzT<=0&&p.dead===0&&(d<aggroR(def)||m.aggro)){
       const a=Math.atan2(p.y-m.y,p.x-m.x);
       m.x+=Math.cos(a)*sp;m.y+=Math.sin(a)*sp;m.aggro=true; // 需求84：锁定后不限范围全图追击，不再按距离衰减
-      if(d<def.aggro)m.hateT=t; // v1.4需求35：玩家在基础仇恨圈内持续刷新仇恨——仇恨粘性，离开圈圈后才开始 30s 脱仇计时
-      /* v1.4需求13/24：普通怪主动近战且频率提升（100→ 65）；精英/BOSS 更快（ 42→ 28 / 26→ 18） */
-      if(d<(m.r||def.r)+14&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=m.kind===2?18:m.kind===1?28:65;burst(p.x,p.y-6,'#ff6a5a',3);sfx(220,.04,'square',.02);}
+      if(d<aggroR(def))m.hateT=t; // V1.9.1：追击途中持续刷新仇恨，不再因 30s 脱仇而半路回家
+      /* V1.9.1需求B：攻击频次提升——普通 65→40、精英 28→22、BOSS 18→16（并配合受击硬直 40→28 帧，近战才压得满） */
+      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];burst(p.x,p.y-6,'#ff6a5a',3);sfx(220,.04,'square',.02);}
       /* v1.4需求36：全怪通用远程平A——仇恨/索敌中的怪持续向路过玩家发射元素弹（伤害50%，精英/BOSS 更快） */
       if(m.acool>0)m.acool--;
-      else if(d>60&&d<def.aggro*1.5&&m.stun<=0){m.acool=m.kind===2?55:m.kind===1?70:ri(100,160);
-        projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*4.2,vy:Math.sin(a)*4.2,t:110,r:4,dmg:Math.round(def.dmg*.5*NB()*(m.dmgMul||1)*(m.scnAtk||1)),col:def.col||(EL[def.el]?EL[def.el].col:'#c9d0a8')});}
+      else if(d>60&&d<RANGED_R&&m.stun<=0){m.acool=RANGED_CD[m.kind===2?2:m.kind===1?1:0]+ri(0,18);
+        projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*4.2,vy:Math.sin(a)*4.2,t:130,r:4,dmg:Math.round(def.dmg*.5*NB()*(m.dmgMul||1)*(m.scnAtk||1)),col:def.col||(EL[def.el]?EL[def.el].col:'#c9d0a8')});}
       mobCast(m,def,a,d); // v1.4需求36：每怪专属技能（普通怪也会施放）
       /* 需求73：精英/BOSS 专属技能——按五行分系；BOSS 额外六芒星爆 */
       if(m.kind&&m.stun<=0&&d<320)eliteSpell(m,def,a);
@@ -4038,7 +4050,7 @@ function draw(){
         C.restore();}
       /* v1.4需求35：仇恨可视化——已锁敌头顶红❗闪烁；索敌圈内未锁敌淡👁 */
       if(m.aggro){if((t>>4)%2)txt('❗',m.x+(m.r||MT[m.key].r)*.72,m.y-(m.r||MT[m.key].r)-10,13,'#ff5a4a','center');}
-      else if(dist(m.x,m.y,p.x,p.y)<MT[m.key].aggro*AGGRO_MUL)txt('👁',m.x,m.y-(m.r||MT[m.key].r)-8,9.5,'rgba(255,220,120,.7)','center');
+      else if(dist(m.x,m.y,p.x,p.y)<aggroR(MT[m.key]))txt('👁',m.x,m.y-(m.r||MT[m.key].r)-8,9.5,'rgba(255,220,120,.7)','center');
       drawMobHp(m);}
   drawProjs();
   for(const f of fx)drawFx(f);
