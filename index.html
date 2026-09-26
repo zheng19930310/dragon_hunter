@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.9.0</title>
+<title>降龙猎手 · 五行觉醒 V1.10.0</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -267,6 +267,8 @@ const MELEE_CD=[40,22,16];            // 原 65 / 28 / 18
 const RANGED_CD=[50,28,20];           // 原 ri(100,160) / 70 / 55
 const CAST_CD=.55;                    // 专属技能冷却倍率（260~400 帧 → 143~220）
 const RANGED_R=520;                   // 远程弹触发距离上限（原 aggro×1.5 仅 140~430）
+/* V1.9.12需求2：攻击/施法动作计时（帧）——人怪共用，驱动 drawPlayer/drawMobArt 的整组变换 */
+const ACT_MELEE=14,ACT_RANGED=10,ACT_CAST=22;
 const MT={
   slime: {name:'史莱姆',zone:'slime', lvl:2,hp:34, spd:.55,dmg:6, exp:12,coin:[3,9], n:35,rate:.32,q:[62,28,8,2,0,0,0],r:9, aggro:95, el:'wood'},
   goblin:{name:'哥布林',zone:'goblin',lvl:5,hp:85, spd:.95,dmg:11,exp:30,coin:[8,18],n:30,rate:.45,q:[22,32,24,14,6,2,0],r:9, aggro:140,el:'earth'},
@@ -347,6 +349,7 @@ function mobCast(m,def,a,d){
   if(m.skcdT>0){m.skcdT--;return;}
   if(m.stun>0||d>330)return;
   m.skcdT=Math.round(sk.cd*CAST_CD*(m.kind===2?.55:m.kind===1?.72:1))+ri(-15,15); // V1.9.1需求B：专属技能冷却整体 ×0.55
+  m.cAct=ACT_CAST; // V1.9.12需求2：施法聚能动作
   const col=def.col||(EL[def.el]?EL[def.el].col:'#ffd27a'),f=Math.max(4,Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*sk.mul)); // v1.5.2需求7：场景攻强/攻减
   floatTxt(m.x,m.y-30,'✦ '+sk.n,col);fxRing(m.x,m.y-6,4,20,col,1.8);sfx(620,.06,'triangle',.03);
   if(sk.p==='rain'){for(let i=-2;i<=2;i++)projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a+i*.24)*4.4,vy:Math.sin(a+i*.24)*4.4,t:110,r:4,dmg:Math.round(f*.42),col:col});}
@@ -369,10 +372,58 @@ const PETDUN_PT={x:3180,y:2770}; // V1.6需求3：宠物蛋副本传送阵
 const MNT_NPC={x:4250,y:2500};  // V1.7需求1：弼马温坐骑总管（基地东北，营地马桩以北）
 const MZONE={x:1040,y:1220,w:880,h:260}; // V1.6需求1：迷宫专属平面（×WS 后 5200,6100,4400,1300；右下角 9600,7400 均在世界边界内）
 const INSTWALLS=[]; // 实例临时围墙（出图拆除）
+/* V1.10.0需求3：进出副本 3 秒「地图加载中」遮罩——冻结世界更新与输入，倒计时结束自动恢复 */
+const LOAD={t:0,txt:''};
+function loadStart(s){LOAD.t=180;LOAD.txt=s;}
+function loading(){return LOAD.t>0;}
+/* V1.10.0需求1：传送门/出口落点若压到障碍物，就地清除该障碍（保证永远可达） */
+function clearObsAt(x,y,r){
+  if(!INST.obs)return;
+  for(let i=INST.obs.length-1;i>=0;i--){const o=INST.obs[i];
+    if(x>o.x-r&&x<o.x+o.w+r&&y>o.y-r&&y<o.y+o.h+r){
+      const j=INSTWALLS.indexOf(o);if(j>=0)INSTWALLS.splice(j,1);
+      OBST.splice(OBST.indexOf(o),1);
+      const x0=Math.floor(o.x/OCELL),x1=Math.floor((o.x+o.w)/OCELL),y0=Math.floor(o.y/OCELL),y1=Math.floor((o.y+o.h)/OCELL);
+      for(let gx=x0;gx<=x1;gx++)for(let gy=y0;gy<=y1;gy++){const ar=OGRID[gx+'_'+gy];if(ar){const k=ar.indexOf(o);if(k>=0)ar.splice(k,1);}}
+      INST.obs.splice(i,1);}}}
 function instW(x,y,w,h){const b={x:x,y:y,w:w,h:h,IW:1};OBST.push(b);oadd(b);INSTWALLS.push(b);}
 function dropInstWalls(){for(const b of INSTWALLS){OBST.splice(OBST.indexOf(b),1);const x0=Math.floor(b.x/OCELL),x1=Math.floor((b.x+b.w)/OCELL),y0=Math.floor(b.y/OCELL),y1=Math.floor((b.y+b.h)/OCELL); // OGRID 在 OCELL 定义前被调用，故此处显式分桶
     for(let gx=x0;gx<=x1;gx++)for(let gy=y0;gy<=y1;gy++){const ar=OGRID[gx+'_'+gy];if(ar){const j=ar.indexOf(b);if(j>=0)ar.splice(j,1);}}}INSTWALLS.length=0;}
 function instRng(){return{x:INST.x+rnd(46,INST.w-46),y:INST.y+rnd(46,INST.h-46)};} // 修复：rnd 是双参(min,max)，旧单参调用产生 NaN 坐标致渲染崩
+/* ============ V1.10.0需求1：副本障碍物——石柱/木箱随机布局，避开门/出生点/BOSS；随退场拆除 ============ */
+function spawnInstObs(n,avoid){
+  INST.obs=INST.obs||[];
+  for(let i=0;i<n;i++){
+    for(let tries=0;tries<26;tries++){
+      const wide=Math.random()<.34,w=wide?ri(70,130):ri(26,46),h=wide?ri(26,44):ri(70,120);
+      const x=INST.x+50+Math.random()*(INST.w-100-w),y=INST.y+50+Math.random()*(INST.h-100-h);
+      let bad=false;
+      for(const a of avoid){const qx=clamp(a.x,x,x+w),qy=clamp(a.y,y,y+h),dx=a.x-qx,dy=a.y-qy; // 圆-矩形精确距离：斜角也不会误判可放
+        if(dx*dx+dy*dy<a.r*a.r){bad=true;break;}}
+      if(!bad)for(const o of INST.obs){if(x<o.x+o.w+26&&x+w>o.x-26&&y<o.y+o.h+26&&y+h>o.y-26){bad=true;break;}} // 障碍间留缝可穿行
+      if(bad)continue;
+      const b={x:x,y:y,w:w,h:h,kind:Math.random()<.5?'rock':'crate'};
+      INST.obs.push(b);instW(x,y,w,h);break;
+    }
+  }
+}
+function drawInstObs(){ // 石柱=圆顶岩块，木箱=箍铁板条箱；仅副本内绘制
+  if(!INST.on||!INST.obs)return;
+  for(const o of INST.obs){
+    if(o.x>camX+LW||o.x+o.w<camX||o.y>camY+LH||o.y+o.h<camY)continue;
+    C.fillStyle='rgba(0,0,0,.3)';C.beginPath();C.ellipse(o.x+o.w/2,o.y+o.h+3,o.w*.52,5,0,0,7);C.fill();
+    if(o.kind==='rock'){
+      C.fillStyle='#5a5148';rr(o.x,o.y,o.w,o.h,7);C.fill();
+      C.fillStyle='#6e6458';rr(o.x+3,o.y+2,o.w-6,o.h*.5,6);C.fill();
+      C.strokeStyle='rgba(0,0,0,.35)';C.lineWidth=1.5;C.beginPath();C.moveTo(o.x+o.w*.3,o.y+4);C.lineTo(o.x+o.w*.42,o.y+o.h-4);C.stroke();
+      C.strokeStyle='rgba(255,255,255,.12)';C.beginPath();C.moveTo(o.x+4,o.y+o.h*.3);C.lineTo(o.x+o.w-4,o.y+o.h*.3);C.stroke();
+    }else{
+      C.fillStyle='#7a5a30';C.fillRect(o.x,o.y,o.w,o.h);
+      C.strokeStyle='#3a2a12';C.lineWidth=2;C.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
+      C.beginPath();C.moveTo(o.x,o.y+o.h/2);C.lineTo(o.x+o.w,o.y+o.h/2);C.moveTo(o.x+o.w/2,o.y);C.lineTo(o.x+o.w/2,o.y+o.h);C.stroke();
+      C.fillStyle='rgba(255,255,255,.08)';C.fillRect(o.x+2,o.y+2,o.w-4,o.h*.28);}
+  }
+}
 function spawnInstMob(key,kind,hMul,dMul,lAdd){
   spawnMob(key,kind,instRng());
   const m=mobs[mobs.length-1];
@@ -386,21 +437,24 @@ function enterInstance(type,name,col,keepHome,geo){ // V1.6：geo 可选——�
   if(p.mr){p.mr=false;msg('🏇 实例空间无法乘骑——你下了坐骑','#e8c86a');} // V1.7需求6
   INST.on=true;INST.type=type;INST.name=name;INST.col=col;
   if(!geo){INST.x=8780;INST.y=6620;INST.w=1060;INST.h=800;}else{INST.x=geo.x;INST.y=geo.y;INST.w=geo.w;INST.h=geo.h;} // V1.6：geo 已换算到世界系
-  INST.walls=null;INST.pow=0;INST.found=false;INST.mazeOut=null;
+  INST.walls=null;INST.obs=null;INST.pow=0;INST.found=false;INST.mazeOut=null;
   INST.exit=null;INST.next=null;INST.bossKilled=0;INST.killed=0;INST.boss=0;INST.floor=0;INST.key=null;
   mobs.length=0;respawns.length=0;projs.length=0;coins.length=0; // 需求5：主世界怪/弹幕/金币瞬间卸载，防内存溢出
-  if(lost)msg('🧹 清理了 '+lost+' 件遗落在副本中的拾取物','#8a9a7a');}
-function enterDungeon(dr){ // 需求1：100小怪 + 5~6精英 + 1~3 BOSS，数值强化、爆率提升、不刷新
+  if(lost)msg('🧹 清理了 '+lost+' 件遗落在副本中的拾取物','#8a9a7a');
+  loadStart('🌀 地图加载中'); // V1.10.0需求3：进副本 3 秒加载遮罩
+}
+function enterDungeon(dr){ // 需求1：小怪 + 5~6精英 + 1~3 BOSS，数值强化、爆率提升、不刷新；V1.10.0需求2：普通怪超过 50 一律压到 50
   enterInstance('dun','⛩ '+dr.name+'·幻境副本',dr.col);
   INST.key=dr.key;
   const nb=ri(1,3);INST.boss=nb;
-  for(let i=0;i<100;i++)spawnInstMob(dr.key,0,1.6,1.35,5);
+  for(let i=0;i<50;i++)spawnInstMob(dr.key,0,1.6,1.35,5);
   for(let i=0;i<ri(5,6);i++)spawnInstMob(dr.key,1,1.6,1.35,5);
   for(let i=0;i<nb;i++)spawnInstMob(dr.key,2,1.6,1.35,5);
   p.x=INST.x+INST.w/2;p.y=INST.y+INST.h-70;
+  spawnInstObs(16,[{x:p.x,y:p.y,r:130},{x:INST.x+INST.w/2,y:INST.y+70,r:110}]); // V1.10.0需求1：副本内障碍物，避开出生点与顶部 BOSS 带
   const zsn=sceneOfZone(MT[dr.key].zone); // v1.5.2需求8：副本沿用主人怪主题场景，主人受祝福、入侵者受罚
   INST.scene=zsn?{sn:zsn,own:[dr.key]}:null;
-  msg('⛩ 进入副本【'+dr.name+'·幻境】：100 小怪 · 精英环伺 · '+nb+' 只 BOSS——本副本的敌人更强、爆得更多！',dr.col);
+  msg('⛩ 进入副本【'+dr.name+'·幻境】：50 小怪 · 精英环伺 · '+nb+' 只 BOSS——本副本的敌人更强、爆得更多！',dr.col);
   msg('💀 斩尽全部 BOSS，最后一只倒地处将刷出退出通道','#8ab8d8');
   if(INST.scene)msg('🌍 副本场景【'+SCENES[zsn].ic+SCENES[zsn].n+'】：主人与你同受场景法则——它得增益，你吃苦头',SCENES[zsn].col);
   flashS=.25;shakeN(5);sfx(150,.3,'sawtooth',.06);}
@@ -409,7 +463,7 @@ function towerFloorPlan(n){ // 需求3：每层 30~100 怪，种类随机构成�
   const keys=[],want=Math.min(4,2+((n/30)|0));
   while(keys.length<want&&pool.length){keys.push(pool.splice(ri(0,pool.length-1),1)[0]);}
   if(!keys.length)keys.push('slime');
-  return{keys:keys,cnt:Math.min(100,26+n*3+ri(0,10)),
+  return{keys:keys,cnt:Math.min(50,26+n*3+ri(0,10)), // V1.10.0需求2：塔层普通怪同样封顶 50（原可达 100）
     ne:n>=3?ri(0,Math.min(6,1+(n>>4))):0,
     nb:n%10===0?ri(1,3):(n>=5&&Math.random()<.4?1:0),
     hMul:1.1+n*.05,dMul:1.1+n*.04};}
@@ -423,6 +477,7 @@ function enterTowerFloor(n,keepHome,seed){ // v1.5.3需求11：seed=传送已刷
   for(let i=0;i<pl.ne;i++)spawnInstMob(pl.keys[ri(0,pl.keys.length-1)],1,pl.hMul,pl.dMul,n);
   for(let i=0;i<pl.nb;i++)spawnInstMob(pl.keys[ri(0,pl.keys.length-1)],2,pl.hMul,pl.dMul,n);
   p.x=INST.x+INST.w/2;p.y=INST.y+INST.h-70;
+  spawnInstObs(14,[{x:p.x,y:p.y,r:120},{x:INST.x+INST.w/2,y:INST.y+INST.h/2,r:150}]); // V1.10.0需求1：塔层障碍，避开出生点与层中央传送带
   if(seed&&n>1){p.tb={atk:0,hp:0,def:0,spd:0,crit:0};const g=Math.min(n-1,25);for(let i=0;i<g;i++)addTowerBuff(true); // v1.5.3需求12：传送按已越层数随机生成累积 buff
     msg('🗻 凌霄借力：前 '+g+' 层修行之力化作增益加身（出塔即散）','#ffd700');}
   msg('🗼 通天塔第 '+n+' 层：'+pl.cnt+' 小怪'+(pl.ne?' · '+pl.ne+' 精英':'')+(pl.nb?' · '+pl.nb+' BOSS':'')+'——清空全层方可上楼',n%10===0?'#ff7a5a':'#e8cf4a');
@@ -439,7 +494,9 @@ function exitInst(died){
   if(!INST.on)return;
   if(INST.type==='tower'&&tbN()>0)msg('🗼 离塔——第 '+INST.floor+' 层攒下的 '+tbN()+' 重修行增益随风消散（下次进塔重叠）','#7af0c8'); // v1.5.3需求12
   p.tb=null;
-  if(INST.walls)dropInstWalls(); // V1.6：迷宫围墙随退场拆除，不污染主世界碰撞网格
+  if(INST.walls||INST.obs)dropInstWalls(); // V1.6：迷宫围墙随退场拆除；V1.10.0：副本障碍物同样拆除，不污染主世界碰撞网格
+  INST.obs=null;
+  loadStart('🌀 地图加载中'); // V1.10.0需求3：出副本 3 秒加载遮罩
   const hx=INST.homeX,hy=INST.homeY;
   INST.on=false;INST.exit=null;INST.next=null;
   mobs.length=0;respawns.length=0;projs.length=0;coins.length=0;
@@ -467,13 +524,14 @@ function instMobDied(m){ // 副本/塔进度钩子（updateMobs 死亡 splice �
   if(INST.type==='petdun'&&m.kind===2)checkMile('pk'); // V1.6需求3：刷蛋击杀累计成就
   if(INST.type==='mount'&&m.kind===2&&m.key===INST.key)mntWin(m); // V1.7需求2：坐骑副本BOSS被斩→解锁坐骑（V1.8：改按 BOSS 身上的 mntKing 定位，允许多匹坐骑共用一种野怪）
   if(m.kind===2){INST.bossKilled++;
-    if(INST.type==='dun'&&INST.bossKilled>=INST.boss&&!INST.exit){INST.exit={x:m.x,y:m.y};
+    if(INST.type==='dun'&&INST.bossKilled>=INST.boss&&!INST.exit){INST.exit={x:m.x,y:m.y};clearObsAt(m.x,m.y,44); // V1.10.0：出口若压在障碍上，就地清障
       msg('🌀 全部 BOSS 已肃清！最后一只倒地处已刷出退出通道','#8affff');flashS=.3;arp([520,660,780,990],90);}}
   if(INST.type==='tower'&&mobs.length===0){ // 爬塔：清空全层才算过
     p.ach2.towerMax=Math.max(p.ach2.towerMax||0,INST.floor);
     p.gold+=200*INST.floor;gainExp(300*INST.floor);
     INST.exit={x:INST.x+INST.w/2-92,y:INST.y+INST.h/2};
     if(INST.floor<100)INST.next={x:INST.x+INST.w/2+92,y:INST.y+INST.h/2,f:INST.floor+1};
+    clearObsAt(INST.exit.x,INST.exit.y,44);if(INST.next)clearObsAt(INST.next.x,INST.next.y,44); // V1.10.0：层中央传送带若压到障碍，就地清障
     msg('🗼 第 '+INST.floor+' 层清空！金币+'+(200*INST.floor)+'——⬆ 下一层 与 🌀 退出 已现身','#e8cf4a');
     p.tb=p.tb||{atk:0,hp:0,def:0,spd:0,crit:0};const bk=TBK[(Math.random()*TBK.length)|0];p.tb[bk]++; // v1.5.3需求12：每层通关叠一种修行增益
     msg('🗼 修行增益【'+TBBUF[bk].cn+'】'+TBBUF[bk].f+' ×'+p.tb[bk]+'（塔内累计 '+tbN()+' 重，出塔即散）','#7af0c8');floatTxt(p.x,p.y-30,TBBUF[bk].cn+' ×'+p.tb[bk],'#7af0c8');
@@ -732,6 +790,12 @@ const WX=[
   {k:'fog',  n:'大雾',ic:'🌫',col:'#cfd6cc',tint:'rgba(196,204,196,.20)',  tip:'雾失楼台'},
   {k:'wind', n:'疾风',ic:'🍃',col:'#a8e8c0',tint:'rgba(140,192,162,.10)',  tip:'大风卷地'}];
 let schI=SCH_START,dark=SHICHEN[SCH_START].dk,nightB=0,wxI=0,wxT=0,wxSeq=-1;
+/* V1.9.12需求1：大雾只在早晨（卯3·辰4）与傍晚（申8·酉9）概率出现，其余时辰一律不出雾 */
+const FOG_K='fog',FOG_OK=[3,4,8,9],FOG_P=.28;
+function isFog(i){return WX[i].k===FOG_K;}
+function pickWx(i){ // V1.9.12需求1：早晚时辰按 FOG_P 概率出雾；非早晚的抽取池直接剔除雾
+  if(FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P)return WX.findIndex(function(w){return w.k===FOG_K;});
+  let n;do{n=ri(0,WX.length-1);}while(isFog(n));return n;}
 function wxNow(){return WX[wxI];}
 function schOf(){return (SCH_START+Math.floor(t/SCH_FRAME))%12;}
 function NB(){return 1+dark*.5;} /* 需求2：夜战倍率（攻·速同源），白昼恒为 1，深夜 1.5 */
@@ -750,9 +814,14 @@ function updateClock(){ /* 每帧推时辰：明暗度在相邻时辰标称值�
   const seq=Math.floor(t/(SCH_FRAME*3)); /* 需求4：每 3 个时辰随机换一次天气（纯视觉，不参与任何数值） */
   if(seq!==wxSeq){
     const old=wxI;wxSeq=seq;
-    do{wxI=ri(0,WX.length-1);}while(wxI===old);
+    do{wxI=pickWx(i);}while(wxI===old); // V1.9.12需求1：受时段约束的天气抽取
     wxT=t;
     if(started&&old!==wxI){const W=WX[wxI];msg('🌦 天象转换：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}
+  }else if(chg){ /* V1.9.12需求1：时辰边界雾守卫——离早晚必散雾，入早晚按概率起雾（解决雾赖过时段） */
+    if(isFog(wxI)&&FOG_OK.indexOf(i)<0){do{wxI=ri(0,WX.length-1);}while(isFog(wxI));wxT=t;
+      if(started){const W=WX[wxI];msg('🌦 时辰更替，大雾散去——'+W.ic+' '+W.n,W.col);}}
+    else if(!isFog(wxI)&&FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P){wxI=WX.findIndex(function(w){return w.k===FOG_K;});wxT=t;
+      if(started){const W=WX[wxI];msg('🌫 晨昏生雾：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);}}
   }
 }
 function drawNightView(){ /* 需求3：视野随夜色收窄，天亮渐开，白昼全屏可视 */
@@ -1091,6 +1160,9 @@ function enterMaze(){ // 需求1：副本内全是 BOSS，不出副本永不刷�
     m.hp=Math.round(m.hp*.42);m.maxhp=m.hp;m.dmgMul*=.16;}); // 伤害压到本尊基线约 2.4 倍：深度妖王依旧能杀人，但不至于碰一下就秒
   INST.mazeOut={x:INST.x+INST.w-110,y:INST.y+INST.h-70}; // 需求2：出口不标图，得自己找到
   p.x=INST.x+70;p.y=INST.y+INST.h*.12;
+  /* V1.10.0需求1：迷宫在既有交错内墙外再撒石柱木箱——避开出生点、隐藏出口与两道内墙的换廊缺口 */
+  spawnInstObs(12,[{x:p.x,y:p.y,r:130},{x:INST.mazeOut.x,y:INST.mazeOut.y,r:150},
+    {x:INST.x+INST.w-130,y:INST.y+INST.h*.38,r:150},{x:INST.x+130,y:INST.y+INST.h*.72,r:150}]);
   msg('🌀 万妖迷宫开启：'+keys.length+' 方 BOSS 沿廊而座——你不出副本它们永不刷新','#c07ae8');
   msg('👹 但每斩一只，余下的就同气连枝变强 5%——越到深处越像捅了妖窝','#ff7a5a');
   msg('🕯 迷宫深处藏着一道出口，找到它也算一份成就（本图不标出口）','#8ab8d8');
@@ -1110,6 +1182,8 @@ function enterPetDun(){ // 需求3：四神兽 BOSS 各 3 只，进出一次即�
     m.hp=m.maxhp=Math.min(m.hp,9000+p.lvl*320);}}); // 血量按主角等级封顶，保证任何阶段都刷得动
   INST.exit={x:INST.x+INST.w/2,y:INST.y+INST.h-56}; // 入口即留退路，想刷随时再来
   p.x=INST.x+INST.w/2;p.y=INST.y+INST.h-110;
+  /* V1.10.0需求1：产蛋境障碍避开出生点/出口与四角兽群 */
+  spawnInstObs(10,[{x:p.x,y:p.y,r:120},{x:INST.exit.x,y:INST.exit.y,r:120}].concat(C4.map(function(c){return{x:INST.x+INST.w*c.x,y:INST.y+INST.h*c.y,r:120};})));
   msg('🥚 产蛋秘境：四神兽镇场、每兽三身——斩之即掉宝宝蛋，进出一次全部重新刷新','#ffd700');
   msg('🐾 本境血量与攻击已大幅调低（血量随你等级封顶），专为刷蛋而建','#8fd08f');
   flashS=.2;arp([520,700,900],70);}
@@ -1491,7 +1565,7 @@ function drawInstWorld(){ // 副本平面：暗色地格+石围墙+火把+通道
     C.save();C.globalAlpha=.09;C.fillStyle=S.col;C.fillRect(r.x,r.y,r.w,r.h);C.restore();
     txt(S.ic+' '+S.n+' · 场景法则',r.x+r.w/2,r.y-58,12,S.col,'center',null,true);}
   txt(INST.type==='tower'?INST.name+' · 余敌 '+mobs.length+'（清空全层上楼）'+(tbN()?' 🗼修行×'+tbN():''):INST.type==='maze'?INST.name+' · 余 BOSS '+mobs.length+'/'+INST.boss+' · 叠强×'+(INST.pow||0)+(INST.found?' · 出口已寻得':' · 出口未寻得'):INST.type==='mount'?INST.name+' · 御骑境BOSS '+(INST.bossKilled?'已斩':'在座'):INST.name+' · BOSS 已斩 '+INST.bossKilled+'/'+INST.boss+' · 余敌 '+mobs.length,r.x+r.w/2,r.y-42,14,r.col,'center',null,true);
-  drawMazeWalls();}
+  drawMazeWalls();drawInstObs();} // V1.10.0需求1：副本障碍物随实例层绘制
 function drawTowerWorld(){ // 主世界塔身：多层叠摞+尖顶灵珠+金光法阵
   if(INST.on)return;
   const x=TOWER_PT.x,y=TOWER_PT.y,d=dist(x,y,p.x,p.y);if(d>900)return;
@@ -1757,7 +1831,7 @@ const STKEYS=['str','agi','vit','spi','def'];
 const STCN={str:'力量',agi:'敏捷',vit:'体力',spi:'精神',def:'防御'};
 const STEFF={str:'每点 攻击+2 · 致命一击+0.1%',agi:'每点 移速+1.2%(无限) · 攻速↑ · 暴击+0.4% · 闪避+0.05%',vit:'每点 生命上限+12 · 防御+0.5',spi:'每点 魔法上限+9 · 回蓝 · 技能连击+0.1%',def:'每点 防御+1 · 格挡+0.3%'};
 function agiFast(){return Math.max(.2,1/(1+p.st.agi*.012));} // 需求25：敏捷大幅提升攻速（无上限，值越小冷却越快）
-function agiSpd(){return p.st.agi*.012;} // 需求25：移速可无限增长（取消50%封顶）
+function agiSpd(){return Math.sqrt(p.st.agi)*.012;} // V1.9.12需求3：√递减——满100敏仅+12%（原线性+120%，后期移速失控）
 function agiCrit(){return p.st.agi*.004;} // 需求25：敏捷暴击加成（无上限）
 function critRaw(){return .1+(pass(19)?.1*pv(19):0)+mCrit()+affSum('critR')/100+agiCrit()+(setPieces('疾风')>=4?.05:0)+achEff().crit/100+tbV('crit')*.008;}
 function lethalChance(){return Math.min(.6,(affSum('lethal')+p.st.str*.1)/100);} // 需求29：力量→致命一击
@@ -2465,20 +2539,61 @@ function drawAngelNPC(){ // 需求51/66：驻地任务交接人——具象化�
   if(nearAngel()&&p.dead===0){txt('🕊 天使（按 E 接取/交付故事线任务）',x,y-48,12,'#fff2b0','center','bold',true);
     txt((p.qv>=ANGEL_T?'✦ 天使形态已觉醒':p.qs.length?'📜 持有任务 '+p.qs.length+'/'+QMAX+'·达标后回来交付':'✉ 可沿故事线接取任务'),x,y+36,10.5,'#c9b878','center',null,true);}
 }
-function drawAngelLook(x,y,fr){ // 需求52：阶段奖励外观——翅膀(≥10)/头环(≥半数)/天使形态(全部)
-  if(p.qv>=WING_T){C.save();const fw=10+Math.sin(t*.09)*2.6;C.globalAlpha=.92;
-    for(const s of[-1,1]){const g2=C.createLinearGradient(x,x+s*30,y-22,y+4);
-      g2.addColorStop(0,'rgba(255,255,250,.98)');g2.addColorStop(1,p.qv>=ANGEL_T?'rgba(255,225,130,.65)':'rgba(200,225,255,.45)');
-      C.fillStyle=g2;C.beginPath();C.moveTo(x+s*3,y-10);C.quadraticCurveTo(x+s*(12+fw),y-26,x+s*(22+fw),y-8);C.quadraticCurveTo(x+s*(14+fw*.5),y-2,x+s*3,y+4);C.closePath();C.fill();
-      C.strokeStyle='rgba(255,255,255,.55)';C.lineWidth=1;for(let i=1;i<4;i++){C.beginPath();C.moveTo(x+s*4,y-9+i*2.5);C.lineTo(x+s*(11+i*5+fw*.4),y-19+i*5);C.stroke();}}
-    C.restore();}
-  if(p.qv>=RING_T){C.save();C.strokeStyle='#ffd700';C.lineWidth=2.2;C.shadowColor='#ffe14a';C.shadowBlur=8;
-    C.beginPath();C.ellipse(x,y-24,9,3.2,0,Math.PI,0);C.stroke();
-    C.fillStyle='#fff2b0';C.fillRect(x-1,y-29,2.5,2.5);C.fillRect(x-7,y-27,2,2);C.fillRect(x+5.5,y-27,2,2);C.restore();}
-  if(p.qv>=ANGEL_T){C.save();C.strokeStyle='rgba(255,235,150,.95)';C.lineWidth=3;C.shadowColor='#ffd700';C.shadowBlur=12;
-    C.beginPath();C.ellipse(x,y-35,11,3.6,0,0,7);C.stroke();
-    const g3=C.createRadialGradient(x,y-6,2,x,y-6,28);g3.addColorStop(0,'rgba(255,248,210,.38)');g3.addColorStop(1,'rgba(255,248,210,0)');
-    C.fillStyle=g3;C.beginPath();C.arc(x,y-6,28,0,7);C.fill();C.restore();}
+function drawAngelLook(x,y,fr,part){ // 需求52：阶段奖励外观——翅膀(≥10)/头环(≥半数)/天使形态(全部)
+  /* V1.9.12需求4：part 分层——'back' 只画身体之下的背翼，'front' 只画身体之上的头环/光轮，缺省全画（UI 预览）。
+     修掉旧版两处调用都重画整翼造成的同位双层叠加，并把翅膀放大到约 2 倍 + 拍动/辉光/流光/飘落光羽。 */
+  const angel=p.qv>=ANGEL_T;
+  if(!part||part==='back'){
+    if(p.qv>=WING_T){C.save();
+      const sc=angel?1.25:1; // 天使形态整体再放大
+      const flap=Math.sin(t*.12)*.5+.5; // 0~1 拍动相位
+      const mv=p.walk?Math.abs(Math.sin(p.walk*.5))*.35:0; // 移动时拍得更用力
+      const spread=(18+flap*7+mv*6)*sc; // 翼展随拍动开合
+      const lift=(6+flap*4)*sc; // 翼尖上下抬落
+      C.globalAlpha=.95;
+      C.shadowColor=angel?'rgba(255,215,90,.9)':'rgba(150,200,255,.85)';C.shadowBlur=angel?16:12;
+      for(const s of[-1,1]){
+        const tipx=x+s*(spread+16),tipy=y-24-lift; // 翼尖
+        const outx=x+s*(spread+2),outy=y-6;         // 外缘落点
+        // 外层主羽叶（最大）
+        const g2=C.createLinearGradient(x,tipy,x+s*8,outy);
+        g2.addColorStop(0,'rgba(255,255,252,.98)');g2.addColorStop(.55,angel?'rgba(255,232,150,.82)':'rgba(214,234,255,.7)');g2.addColorStop(1,angel?'rgba(255,214,96,.34)':'rgba(150,196,255,.24)');
+        C.fillStyle=g2;C.beginPath();C.moveTo(x+s*3,y-11);
+        C.quadraticCurveTo(x+s*(spread*.4),y-34*sc,tipx,tipy);
+        C.quadraticCurveTo(x+s*(spread*.9),y-14,outx,outy);
+        C.quadraticCurveTo(x+s*(spread*.4),y-2,x+s*3,y+5);C.closePath();C.fill();
+        // 内层亮羽（较短，压出层次）
+        C.fillStyle=angel?'rgba(255,248,214,.9)':'rgba(244,250,255,.92)';C.beginPath();C.moveTo(x+s*3,y-9);
+        C.quadraticCurveTo(x+s*(spread*.34),y-27*sc,x+s*(spread*.66),tipy+7);
+        C.quadraticCurveTo(x+s*(spread*.5),y-10,x+s*3,y+1);C.closePath();C.fill();
+        // 羽轴描线
+        C.shadowBlur=0;C.strokeStyle='rgba(255,255,255,.6)';C.lineWidth=1;
+        for(let i=1;i<=4;i++){const k=i/5;C.beginPath();C.moveTo(x+s*4,y-8+i*2.4);
+          C.quadraticCurveTo(x+s*(spread*.5)*k,y-20*sc*k,x+s*(spread*.98)*k,tipy+(outy-tipy)*k*.7);C.stroke();}
+        C.shadowBlur=angel?16:12;
+        // 翼尖流光粒子（按帧序号确定性生成，不占粒子池、不入存档）
+        for(let i=0;i<3;i++){const ph=((t*.18)+i*2.1+s)%(Math.PI*2);
+          C.globalAlpha=.5+.4*Math.sin(ph);C.fillStyle=angel?'#fff0b0':'#dff0ff';
+          C.beginPath();C.arc(tipx+s*2+Math.cos(ph)*3,tipy+Math.sin(ph)*3,1.7,0,7);C.fill();}
+        C.globalAlpha=.95;
+      }
+      C.shadowBlur=0;
+      // 翼下飘落光羽：三条错相下落的羽片
+      for(let i=0;i<3;i++){const cyc=((t*.9)+i*46)%138,pr=cyc/138;
+        if(pr<.02)continue;const fy=y-10+pr*34,fx=x+((i-1)*15)+Math.sin(pr*7+i)*7;
+        C.globalAlpha=(1-pr)*.55;C.fillStyle=angel?'#ffe9a8':'#eaf4ff';
+        C.save();C.translate(fx,fy);C.rotate(pr*5+i);C.beginPath();C.ellipse(0,0,1.6,3.4,0,0,7);C.fill();C.restore();}
+      C.restore();}
+  }
+  if(!part||part==='front'){
+    if(p.qv>=RING_T){C.save();C.strokeStyle='#ffd700';C.lineWidth=2.2;C.shadowColor='#ffe14a';C.shadowBlur=8;
+      C.beginPath();C.ellipse(x,y-24,9,3.2,0,Math.PI,0);C.stroke();
+      C.fillStyle='#fff2b0';C.fillRect(x-1,y-29,2.5,2.5);C.fillRect(x-7,y-27,2,2);C.fillRect(x+5.5,y-27,2,2);C.restore();}
+    if(p.qv>=ANGEL_T){C.save();C.strokeStyle='rgba(255,235,150,.95)';C.lineWidth=3;C.shadowColor='#ffd700';C.shadowBlur=12;
+      C.beginPath();C.ellipse(x,y-35,11,3.6,0,0,7);C.stroke();
+      const g3=C.createRadialGradient(x,y-6,2,x,y-6,28);g3.addColorStop(0,'rgba(255,248,210,.38)');g3.addColorStop(1,'rgba(255,248,210,0)');
+      C.fillStyle=g3;C.beginPath();C.arc(x,y-6,28,0,7);C.fill();C.restore();}
+  }
 }
 function dr(p0){return Math.min(.95,p0*20);} // v1.1：所有已备爆出概率×20（封顶95%）
 function makeItem(typeKey,qForce,qBoost){
@@ -2704,7 +2819,7 @@ addEventListener('keydown',function(e){const k=e.key.toLowerCase();if(creUI){ //
   else if(k==='escape')creUI=null;
   else if(e.key.length===1&&creUI.name.length<10&&!e.ctrlKey&&!e.metaKey&&/[\w·\u4e00-\u9fa5]/.test(e.key))creUI.name+=e.key;
   return;}
-    if(k===' '||['q','b','c','h','t','j','escape','1','2','3','4'].includes(k))e.preventDefault();if(!keys[k])onKey(k);keys[k]=true;});
+    if(k===' '||['q','b','c','h','t','j','escape','1','2','3','4'].includes(k))e.preventDefault();if(!keys[k]&&!loading())onKey(k);keys[k]=true;}); // V1.10.0需求3：加载遮罩期间屏蔽游戏键位
 addEventListener('compositionend',function(e){if(creUI){creUI.name=(creUI.name+(e.data||'')).slice(0,10);}}); // 中文输入法上屏
 addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
 /* --- bug1-新18：手机触控（虚拟方向杆 + 攻击/滚轮/技能/背包/人物按钮）--- */
@@ -2825,6 +2940,7 @@ function onDownCore(l,e){
 VIEW.addEventListener('pointerdown',function(e){const l=toLogical(e);
   if(e.pointerType==='touch')touchMode=true;
   if(touchMode&&!started&&!rotDone()&&dist(l.x,l.y,ROT_B.x,ROT_B.y)<ROT_B.r+10){rotDrag.on=true;rotDrag.id=e.pointerId;rotDrag.dx=ROT_B.x-l.x;rotDrag.dy=ROT_B.y-l.y;rotDrag.sx=ROT_B.x;rotDrag.sy=ROT_B.y;rotDrag.moved=false;try{VIEW.setPointerCapture(e.pointerId);}catch(_){}return;} // v1.4需求23/32：选档页也可转屏，同样支持拖拽
+  if(loading())return; // V1.10.0需求3：加载遮罩期间屏蔽一切指针交互（触屏与鼠标同路径）
   if(touchMode&&started){const k=tHit(l),pnl=panelOn(); // V1.9.1：任意面板开启时只允许切换工具钮，不再隔面板移动/攻击/施法
     if(k&&(!pnl||k==='bag'||k==='skp'||k==='cha'||k==='pot'||k==='dex'||k==='rot'||k==='set')){onTouchDown(k,l,e);return;}}
   onDownCore(l,e);});
@@ -3101,6 +3217,7 @@ function castSkill(si){
     if(pass(22))bumpPass(22); // 需求23：时光余裕被动按施法次数熟练升级
   }
   const A=p.aim;
+  p.castAct=ACT_CAST; // V1.9.12需求2：施法起手——升腾蓄势+手前光核
   /* 需求87：技能伤害结合主角属性增幅——伴生技吃力量+敏捷，法术技吃精神+体质（每点+0.5%/+0.2%） */
   const skAmp=s.book?(1+p.st.spi*.005+p.st.vit*.002):(1+p.st.str*.005+p.st.agi*.002);
   const mul=((s.w!=='any'&&s.w===wKind())?1.5:1)*skDmgMul(idx)*skAmp*(SKSCOPE[idx]==='single'?1.35:SKSCOPE[idx]==='aoe'?0.75:1); // 本武器×1.5 × 逐级固定表 × 属性增幅 × v1.4需求15范围平衡
@@ -3235,6 +3352,7 @@ function updatePlayer(){
   if(touchMode&&atkHold){const tg=nearMob(460);if(tg)p.aim=Math.atan2(tg.y-p.y,tg.x-p.x);}
   if(Math.abs(Math.cos(p.aim))>.3)p.dir=Math.cos(p.aim)>0?1:-1;
   if(p.cool>0)p.cool--;
+  if(p.atkAct>0)p.atkAct--;if(p.castAct>0)p.castAct--; // V1.9.12需求2：动作计时递减
   if(p.fury>0)p.fury--;
   if(p.morphCd>0)p.morphCd--; // v1.4需求9：变身冷却计时
     if(p.recallCd>0)p.recallCd--; // v1.4需求17：回城冷却计时
@@ -3247,15 +3365,15 @@ function updatePlayer(){
       if(Math.random()<cb)shootArrow(p.aim+rnd(-.2,.2),.7,0,'#9adcfa');
       // v1.4需求5：弓系独特攻击视觉——元素弓弦光点
       for(let i=0;i<3;i++)parts.push({x:p.x+Math.cos(p.aim)*12+rnd(-3,3),y:p.y-8+Math.sin(p.aim)*12+rnd(-3,3),vx:Math.cos(p.aim)*2+rnd(-.5,.5),vy:Math.sin(p.aim)*2+rnd(-.5,.5),col:ec,t:12,s:2+((mwE?.tier||0)*.15)});
-      p.cool=Math.round(22*fast);sfx(620,.05,'square',.02);}
-    else if(wk==='sword'){p.cool=Math.round(14*fast);const sc=TIERC[Math.min(19,mwE?mwE.tier||0:0)];
+      p.cool=Math.round(22*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;sfx(620,.05,'square',.02);}
+    else if(wk==='sword'){p.cool=Math.round(14*fast);p.atkAct=ACT_MELEE;p.atkDur=ACT_MELEE;p.atkBack=0;const sc=TIERC[Math.min(19,mwE?mwE.tier||0:0)];
       fxSlash(p.x,p.y,p.aim,SR,1.9,sc);areaDmg(p.x,p.y,SR,1,p.aim,1.9);
       if(Math.random()<cb){fxSlash(p.x,p.y,p.aim+.8,SR,1.9,'#9adcfa');areaDmg(p.x,p.y,SR,.5,p.aim+.8,1.9);}
       if(SR>52)fxRing(p.x,p.y,6,SR*.7,sc,2);
       // v1.4需求5：剑系剑气波纹
       for(let i=0;i<4;i++){const a2=p.aim+rnd(-.6,.6);parts.push({x:p.x+Math.cos(a2)*SR*.5,y:p.y+Math.sin(a2)*SR*.5,vx:Math.cos(a2)*1.8,vy:Math.sin(a2)*1.8,col:sc,t:10,s:2.5});}
       sfx(480,.05,'triangle',.03);}
-    else if(wk==='gun'){p.cool=Math.round(9*fast);
+    else if(wk==='gun'){p.cool=Math.round(9*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;
       const bc=EL[wEl()||'fire'].col;
       const pierce0=wfx('e')==='pierce'?1+(wfxPw()>=8?1:0):0;
       projs.push({k:'bullet',x:p.x+Math.cos(p.aim)*16,y:p.y-6+Math.sin(p.aim)*16,vx:Math.cos(p.aim+rnd(-.06,.06))*9.2,vy:Math.sin(p.aim+rnd(-.06,.06))*9.2,t:46,r:3,d:.62,pierce:pierce0,hit:new Set(),col:bc});
@@ -3264,7 +3382,7 @@ function updatePlayer(){
       parts.push({x:p.x+Math.cos(p.aim)*20,y:p.y-6+Math.sin(p.aim)*20,vx:Math.cos(p.aim)*1.5,vy:Math.sin(p.aim)*1.5-.4,col:bc,t:8,s:5+(mwE?mwE.tier||0:0)*.18});
       parts.push({x:p.x+Math.cos(p.aim)*8+rnd(-2,2),y:p.y+4,vx:rnd(1,3),vy:-rnd(1,3),col:'#c9a22a',t:18,s:2}); // 抛壳
       sfx(900,.04,'square',.03);}
-    else if(wk==='staff'){p.cool=Math.round(24*fast);
+    else if(wk==='staff'){p.cool=Math.round(24*fast);p.atkAct=ACT_RANGED;p.atkDur=ACT_RANGED;p.atkBack=1;
       const el=EL[wEl()||'wood'],ec=el?el.col:'#c9a2ff';
       const bR=wfx('e')==='nova'?1+wfxPw()*.05:1;
       projs.push({k:'orb',x:p.x+Math.cos(p.aim)*14,y:p.y-8+Math.sin(p.aim)*14,vx:Math.cos(p.aim)*5.2,vy:Math.sin(p.aim)*5.2,t:100,r:(8+(mwE?mwE.tier||0:0))*bR,d:1.7,pierce:1,hit:new Set(),col:ec,big:1});
@@ -3272,7 +3390,7 @@ function updatePlayer(){
       // v1.4需求5：法杖环绕符文粒子
       for(let i=0;i<5;i++){const a2=p.aim+rnd(-1,1);parts.push({x:p.x+Math.cos(a2)*14,y:p.y-8+Math.sin(a2)*14,vx:Math.cos(a2)*1.2+rnd(-.8,.8),vy:Math.sin(a2)*1.2+rnd(-.8,.8),col:ec,t:16,s:3+((mwE?.tier||0)*.12)});}
       fxRing(p.x,p.y,4,20,ec,2);sfx(680,.1,'sine',.04);}
-    else{p.cool=Math.round(28*fast);fxSlash(p.x,p.y,p.aim,SR+8,2.5,'#ffd27a');areaDmg(p.x,p.y,SR+8,1.6,p.aim,2.5,null,6);
+    else{p.cool=Math.round(28*fast);p.atkAct=ACT_MELEE;p.atkDur=ACT_MELEE;p.atkBack=0;fxSlash(p.x,p.y,p.aim,SR+8,2.5,'#ffd27a');areaDmg(p.x,p.y,SR+8,1.6,p.aim,2.5,null,6);
       if(Math.random()<cb){fxSlash(p.x,p.y,p.aim+1.6,SR+8,2.5,'#ff9a5a');areaDmg(p.x,p.y,SR+8,.8,p.aim+1.6,2.5,null,6);}
       // v1.4需求5：刀系残影震动+暗红刀光
       fxSlash(p.x,p.y,p.aim+.3,SR+12,2.2,'#ff4a4a');fxRing(p.x,p.y,8,SR*.8,'#ffd27a',2);shakeN(3);
@@ -3345,6 +3463,7 @@ function eliteSpell(m,def,a){
   if(m.stun>0||m.frzT>0)return;
   if(m.scool2==null)m.scool2=ri(120,240);
   if(--m.scool2>0)return;
+  m.cAct=ACT_CAST; // V1.9.12需求2：精英/BOSS 法术聚能动作
   const boss=m.kind===2,f=m.dmgMul||1,nm=def.name;
   if(def.lvl>10){ // 需求11：仅大于10级的精英/BOSS 使用套装联动法术
     const fam=SETS[m.key]||'真伤';
@@ -3417,10 +3536,10 @@ function updateMobs(){
       m.x+=Math.cos(a)*sp;m.y+=Math.sin(a)*sp;m.aggro=true; // 需求84：锁定后不限范围全图追击，不再按距离衰减
       if(d<aggroR(def))m.hateT=t; // V1.9.1：追击途中持续刷新仇恨，不再因 30s 脱仇而半路回家
       /* V1.9.1需求B：攻击频次提升——普通 65→40、精英 28→22、BOSS 18→16（并配合受击硬直 40→28 帧，近战才压得满） */
-      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];burst(p.x,p.y-6,'#ff6a5a',3);sfx(220,.04,'square',.02);}
+      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];m.aAct=ACT_MELEE;m.aDur=ACT_MELEE;m.aBack=0;burst(p.x,p.y-6,'#ff6a5a',3);sfx(220,.04,'square',.02);} // V1.9.12需求2：近战扑咬动作
       /* v1.4需求36：全怪通用远程平A——仇恨/索敌中的怪持续向路过玩家发射元素弹（伤害50%，精英/BOSS 更快） */
       if(m.acool>0)m.acool--;
-      else if(d>60&&d<RANGED_R&&m.stun<=0){m.acool=RANGED_CD[m.kind===2?2:m.kind===1?1:0]+ri(0,18);
+      else if(d>60&&d<RANGED_R&&m.stun<=0){m.acool=RANGED_CD[m.kind===2?2:m.kind===1?1:0]+ri(0,18);m.aAct=ACT_RANGED;m.aDur=ACT_RANGED;m.aBack=1; // V1.9.12需求2：远程后坐动作
         projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*4.2,vy:Math.sin(a)*4.2,t:130,r:4,dmg:Math.round(def.dmg*.5*NB()*(m.dmgMul||1)*(m.scnAtk||1)),col:def.col||(EL[def.el]?EL[def.el].col:'#c9d0a8')});}
       mobCast(m,def,a,d); // v1.4需求36：每怪专属技能（普通怪也会施放）
       /* 需求73：精英/BOSS 专属技能——按五行分系；BOSS 额外六芒星爆 */
@@ -3443,6 +3562,7 @@ function updateMobs(){
       m.hopT--;m.x+=Math.cos(m.wanderA)*.35;m.y+=Math.sin(m.wanderA)*.35;
     }
     if(m.cool>0)m.cool--;
+    if(m.aAct>0)m.aAct--;if(m.cAct>0)m.cAct--; // V1.9.12需求2：动作计时递减
     if(m.box){m.x=clamp(m.x,m.box.x,m.box.x+m.box.w);m.y=clamp(m.y,m.box.y,m.box.y+m.box.h);} // v1.5：副本怪锁进围墙，不追出图
     else if(m.aggro){m.x=clamp(m.x,14,W-14);m.y=clamp(m.y,14,H-14);} // 需求84：追击个体可跨全图
     else{const z=ZR(def.zone); // 需求83：无仇恨时被区域边界隔离；脱仇后先走回本区
@@ -4103,6 +4223,16 @@ function draw(){
   if(p.dead>0){C.fillStyle='rgba(30,4,4,.55)';C.fillRect(0,0,LW,LH);
     txt('你被拍扁了…',LW/2,LH/2-16,34,'#e85a5a','center');
     txt(((p.dead/60|0)+1)+' 秒后在落鸦村复活',LW/2,LH/2+22,17,'#cfd2d6','center');}
+  if(loading()){ /* V1.10.0需求3：进出副本全屏加载遮罩——压暗 + 标题 + 进度条 + 旋转法阵，3 秒（180 帧） */
+    const k=1-LOAD.t/180;
+    C.fillStyle='rgba(6,6,14,.88)';C.fillRect(0,0,LW,LH);
+    C.save();C.translate(LW/2,LH/2-58);C.rotate(t*.05);
+    C.strokeStyle='rgba(138,255,255,.75)';C.lineWidth=3;C.setLineDash([26,16]);C.beginPath();C.arc(0,0,34,0,7);C.stroke();
+    C.setLineDash([]);C.globalAlpha=.5;C.strokeStyle='#8affff';C.lineWidth=2;C.beginPath();C.arc(0,0,24,0,7);C.stroke();C.restore();
+    txt('🗺 '+LOAD.txt+'…',LW/2,LH/2+4,26,'#eaf6ff','center','700');
+    bar(LW/2-150,LH/2+26,300,12,k,'#8affff','rgba(255,255,255,.12)');
+    txt(Math.min(100,Math.round(k*100))+'%',LW/2,LH/2+56,13,'#7ea8c8','center');
+    txt(INST.on?INST.name:'落鸦村',LW/2,LH/2+78,12,'#5a6a7a','center',null,true);}
   if(!started)drawStart();
   // 准星
   C.strokeStyle='rgba(255,255,255,.7)';C.lineWidth=1.5;C.beginPath();C.arc(mouse.x,mouse.y,6,0,7);C.stroke();
@@ -4326,7 +4456,15 @@ function drawPlayer(){
     C.fillStyle='#c9a2ff';C.fillRect(x-21,y+r2+12,42*p.morph.i/MORPH_DUR,4);
     txt('🌀'+MORPH_FORM[tier]+'·'+MT[p.morph.key].name+' '+Math.ceil(p.morph.i/60)+'s',x,y+r2+24,10,'#c9a2ff','center');
     return;}
-  if(p.qv>=10)drawAngelLook(x,y,fr); // 需求52：翅膀画在身体之前（层叠在背后）
+  /* V1.9.12需求2：主角攻击/施法动作——攻击沿瞄准方向前冲（近战深、远程轻后坐），
+     施法整体升腾蓄势并在手前凝聚光核。用 translate 包裹 翅膀+身体+装扮+武器，整组同步动。 */
+  let ALX=0,ALY=0,WROT=0,CASTG=0;
+  if(p.atkAct>0){const f=1-Math.min(1,p.atkAct/(p.atkDur||ACT_MELEE)),pu=Math.sin(f*Math.PI);
+    const dd=p.atkBack?7:11;ALX=Math.cos(p.aim)*pu*dd;ALY=Math.sin(p.aim)*pu*dd*.7;
+    WROT=pu*(p.atkBack?.18:1.62);}
+  if(p.castAct>0){const cf=1-Math.min(1,p.castAct/ACT_CAST);CASTG=Math.sin(cf*Math.PI);ALY-=CASTG*4.5;}
+  C.save();C.translate(ALX,ALY);
+  if(p.qv>=10)drawAngelLook(x,y,fr,'back'); // V1.9.12需求4：身体前只画背翼
     for(let i=0;i<NPCS.length;i++)NPCS[i].sayT=Math.max(0,(NPCS[i].sayT||0)-1);
   // v2.0 需求4：装备穿在身上不再染色显示；需求80：造型由捏脸决定
   if(p.fury>0){C.strokeStyle='rgba(210,58,58,'+(.4+Math.sin(t*.3)*.2)+')';C.lineWidth=3;C.beginPath();C.arc(x,y-2,20,0,7);C.stroke();}
@@ -4344,15 +4482,22 @@ function drawPlayer(){
     C.strokeStyle='rgba(154,220,250,'+(.16+.2*Math.sin(t*.4)).toFixed(3)+')';C.lineWidth=2.4;
     C.beginPath();C.arc(x,y-4,r2,0,7);C.stroke();
     C.strokeStyle='rgba(234,246,255,.5)';C.lineWidth=1;C.beginPath();C.arc(x,y-4,r2*.72,0,7);C.stroke();}
-  if(p.qv>=Math.ceil(QALL/2))drawAngelLook(x,y-bob,fr); // 需求52：圣辉头环+天使光轮叠在帽子上方
+  if(p.qv>=Math.ceil(QALL/2))drawAngelLook(x,y-bob,fr,'front'); // V1.9.12需求4：身体后只画头环/光轮，不再重画整翼
   drawCosmetics(x,y-bob); // 需求72：每5成就一件的外显装扮
   const wi=p.equip.mweap?p.equip.mweap.w&&WTYPE[p.equip.mweap.w].i+'@'+(p.equip.mweap.tier||0):'bow@0';
   // bug1-新17：不再按移动方向翻转旋转角，改为沿瞄准轴镜像，避免弓箭朝向反；新3：黄品以上光效
   const flipL=Math.cos(p.aim)<0,mwq=p.equip.mweap?p.equip.mweap.q:0;
   C.save();C.translate(p.x+Math.cos(p.aim)*17,p.y-6-bob+Math.sin(p.aim)*17);C.rotate(p.aim);if(flipL)C.scale(1,-1);
+  if(WROT)C.rotate(WROT*(flipL?-1:1)); // V1.9.12需求2：近战挥砍扫过 / 远程轻微后坐（镜像系取反保证左右一致）
   if(mwq>=3){C.shadowColor=QC[mwq];C.shadowBlur=13;}
   iconR(wi,0,0,26,0);
+  if(CASTG>0){ // V1.9.12需求2：施法光核——手前凝聚的五行光球
+    const ec=(EL[wEl()||'wood']||{}).col||'#9adcfa';
+    C.save();C.globalAlpha=.35+CASTG*.6;C.shadowColor=ec;C.shadowBlur=14*CASTG;C.fillStyle=ec;
+    C.beginPath();C.arc(15,0,3+CASTG*5,0,7);C.fill();
+    C.globalAlpha=.9;C.fillStyle='#ffffff';C.beginPath();C.arc(15,0,1.6+CASTG*2.2,0,7);C.fill();C.restore();}
   C.restore();
+  C.restore(); // V1.9.12需求2：结束攻击/施法整组位移
   if(p.iai>0){C.strokeStyle='rgba(238,244,250,'+(.9-p.iai/20)+')';C.lineWidth=4-p.iai/5;C.beginPath();C.arc(x,y-6,34,(p.aim-1)+(16-p.iai)*.12,(p.aim+1)+(16-p.iai)*.12);C.stroke();}
   if(p.flash>0){C.fillStyle='rgba(232,90,90,.4)';C.beginPath();C.arc(x,y-4,16,0,7);C.fill();}
   if(p.dashCd>0){C.fillStyle='rgba(120,180,255,.75)';C.fillRect(x-10,y+20,20*(1-p.dashCd/DASH.CD),2.5);}
@@ -4506,10 +4651,28 @@ function mobArtBody(m){const k=m.key;
 function drawMobArt(m){
   const sq=mobSprite(m),r=m.r||9;
   const breathe=1+Math.sin(t*.05+m.id)*.018;                       // 待机呼吸（各怪按 id 错相）
-  const sx=(2-breathe)*(1+sq*.12),sy=breathe*(1-sq*.18);           // 挤压：竖压横弹，体积近似守恒
-  C.save();C.translate(m.x+(m.flash>0?rnd(-1.2,1.2):0),m.y);
+  let sx=(2-breathe)*(1+sq*.12),sy=breathe*(1-sq*.18);             // 挤压：竖压横弹，体积近似守恒
+  /* V1.9.12需求2：怪物攻击/施法动作——近战朝玩家扑冲再回弹、远程后坐、施法整体鼓胀+脚下聚能环。
+     变身假怪对象与图鉴预览无玩家参照时安全跳过，只保留原有呼吸形变。 */
+  let ox=0,oy=0,castF=0;
+  if(typeof p!=='undefined'&&p){
+    if(m.aAct>0){const f=1-Math.min(1,m.aAct/(m.aDur||ACT_MELEE)),pu=Math.sin(f*Math.PI);
+      const a=Math.atan2(p.y-m.y,p.x-m.x),sg=m.aBack?-1:1;
+      ox=Math.cos(a)*pu*(m.aBack?4:11)*sg;oy=Math.sin(a)*pu*(m.aBack?3:8)*sg;
+      if(m.aBack){sx*=1-pu*.07;sy*=1+pu*.05;}else{sx*=1+pu*.13;sy*=1-pu*.09;}}
+    if(m.cAct>0){const fc=1-Math.min(1,m.cAct/ACT_CAST);castF=Math.sin(fc*Math.PI);
+      sx*=1+castF*.14;sy*=1+castF*.1;}
+  }
+  C.save();C.translate(m.x+ox+(m.flash>0?rnd(-1.2,1.2):0),m.y+oy);
   C.scale(sx,sy);
   C.translate(-m.x,-m.y);
+  if(castF>0){ // 施法聚能环：脚下亮起蓄能光环
+    const col=(MT[m.key]&&MT[m.key].col)||'#ffd27a';
+    C.save();C.globalAlpha=castF*.85;C.strokeStyle=col;C.lineWidth=2+castF*1.6;
+    C.shadowColor=col;C.shadowBlur=10*castF;
+    C.beginPath();C.ellipse(m.x,m.y+r*.62,r*(.9+castF*.5),r*(.3+castF*.16),0,0,7);C.stroke();
+    C.globalAlpha=castF*.28;C.fillStyle=col;
+    C.beginPath();C.arc(m.x,m.y-r*.3,r*(.5+castF*.55),0,7);C.fill();C.restore();}
   mobArtBody(m);
   if(m.flash<=0){ // 背光轮廓光：受闪白时不叠加，避免整只洗白
     C.strokeStyle='rgba(255,238,200,.13)';C.lineWidth=1.5;
@@ -5835,6 +5998,9 @@ function loop(){
   if(press.on&&!drag.on&&bagOpen&&performance.now()-press.t0>=HOLD){ // bug1-新37：长按满2秒进入拖动模式
     if(press.cell>=0&&bag[press.cell]){drag.from=press.cell;drag.on=true;}else press.on=false;}
   const paused=bagOpen||skPanel||charPanel||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.5.2需求9；v1.5.3需求11：选层面板也暂停；V1.8：设置面板也暂停
+  if(loading()){ // V1.10.0需求3：加载遮罩期间冻结世界更新与输入，仅推进倒计时与特效
+    LOAD.t--;if(LOAD.t<=0){LOAD.txt='';if(INST.on)msg('🗺 '+(INST.name||'副本')+' 展开完毕——开战！','#8affff');else msg('🗺 回到落鸦村——地图加载完毕','#8affff');}
+    updateFx();draw();requestAnimationFrame(loop);return;}
   if(started&&t%20===0)manageMobs(); // bug1-新43：持续按主角位置懒加载/卸载怪物
   if(started&&!paused){updateRide();checkMain();updatePlayer();updateChatter();updateMobs();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
   else updateFx();
