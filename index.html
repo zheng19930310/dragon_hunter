@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.10.1</title>
+<title>降龙猎手 · 五行觉醒 V1.10.2</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -11,10 +11,20 @@ canvas{cursor:crosshair;touch-action:none;display:block}
 /* v1.4需求31：CSS 强制横屏 fallback（iOS Safari / 不支持 orientation.lock 时使用） */
 body.force-landscape{display:block}
 body.force-landscape canvas{position:fixed !important;transform-origin:center center;transform:rotate(-90deg)}
+/* V1.10.2需求10：创建角色的姓名改用真实 <input>。Canvas 里"画"出来的输入框不是可编辑元素，
+   手机上点了不会调起系统键盘。这里把原生输入框精确叠在画布姓名格上方（跟随同一 Z 缩放与
+   force-landscape 的 rotate(-90deg)），字号不低于 16px 以免 iOS 聚焦时自动放大页面。 */
+#nameInput{position:fixed;z-index:20;display:none;border:0;outline:0;background:transparent;box-sizing:border-box;
+  color:#eaffea;font:500 20px/1.2 "Microsoft YaHei",sans-serif;padding:0 10px;border-radius:6px;
+  caret-color:#ffd700;touch-action:auto;-webkit-user-select:text;user-select:text}
+#nameInput.on{display:block}
+#nameInput::placeholder{color:#5f6a58}
+body.force-landscape #nameInput{transform:rotate(-90deg)}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<input id="nameInput" type="text" maxlength="10" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="点这里输入姓名（最多 10 字）">
 <script>
 "use strict";
 /* ============ 高清单Canvas：逻辑960x540 + 高DPR清晰文字 ============ */
@@ -40,6 +50,37 @@ addEventListener('resize',function(){
   // OS 方向已实际变横屏时自动退出 CSS 强制旋转
   if(forceRot&&innerWidth>innerHeight){forceRot=0;document.body.classList.remove('force-landscape');}
   resize();});resize();
+/* V1.10.2需求10：姓名输入框叠层。逻辑坐标 → 屏幕 CSS 像素的正映射，与 toLogical 严格互逆：
+   正常态 screen = rect.left + lx*Z；force-landscape 下画布 rotate(-90deg) 且中心与视口重合，
+   元素局部 (u,v) 映射为屏幕 (cx-v, cy+u)，故 u=(LW/2-lx)*Z、v=(ly-LH/2)*Z，再按框高翻转基线。 */
+const NAME_IN=document.getElementById('nameInput');
+let nameFocus=false;
+function syncNameInput(){
+  if(!NAME_IN)return;
+  if(!creUI||!nameFocus){nameFocus=false;NAME_IN.classList.remove('on');return;}
+  const r=creRects().name;
+  NAME_IN.style.width=(r.w*Z)+'px';NAME_IN.style.height=(r.h*Z)+'px';
+  NAME_IN.style.fontSize=Math.max(16,15*Z)+'px';
+  if(forceRot){ // 画布 rotate(-90deg) 且中心与视口重合：逻辑 x→屏幕 -y、逻辑 y→屏幕 +x。
+    // 先取姓名格中心的屏幕位置，再让布局框以该中心为轴旋转（transform-origin 默认 center，旋转不改变中心）。
+    const cx=innerWidth/2+((r.y+r.h/2)*Z-LH*Z/2), cy=innerHeight/2-((r.x+r.w/2)*Z-LW*Z/2);
+    NAME_IN.style.left=(cx-r.w*Z/2)+'px';NAME_IN.style.top=(cy-r.h*Z/2)+'px';}
+  else{const b=VIEW.getBoundingClientRect();
+    NAME_IN.style.left=(b.left+r.x*Z)+'px';NAME_IN.style.top=(b.top+r.y*Z)+'px';}
+  NAME_IN.classList.add('on');}
+function nameOpen(){ // 点姓名格 → 调起系统键盘（必须在用户手势调用栈内 focus）
+  if(!creUI)return;
+  nameFocus=true;syncNameInput();
+  NAME_IN.value=creUI.name||'';
+  try{NAME_IN.focus();}catch(_){}
+  try{NAME_IN.select();}catch(_){}
+  msg('⌨ 系统键盘已调起：输入姓名（≤10 字），回车或点「确认创建」','#8affff');}
+function nameClose(){nameFocus=false;if(NAME_IN){NAME_IN.classList.remove('on');try{NAME_IN.blur();}catch(_){}}}
+NAME_IN.addEventListener('input',function(){if(creUI)creUI.name=NAME_IN.value.slice(0,10);});
+NAME_IN.addEventListener('blur',function(){nameClose();});
+NAME_IN.addEventListener('keydown',function(e){e.stopPropagation(); // 别把按键同时送进全局游戏键位
+  if(e.key==='Enter'){e.preventDefault();nameClose();confirmCreate();}
+  else if(e.key==='Escape'){e.preventDefault();nameClose();}});
 
 /* ============ 工具 ============ */
 let _seed=20260923;
@@ -275,16 +316,22 @@ const BEATS={metal:'wood',wood:'earth',earth:'water',fire:'metal',water:'fire'};
 const ELKEYS=['metal','wood','water','fire','earth'];
 function elMult(wEl,mEl){if(!wEl||!mEl)return 1;if(BEATS[wEl]===mEl)return 1.5;if(BEATS[mEl]===wEl)return .7;return 1;}
 /* v1.4需求24：全局主动索敌倍率——普通怪也需主动攻击玩家 */
-/* V1.9.1需求A：全怪主动攻击——倍率 1.6→2.8 + 保底索敌半径 1000（约一屏半），怪一入圈即刻锁定追击；
-   配合追击途中持续刷新仇恨，彻底解决"追到一半脱仇回家"。超出 1000 再等 30s 才脱仇，避免全图怪无限堆积 */
-const AGGRO_MUL=2.8;
-const AGGRO_MIN=1000;
-function aggroR(def){return Math.max((def.aggro||120)*AGGRO_MUL,AGGRO_MIN);} // 统一索敌半径：AI 与头顶 👁 预警共用
+/* V1.9.1需求A：全怪主动攻击；V1.10.2需求5：索敌半径收束为「10 个坐标点」——
+   小地图显示的坐标点为基准格，世界像素 = 基准格 × WS(5)，故 10 坐标点 = 50 世界像素。
+   近战怪严格按此值；远程怪（RATK 白名单）额外外扩到其弹道射程，否则它要贴到脸上才肯开火，不成其为一个"远程怪"。
+   旧的 2.8 倍率 + 1000 保底（约一屏半）全部废除——那是"全图怪无脑追人"的根源。 */
+const AGGRO_PTS=10;                     // 需求5：10 个坐标点
+const AGGRO_BASE=AGGRO_PTS*WS;          // = 50 世界像素
+const RATK_R=300;                       // 远程怪保持的射击距离（也是它的额外索敌外扩量）
+function aggroR(def){return AGGRO_BASE+(def.ranged?RATK_R:0);} // 统一索敌半径：AI 与头顶 👁 预警共用（远程怪外扩一个射程）
 /* V1.9.1需求B：攻击频次总表——melee=近战、ranged=远程平A、cast=专属技能（[普通,精英,BOSS]） */
-const MELEE_CD=[40,22,16];            // 原 65 / 28 / 18
-const RANGED_CD=[50,28,20];           // 原 ri(100,160) / 70 / 55
-const CAST_CD=.55;                    // 专属技能冷却倍率（260~400 帧 → 143~220）
-const RANGED_R=520;                   // 远程弹触发距离上限（原 aggro×1.5 仅 140~430）
+/* V1.10.2需求2：怪物普通攻击一律 4~8 秒一次（60 帧/秒）——
+   普通怪 8 秒、精英 6 秒、BOSS 4 秒；远程怪比近战略快半秒，用来补偿它需要维持距离。
+   旧的 40/22/16 帧（0.7~0.27 秒）是"贴脸即融"的根源，全部废弃。 */
+const MELEE_CD=[480,360,240];         // 近战平A：8s / 6s / 4s
+const RANGED_CD=[420,330,240];        // 远程平A：7s / 5.5s / 4s
+const CAST_CD=1;                      // V1.10.2需求3：技能频次不再整体加速（改由表内 cd 逐怪控制）
+const RANGED_R=560;                   // 远程弹飞行触发上限（不超过其索敌圈）
 /* V1.9.12需求2：攻击/施法动作计时（帧）——人怪共用，驱动 drawPlayer/drawMobArt 的整组变换 */
 const ACT_MELEE=14,ACT_RANGED=10,ACT_CAST=22;
 const MT={
@@ -315,6 +362,13 @@ const MT={
   zhuque:{name:'朱雀·南方神武',zone:'south',lvl:74,hp:60000,spd:1.25,dmg:300,exp:150000,coin:[18000,30000],n:0,rate:1,q:[0,0,0,1,4,24,71],r:18,aggro:280,fixed:[870,1400],resp:2400,onlyBoss:1,el:'fire',ranged:1},
 };
 for(const k in MT)if(MT[k].fixed)MT[k].fixed=MT[k].fixed.map(function(v){return v*WS;}); // 新29：固定点换算世界坐标
+/* V1.10.2需求2：远程普通攻击白名单——按设定重评，只有"会吐息/投射/施法"的物种才有远程平A，
+   其余一律纯近战（史莱姆弹跳撞、哥布林挥刀、岩石巨人砸、白虎扑、玄武镇、龙溪龟撞、黄金矿工抡镐、飞升神龟压）。
+   保留远程：fire 烈焰史莱姆(火球) / wind 风精灵(风刃) / scorp 毒蝎(毒针) / bandit 法外狂徒(AK47) /
+   mage 暗影法师(暗影弹) / lava 熔岩领主(熔岩块) / marsh 沼泽蛙(腐毒) / cliff 崖鹰(雷羽) /
+   icef 秘蓝冰帝(冰锥) / altar 血月祭司(血焰) / god 神陨石巨人(陨星) / qinglong 青龙(雷) / zhuque 朱雀(业火)；
+   星灵兽按星座特质：巨蟹吐泡、处女飞针、天蝎毒尾、射手流矢、水瓶倾水、双鱼光弹 = 远程，余皆近战。 */
+const RATK=new Set(['fire','wind','scorp','bandit','mage','lava','marsh','cliff','icef','altar','god','qinglong','zhuque','zod6','zod8','zod9','zod11','zod12']);
 /* 需求49：十二星座区域（南大陆 6列×2行），每区 4只小怪 + 2只精英，杀20精英出BOSS，等级逐座往上叠加 */
 const ZOD=(function(){
   const N=['白羊','金牛','双子','巨蟹','狮子','处女','天秤','天蝎','射手','摩羯','水瓶','双鱼'],
@@ -329,6 +383,8 @@ const ZOD=(function(){
       q:[0,0,Math.max(0,12-i),18,28,20+i,16+i],r:11+(i%3),aggro:210+i*6,el:ELKEYS[i%5],sym:S[i],col:CL[i]};
     L.push(k);}
   return L;})();
+/* V1.10.2需求2：按 RATK 白名单统一回填 ranged 标记（含 12 星灵兽），使 AI 行为与图鉴标注完全一致 */
+for(const _k in MT)MT[_k].ranged=RATK.has(_k)?1:0;
 /* v1.4需求33：每个怪物一个副本——每怪常驻区域内立一座副本入口；需求34：副本本体为独立页面，暂未实现，走近仅提示 */
 const DUNGEONS=(function(){const L=[],DEFCOL=['#b06ae8','#59c959','#7ecfff','#ff9a3a','#e8cf4a','#d86a5a'];
   for(const k in MT){const def=MT[k],r=ZR(def.zone),h=Math.abs(hashStr(k));
@@ -336,50 +392,78 @@ const DUNGEONS=(function(){const L=[],DEFCOL=['#b06ae8','#59c959','#7ecfff','#ff
   return L;})();
 let doorTipT=-9999; // 接近提示限频（8秒一条）
 /* v1.4需求36：每怪专属技能表——普通怪也会主动施放；pattern：rain=扇形5连 / nova=环状8发 / spike=高速重弹 / chain=落雷 / beam=贯穿光束 */
+/* V1.10.2需求3：怪物专属技能全面重做——38 只怪逐一定制，技能名与形态各不相同（旧表 8 只共用 rain、
+   6 只共用 nova，实战看不出差别）。形态库 13 种：
+   fan 扇形吐息 / volley 三段点射 / nova 环形爆发 / lance 高速贯矢 / cross 交叉双刃 / spiral 螺旋连发 /
+   ring 扩散双环 / hail 天降落击 / barrage 散射扫射 / venom 迟缓重弹 / quake 震地眩晕 / chain 落雷瞬击 /
+   beam 贯穿光束。每种再按怪物特性调整发数、速度、伤害占比。
+   cd 为该形态的基准冷却（帧）；实际施放频次由 mobCast 按 普通×1.7 / 精英×1.0 / BOSS×0.62 分档。 */
 const MOB_SKILLS={
-  slime:{n:'酸液喷吐',cd:300,p:'rain',mul:.45},
-  goblin:{n:'哥布林掷石',cd:280,p:'spike',mul:.6},
-  fire:{n:'烈焰爆燃',cd:330,p:'nova',mul:.5},
-  knight:{n:'暗影裂空斩',cd:300,p:'beam',mul:.7},
-  turtle:{n:'龙溪弹雨',cd:360,p:'rain',mul:.5},
-  miner:{n:'金脉喷发',cd:340,p:'nova',mul:.55},
-  bandit:{n:'法外扫射',cd:260,p:'rain',mul:.5},
-  wind:{n:'污染风刃',cd:290,p:'beam',mul:.6},
-  scorp:{n:'毒蝎尾刺',cd:300,p:'spike',mul:.65},
-  rock:{n:'崩山岩崩',cd:400,p:'nova',mul:.6},
-  mage:{n:'暗影法阵',cd:320,p:'rain',mul:.55},
-  lava:{n:'熔岩潮汐',cd:340,p:'nova',mul:.6},
-  ascend:{n:'飞升水术',cd:330,p:'beam',mul:.65},
-  marsh:{n:'瘴雨毒沼',cd:320,p:'rain',mul:.55},
-  cliff:{n:'雷鹰俯冲',cd:300,p:'chain',mul:.7},
-  icef:{n:'秘蓝冰暴',cd:310,p:'spike',mul:.7},
-  altar:{n:'血月制裁',cd:300,p:'beam',mul:.75},
-  god:{n:'神陨星爆',cd:380,p:'nova',mul:.65},
-  xuanwu:{n:'玄武镇岳',cd:320,p:'nova',mul:.65},
-  qinglong:{n:'青龙雷吟',cd:290,p:'chain',mul:.75},
-  baihu:{n:'白虎裂天',cd:290,p:'spike',mul:.7},
-  zhuque:{n:'朱雀焚天',cd:300,p:'rain',mul:.6},
+  slime:  {n:'酸液喷吐',  p:'fan',    cd:300,mul:.42,r:120},
+  goblin: {n:'哥布林掷石',p:'volley', cd:280,mul:.5, r:420},
+  fire:   {n:'烈焰爆燃',  p:'nova',   cd:330,mul:.5, r:150},
+  knight: {n:'暗影裂空斩',p:'beam',   cd:300,mul:.68,r:520},
+  turtle: {n:'龙溪弹雨',  p:'hail',   cd:360,mul:.45,r:340},
+  miner:  {n:'金脉喷发',  p:'lance',  cd:320,mul:.62,r:520},
+  bandit: {n:'法外扫射',  p:'barrage',cd:260,mul:.4, r:560},
+  wind:   {n:'污染风刃',  p:'cross',  cd:280,mul:.55,r:460},
+  scorp:  {n:'毒蝎尾刺',  p:'venom',  cd:340,mul:.7, r:380},
+  rock:   {n:'崩山岩崩',  p:'quake',  cd:420,mul:.66,r:190},
+  mage:   {n:'暗影法阵',  p:'spiral', cd:300,mul:.48,r:440},
+  lava:   {n:'熔岩潮汐',  p:'ring',   cd:350,mul:.55,r:280},
+  ascend: {n:'飞升圣泉',  p:'hail',   cd:380,mul:.5, r:360,heal:1},
+  marsh:  {n:'瘴雨毒沼',  p:'venom',  cd:330,mul:.5, r:400,n2:'瘴气喷涌'},
+  cliff:  {n:'雷鹰俯冲',  p:'chain',  cd:290,mul:.66,r:420},
+  icef:   {n:'秘蓝冰暴',  p:'nova',   cd:320,mul:.6, r:200,n2:'极寒冰锥'},
+  altar:  {n:'血月制裁',  p:'lance',  cd:280,mul:.72,r:540,n2:'血月审判'},
+  god:    {n:'神陨星爆',  p:'hail',   cd:400,mul:.6, r:420,n2:'陨星天降'},
+  xuanwu: {n:'玄武镇岳',  p:'quake',  cd:360,mul:.62,r:230},
+  qinglong:{n:'青龙雷吟', p:'chain',  cd:250,mul:.7, r:520,n2:'苍龙九雷'},
+  baihu:  {n:'白虎裂天',  p:'cross',  cd:270,mul:.7, r:500,n2:'白虎撕咬'},
+  zhuque: {n:'朱雀焚天',  p:'ring',   cd:280,mul:.62,r:320,n2:'业火燎原'},
 };
-for(let i=0;i<12;i++)MOB_SKILLS['zod'+(i+1)]={n:'星辉爆发',cd:320,p:['nova','rain','spike','beam','chain'][i%5],mul:.5+i*.02};
-/* v1.4需求36：怪物施技——按各自 CD 主动释放专属技能；精英/BOSS 缩短 CD，仍叠加 eliteSpell */
+/* 12 星灵兽：按星座特质各配一招，与本体怪不重名（旧版 12 只全叫「星辉爆发」） */
+['白羊冲撞','金牛踏地','双子连矢','巨蟹吐沫','狮子咆哮','处女飞针','天秤裁量','天蝎毒钩','射手流矢','摩羯崩山','水瓶倾泻','双鱼光羽']
+  .forEach(function(nm,i){const k='zod'+(i+1);
+    MOB_SKILLS[k]={n:nm,cd:300-i*4,mul:.5+i*.016,r:[190,200,460,360,170,500,420,380,540,220,300,440][i],
+      p:['quake','quake','volley','fan','nova','barrage','spiral','venom','lance','ring','ring','cross'][i]};});
+/* V1.10.2需求3：怪物施技主流程——按形态库分派，施放频次普通慢 / 精英中 / BOSS 快 */
 function mobCast(m,def,a,d){
   const sk=MOB_SKILLS[m.key];if(!sk)return;
   if(m.skcdT>0){m.skcdT--;return;}
-  if(m.stun>0||d>330)return;
-  m.skcdT=Math.round(sk.cd*CAST_CD*(m.kind===2?.55:m.kind===1?.72:1))+ri(-15,15); // V1.9.1需求B：专属技能冷却整体 ×0.55
-  m.cAct=ACT_CAST; // V1.9.12需求2：施法聚能动作
-  const col=def.col||(EL[def.el]?EL[def.el].col:'#ffd27a'),f=Math.max(4,Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*sk.mul)); // v1.5.2需求7：场景攻强/攻减
-  floatTxt(m.x,m.y-30,'✦ '+sk.n,col);fxRing(m.x,m.y-6,4,20,col,1.8);sfx(620,.06,'triangle',.03);
-  if(sk.p==='rain'){for(let i=-2;i<=2;i++)projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a+i*.24)*4.4,vy:Math.sin(a+i*.24)*4.4,t:110,r:4,dmg:Math.round(f*.42),col:col});}
-  else if(sk.p==='nova'){for(let i=0;i<8;i++)projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(i*.785)*4,vy:Math.sin(i*.785)*4,t:100,r:4,dmg:Math.round(f*.38),col:col});}
-  else if(sk.p==='spike'){projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*7.2,vy:Math.sin(a)*7.2,t:90,r:6,dmg:f,col:col});shakeN(2);}
-  else if(sk.p==='chain'){fxLightning(m.x,m.y);if(d<300){fxLightning(p.x,p.y);burst(p.x,p.y-6,col,4);hurtPlayer(f,m);}shakeN(3);}
-  else{ // 贯穿光束：V1.8需求9——直线光束不再穿墙，被墙体挡住时只打到墙面
-    const bt=wallCastT(m.x,m.y-8,p.x,p.y-6),fr=bt<0?1:bt;
-    for(let i=1;i<=7;i++){const r2=i/7*fr,bx=m.x+(p.x-m.x)*r2,by=m.y-8+(p.y-8-(m.y-8))*r2;parts.push({x:bx,y:by,vx:rnd(-.2,.2),vy:rnd(-.3,-.05),col:col,t:16,s:2.6});}
-    if(bt>=0){const hx=m.x+(p.x-m.x)*bt,hy=m.y-8+(p.y-8-(m.y-8))*bt;
+  const R=sk.r||360;
+  if(m.stun>0||m.frzT>0||d>R)return; // 超出该招射程则不施放（近战型只会在贴身时爆发）
+  /* 频次：普通怪基准×1.7（更稀）、精英×1.0、BOSS×0.62（更密）；再叠 V1.10.2需求2 的普攻冷却不冲突 */
+  m.skcdT=Math.round(sk.cd*(m.kind===2?.62:m.kind===1?1:1.7))+ri(-12,12);
+  m.cAct=ACT_CAST;
+  const col=def.col||(EL[def.el]?EL[def.el].col:'#ffd27a'),f=Math.max(4,Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*sk.mul));
+  floatTxt(m.x,m.y-30,'✦ '+(sk.n2||sk.n),col);fxRing(m.x,m.y-6,4,20,col,1.8);sfx(620,.06,'triangle',.03);
+  if(sk.heal&&m.hp<m.maxhp*.8){const h=Math.round(m.maxhp*.08);m.hp=Math.min(m.maxhp,m.hp+h);floatTxt(m.x,m.y-44,'+'+h,'#59e85a');fxRing(m.x,m.y,6,40,'#7ee0ff',3);}
+  const P=sk.p,px=m.x,py=m.y-8;
+  const shot=function(vx,vy,dmg,r2,t2){projs.push({k:'stone',x:px,y:py,vx:vx,vy:vy,t:t2||110,r:r2||4,dmg:Math.max(1,Math.round(dmg)),col:col});};
+  if(P==='fan'){for(let i=-2;i<=2;i++)shot(Math.cos(a+i*.24)*4.4,Math.sin(a+i*.24)*4.4,f*.4,4,110);}
+  else if(P==='volley'){for(let i=0;i<3;i++)later(function(){if(m.hp>0)shot(Math.cos(a)*5.6,Math.sin(a)*5.6,f*.5,5,100);sfx(520,.04,'square',.02);},i*12);}
+  else if(P==='nova'){for(let i=0;i<8;i++)shot(Math.cos(i*.785)*4,Math.sin(i*.785)*4,f*.38,4,100);}
+  else if(P==='lance'){shot(Math.cos(a)*7.2,Math.sin(a)*7.2,f,6,90);shakeN(2);}
+  else if(P==='cross'){shot(Math.cos(a+.22)*6.4,Math.sin(a+.22)*6.4,f*.55,5,100);shot(Math.cos(a-.22)*6.4,Math.sin(a-.22)*6.4,f*.55,5,100);shakeN(2);}
+  else if(P==='spiral'){for(let i=0;i<9;i++)later(function(){if(m.hp>0){const an=t*.13+i*.7;shot(Math.cos(an)*4.2,Math.sin(an)*4.2,f*.24,4,120);}},i*5);}
+  else if(P==='ring'){for(let w=0;w<2;w++)later(function(){fxRing(px,py,6,60+w*70,col,3);
+      for(let i=0;i<10;i++)shot(Math.cos(i*.628+w*.314)*(3.4+w*.9),Math.sin(i*.628+w*.314)*(3.4+w*.9),f*.2,4,120);},w*16);}
+  else if(P==='hail'){for(let i=0;i<5;i++)later(function(){const tx=p.x+rnd(-70,70),ty=p.y+rnd(-60,40);
+      fxRing(tx,ty,4,30,col,2);burst(tx,ty,col,5);sfx(220,.05,'square',.03);
+      if(dist(tx,ty,p.x,p.y)<40)hurtPlayer(Math.round(f*.4),m);},i*9);}
+  else if(P==='barrage'){for(let i=0;i<9;i++){const an=a+rnd(-.5,.5);shot(Math.cos(an)*rnd(5,7.4),Math.sin(an)*rnd(5,7.4),f*.26,3,95);}shakeN(2);}
+  else if(P==='venom'){for(let i=-1;i<=1;i++)shot(Math.cos(a+i*.3)*2.9,Math.sin(a+i*.3)*2.9,f*.55,7,150);} // 低速大弹：看得出、躲得开、打得疼
+  else if(P==='quake'){fxRing(px,py,6,Math.min(R,200),col,4);shakeN(5);sfx(120,.2,'sawtooth',.06);
+    for(let i=0;i<6;i++)shot(Math.cos(i*1.047)*3,Math.sin(i*1.047)*3,f*.24,5,90);
+    if(d<R){hurtPlayer(f,m);floatTxt(p.x,p.y-46,'⛰ 震地','#ffd27a');}}
+  else if(P==='chain'){fxLightning(px,py);if(d<R){fxLightning(p.x,p.y);burst(p.x,p.y-6,col,4);hurtPlayer(f,m);}shakeN(3);}
+  else{ // beam 贯穿光束：V1.8需求9——不穿墙，被墙体挡住只打到墙面
+    const bt=wallCastT(px,py,p.x,p.y-6),fr=bt<0?1:bt;
+    for(let i=1;i<=7;i++){const r2=i/7*fr,bx=px+(p.x-px)*r2,by=py+(p.y-8-py)*r2;parts.push({x:bx,y:by,vx:rnd(-.2,.2),vy:rnd(-.3,-.05),col:col,t:16,s:2.6});}
+    if(bt>=0){const hx=px+(p.x-px)*bt,hy=py+(p.y-8-py)*bt;
       burst(hx,hy,col,6);fxRing(hx,hy,3,22,col,1.6);floatTxt(hx,hy-16,'🧱 墙挡住了光束','#8ab8d8');sfx(180,.06,'square',.03);}
-    else if(d<320){burst(p.x,p.y-4,col,5);hurtPlayer(f,m);flashS=.08;}}
+    else if(d<R){burst(p.x,p.y-4,col,5);hurtPlayer(f,m);flashS=.08;}}
 }
 /* ============ v1.5.0 需求1/3/5：副本实例平面 + 爬塔 —— 世界东南角专属区域；进副本即卸载主世界全部怪（需求5） ============ */
 const MTKEYS=Object.keys(MT);
@@ -808,8 +892,9 @@ const WX=[
   {k:'fog',  n:'大雾',ic:'🌫',col:'#cfd6cc',tint:'rgba(196,204,196,.20)',  tip:'雾失楼台'},
   {k:'wind', n:'疾风',ic:'🍃',col:'#a8e8c0',tint:'rgba(140,192,162,.10)',  tip:'大风卷地'}];
 let schI=SCH_START,dark=SHICHEN[SCH_START].dk,nightB=0,wxI=0,wxT=0,wxSeq=-1;
-/* V1.9.12需求1：大雾只在早晨（卯3·辰4）与傍晚（申8·酉9）概率出现，其余时辰一律不出雾 */
-const FOG_K='fog',FOG_OK=[3,4,8,9],FOG_P=.28;
+/* V1.9.12需求1：大雾只在早晨（卯3·辰4）与傍晚（申8·酉9）概率出现，其余时辰一律不出雾；
+   V1.10.2需求4：雾会影响视野与体验，概率由 .28 下调到 .12（较低概率），即晨昏四时辰内也大概率是晴好天 */
+const FOG_K='fog',FOG_OK=[3,4,8,9],FOG_P=.12;
 function isFog(i){return WX[i].k===FOG_K;}
 function pickWx(i){ // V1.9.12需求1：早晚时辰按 FOG_P 概率出雾；非早晚的抽取池直接剔除雾
   if(FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P)return WX.findIndex(function(w){return w.k===FOG_K;});
@@ -1151,7 +1236,7 @@ function blessReset(){blessInit();p.bless={q:blessNewQ(),done:0,r:p.bless.r};ble
 function drawSetPanel(){
   blessInit();
   const pw=650,ph=520,px=LW/2-pw/2,py=12; // V1.10.1需求5：面板加高以容纳音频区
-  panel(px,py,pw,ph);btn(px+pw-34,py+8,26,22,'✕',function(){setOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：补右上角✕（与其余面板统一），右下文字关闭钮保留
+  panel(px,py,pw,ph);closeBtn(px+pw-40,py+8,30,26,function(){setOpen=false;sfx(420,.06,'square',.03);}); // V1.10.2需求7 // V1.9.1需求3：补右上角✕（与其余面板统一），右下文字关闭钮保留
   txt('⚙ 设置 · 播报内容与祝福弹幕',px+16,py+14,16,'#e8cf4a');
   txt('📢 播报内容',px+18,py+48,13,'#8fd08f');
   const ROWS=[['☠ 普通怪击杀','kN'],['★ 精英击杀','kE'],['☠ BOSS 击杀','kB'],['🎁 拾物播报','drop'],['🧧 祝福弹幕播报','bless']];
@@ -1482,7 +1567,7 @@ function drawBima(){
 function drawMntPanel(){
   const pw=592,ph=474,px=LW/2-pw/2,py=32;panelRect={x:px,y:py,w:pw,h:ph};
   rr(px,py,pw,ph,10);C.fillStyle='#171422';C.fill();C.strokeStyle='#8a6a30';C.lineWidth=2;C.stroke();
-  btn(px+pw-34,py+8,26,22,'✕',function(){mountOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：御骑厩补右上角✕
+  closeBtn(px+pw-40,py+8,30,26,function(){mountOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：御骑厩补右上角✕
   txt('🏇 弼马温 · 御骑厩',px+pw/2,py+20,16,'#e8c86a','center');
   const unN=MOUNTS.filter(function(m){return mntUn(m.key);}).length,cm=myMnt();
   txt('已收 '+unN+' / '+MOUNTS.length+' 骑 · 当前「'+(cm?cm.n:'未骑（可去马桩乘凡马）')+'」· 移速 +'+mntSpdAdd(),px+pw/2,py+40,11,'#9ab8a8','center');
@@ -1527,7 +1612,7 @@ function drawHorseStand(){ // 营地马桩：栅栏+木牌+拴着的马
 function drawRidePanel(){ // 骑乘目的地面板：双列分页
   const pw=560,ph=430,px=LW/2-pw/2,py=52;panelRect={x:px,y:py,w:pw,h:ph};
   rr(px,py,pw,ph,10);C.fillStyle='#1c2416';C.fill();C.strokeStyle='#8a6a30';C.lineWidth=2;C.stroke();
-  btn(px+pw-34,py+8,26,22,'✕',function(){rideOpen=towerSelOpen=false;mountOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：骑乘目的地补右上角✕
+  closeBtn(px+pw-40,py+8,30,26,function(){rideOpen=towerSelOpen=false;mountOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：骑乘目的地补右上角✕
   txt('🏇 营地马桩 —— 选择骑乘目的地（E / 💬 下马）',LW/2,py+22,16,'#e8c86a','center');
   const per=16,pgs=Math.max(1,Math.ceil(RIDE_DEST.length/per));ridePage=clamp(ridePage,0,pgs-1);
   const list=RIDE_DEST.slice(ridePage*per,ridePage*per+per);
@@ -1540,7 +1625,7 @@ function drawRidePanel(){ // 骑乘目的地面板：双列分页
 function drawTowerSelPanel(){ // v1.5.3需求11：塔层传送面板（只能传到自己刷过的楼层）
   const pw=500,ph=430,px=LW/2-pw/2,py=52;panelRect={x:px,y:py,w:pw,h:ph};
   rr(px,py,pw,ph,10);C.fillStyle='#161c26';C.fill();C.strokeStyle='#4a6a8a';C.lineWidth=2;C.stroke();
-  btn(px+pw-34,py+8,26,22,'✕',function(){towerSelOpen=false;mountOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：塔层传送补右上角✕
+  closeBtn(px+pw-40,py+8,30,26,function(){towerSelOpen=false;mountOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：塔层传送补右上角✕
   txt('🗼 通天塔 —— 选择已征服的楼层传送',LW/2,py+22,16,'#e8cf4a','center');
   const tm=Math.min(100,p.ach2.towerMax||0);
   btn(px+16,py+38,pw-32,34,'⚔ 从第 '+(tm+1)+' 层继续登塔（正常爬升）',function(){towerSelOpen=false;mountOpen=false;enterTowerFloor(tm+1,false);});
@@ -2120,11 +2205,11 @@ function drawVillager(n,i){ // v1.4需求29：村民立绘真实华丽化——�
   txt(n.name,x,y+32,11.5,'hsl('+hue+',65%,80%)','center',null,true);
   if(npcNear()===i){txt(touchMode||isTouch()?'按 “谈” 交谈':'按 E 交谈',x,y-32,11,'#fff2b0','center');}
   if(n.sayT>0&&dist(p.x,p.y,x,y)<320){ // 对话气泡
-    const tw=n.say.length*12+18,bx=clamp(x-tw/2,8,LW-8);void bx;
+    const tw=n.say.length*15+20,bx=clamp(x-tw/2,8,LW-8);void bx; // V1.10.2需求6：字号放大后气泡同步加宽
     C.save();C.globalAlpha=Math.min(1,n.sayT/50);
     rr(x-tw/2,y-64,tw,24,8);C.fillStyle='rgba(250,248,235,.95)';C.fill();C.strokeStyle='hsl('+n.hue+',50%,60%)';C.lineWidth=1.5;C.stroke();
     C.beginPath();C.moveTo(x-5,y-40);C.lineTo(x+5,y-40);C.lineTo(x,y-32);C.closePath();C.fill();
-    txt(n.say,x,y-52,11,'#2a2418','center',null,true);C.restore();}
+    txt(n.say,x,y-54,14.5,'#2a2418','center',null,true);C.restore();}
 }
 /* ============ v1.5.3需求18：营地商业区——摊位/幡旗/零部件；需求19：建筑可破坏（10次击毁，5分钟自动修复） ============ */
 const STALLS=[
@@ -2441,11 +2526,12 @@ function dexDropTable(k){const d=MT[k],rows=[['金币 ×1只','区间 '+d.coin[0
   return rows;}
 function drawDex(){
   const w=720,h=480,x=(LW-w)/2,y=26,ks=dexKeys(),pages=Math.ceil(ks.length/DEXPER);
+  panelRect={x:x,y:y,w:w,h:h}; // V1.10.2需求8：登记面板矩形，点遮罩空白才能正确判定为"面板外" 
   const pmob={x:0,y:0,r:9,id:9998,t:0,hopT:0,ang:0,flash:0,frost:0,phase:0,walk:0,step:0,homeX:0,homeY:0,kind:0,hp:1,maxhp:1,key:'slime'}; // 卡片缩略图共用对象
   dexPage=clamp(dexPage,0,pages-1);
   rr(x,y,w,h,10);C.fillStyle='rgba(8,10,7,.96)';C.fill();C.strokeStyle='#5a7a4a';C.lineWidth=2;C.stroke();
   txt('📖 怪物图鉴 · 击杀过的怪物才会显形（当前 '+ks.filter(function(k){return (p.kills[k]||0)>0;}).length+'/'+ks.length+'）',x+16,y+15,14,'#e8cf4a');
-  btn(x+w-34,y+7,26,24,'✕',function(){dexOpen=false;});
+  closeBtn(x+w-42,y+7,32,27,function(){dexOpen=false;sfx(420,.06,'square',.03);});
   if(dexPage>0)btn(x+16,y+34,54,24,'◀ 上页',function(){dexPage--;});
   txt((dexPage+1)+' / '+pages,x+82,y+41,11,'#8a9a7a');
   if(dexPage<pages-1)btn(x+130,y+34,54,24,'下页 ▶',function(){dexPage++;});
@@ -2480,12 +2566,13 @@ function drawDex(){
 }
 function drawMorphPanel(){ // v1.4需求9：变身面板——列出全部怪物，已完全解锁成就的可变身，未解锁的点击提示“请解锁XX成就”
   const w=560,h=486,x=(LW-w)/2,y=28;
+  panelRect={x:x,y:y,w:w,h:h}; // V1.10.2需求8：变身面板旧版漏登记 panelRect → 点空白关不掉
   rr(x,y,w,h,10);C.fillStyle='rgba(10,8,16,.96)';C.fill();C.strokeStyle='#8a6ae8';C.lineWidth=2;C.stroke();
   txt('🌀 万象变身 · 选择形态（成就解锁越多，变身形态越强）',x+w/2,y+20,14,'#c9a2ff','center','bold');
   const cands=morphCands(),list=morphList();
   const cdTxt=(p.morphCd||0)>0?' · 冷却 '+Math.ceil(p.morphCd/60)+'s':'';
   txt('可变身怪物 '+cands.length+'/'+list.length+' · 解锁1/2/3档成就→普通/精英/BOSS形态（属性×10/16/24，持60秒、冷却30秒）'+cdTxt,x+w/2,y+38,9.5,cands.length?'#8a9a7a':'#e85a5a','center');
-  btn(x+w-40,y+8,32,24,'✕',function(){morphOpen=false;});
+  closeBtn(x+w-44,y+8,32,26,function(){morphOpen=false;sfx(420,.06,'square',.03);});
   if(p.morph)btn(x+w-130,y+8,84,24,'✨ 解除变身',releaseMorph,'#6a3a6a'); // 需求78B：面板内直接解除
   const per=17,cols=2;
   for(let col=0;col<cols;col++){for(let r0=0;r0<per;r0++){const ci=col*per+r0;if(ci>=list.length)break;
@@ -2503,36 +2590,40 @@ function drawMorphPanel(){ // v1.4需求9：变身面板——列出全部怪物
   txt('每个怪物有3档成就（击杀10/50/150）：解锁1档→普通变身，2档→精英变身，3档→BOSS变身；灰色项需先去讨伐；变身期间不可接交任务','#6a7a5a',x+w/2,y+h-12,8.5,'center');
 }
 function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方式+自动激活效果+外观进度
+  /* V1.10.2需求6：手机字太小——任务/成就面板整体改大字号，并按字号计算列宽，避免溢出 */
+  const SC=1.02,FH=11.5,FS=10,FN=9,FD=14.5,FROW=13*1.3; // 标题/进度行/主线行/支线徽章/支线行/行高
+  const COLW=Math.floor((560-28)/2); // 单列可用宽
   const w=560,h=470,x=(LW-w)/2,y=34;
   panelRect={x:x,y:y,w:w,h:h}; // V1.9.1需求3：任务/成就面板补齐 panelRect，点面板外才能正确判定
   rr(x,y,w,h,10);C.fillStyle='rgba(8,10,6,.95)';C.fill();C.strokeStyle='#8a7a3a';C.lineWidth=2;C.stroke();
-  btn(x+w-34,y+8,26,22,'✕',function(){questOpen=false;sfx(420,.06,'square',.03);}); // V1.9.1需求3：成就页无关闭按钮→补上
-  txt('📖 主线任务 · 📜 支线讨伐 · 🎖 成就勋章',x+w/2,y+20,15,'#ffd700','center','bold');
+  closeBtn(x+w-42,y+8,32,26,function(){questOpen=false;sfx(420,.06,'square',.03);}); // V1.10.2需求7：成就页 ✕ 走 top 热区 + 外扩命中区 // V1.9.1需求3：成就页无关闭按钮→补上
+  txt('📖 主线任务 · 📜 支线讨伐 · 🎖 成就勋章',x+w/2,y+20,16.5,'#ffd700','center','bold');
   const wing=p.qv>=WING_T,ring=p.qv>=RING_T,angel=p.qv>=ANGEL_T;
-  txt('进度 '+p.qv+'/'+QALL+' ｜ 🪽光之翼 '+(wing?'✔已获得':'需'+WING_T+'(现'+p.qv+')')+' ｜ 👑圣辉头环 '+(ring?'✔已获得':'需'+RING_T+'(现'+p.qv+')')+' ｜ 👼天使形态 '+(angel?'✔已觉醒':'需'+ANGEL_T+'(现'+p.qv+')'),x+w/2,y+40,10.5,angel?'#fff2b0':'#c9b878','center');
+  txt('进度 '+p.qv+'/'+QALL+' ｜ 🪽光之翼 '+(wing?'✔已获得':'需'+WING_T+'(现'+p.qv+')')+' ｜ 👑圣辉头环 '+(ring?'✔已获得':'需'+RING_T+'(现'+p.qv+')')+' ｜ 👼天使形态 '+(angel?'✔已觉醒':'需'+ANGEL_T+'(现'+p.qv+')'),x+w/2,y+40,12,angel?'#fff2b0':'#c9b878','center');
   const md=MAINLIN[p.main]; // v1.5.3需求13/14：顶部主线区（当前章 + 等级门槛 + 剧情）
   const mnm=md?(md.k==='tower'?'登塔层数':(MT[md.k]?MT[md.k].name:md.k)):'—';
-  txt(md?('📖 主线 '+md.c+'《'+md.t+'》—— 讨伐'+mnm+' '+mainProg()+'/'+md.n+(p.lvl<md.lv?' · ⛔需Lv'+md.lv+'（现Lv'+p.lvl+'）':' · ✔已解锁')):'📖 主线——所有章节已完成，你本身就是传说',x+w/2,y+56,10.5,md&&p.lvl<md.lv?'#e85a5a':'#ff9ad5','center');
-  const mtxt=md?('💼 '+md.go).slice(0,52)+'…':'💼 「猎人的冒险没有终点」——塔顶的答案已经写完了';
-  txt(mtxt,x+w/2,y+70,9.5,'#c9b878','center');
-  txt(p.qs.length?'持有支线 '+p.qs.length+'/'+QMAX+'：'+p.qs.slice(0,3).map(function(q){return STORY[q.qi].name+'（'+qProg(q.qi)+'/'+STORY[q.qi].st[q.sj].t+'）'}).join('　')+(p.qs.length>3?' …':''):'当前无进行中支线——到营地天使处按 E 接取',x+w/2,y+84,10.5,p.qs.length?'#e8cf4a':'#8ab8d8','center'); // 需求75；v1.5.3需求13： STORY 线转为支线
+  txt(md?('📖 主线 '+md.c+'《'+md.t+'》—— 讨伐'+mnm+' '+mainProg()+'/'+md.n+(p.lvl<md.lv?' · ⛔需Lv'+md.lv+'（现Lv'+p.lvl+'）':' · ✔已解锁')):'📖 主线——所有章节已完成，你本身就是传说',x+w/2,y+57,12,md&&p.lvl<md.lv?'#e85a5a':'#ff9ad5','center');
+  const mtxt=md?('💼 '+md.go).slice(0,46)+'…':'💼 「猎人的冒险没有终点」——塔顶的答案已经写完了';
+  txt(mtxt,x+w/2,y+72,11,'#c9b878','center');
+  txt(p.qs.length?'持有支线 '+p.qs.length+'/'+QMAX+'：'+p.qs.slice(0,2).map(function(q){return STORY[q.qi].name+'（'+qProg(q.qi)+'/'+STORY[q.qi].st[q.sj].t+'）'}).join('　')+(p.qs.length>2?' …':''):'当前无进行中支线——到营地天使处按 E 接取',x+w/2,y+87,12,p.qs.length?'#e8cf4a':'#8ab8d8','center'); // 需求75；v1.5.3需求13： STORY 线转为支线
   /* 需求75：当前持有任务的目标坐标一览（多任务时循环展示） */
-  if(p.qs.length){const q0=p.qs[t>>4%p.qs.length],zc=zoneCoord(STORY[q0.qi].zone);txt('🧭 下一目标 '+STORY[q0.qi].name+' → 坐标 ('+zc.x+','+zc.y+')'+(STORY[q0.qi].zone==='town'?'［营地天使广场］':''),x+w/2,y+97,10.5,'#8fd08f','center');}
-  const per=18;for(let col=0;col<2;col++){const cx0=x+14+col*276,cy0=y+110; // 修复：第二列需右移 276px；v1.5.3主线区挤占后列表下移
+  if(p.qs.length){const q0=p.qs[(t>>4)%p.qs.length],zc=zoneCoord(STORY[q0.qi].zone);txt('🧭 下一目标 '+STORY[q0.qi].name+' → 坐标 ('+zc.x+','+zc.y+')'+(STORY[q0.qi].zone==='town'?'［营地天使广场］':''),x+w/2,y+101,12,'#8fd08f','center');}
+  const per=17;for(let col=0;col<2;col++){const cx0=x+14+col*COLW,cy0=y+116; // 修复：第二列需右移 276px；v1.5.3主线区挤占后列表下移
     for(let r=0;r<per;r++){const i=col*per+r;if(i>=STORY.length)break;const s=STORY[i];
       let stt,dc;if(qDone(i,2)){stt='✔✔✔';dc='#8fd08f';}else if(!qDone(i,1)&&qProg(i)>=s.st[1].t){stt='✔✔·待交';dc='#e8cf4a';}else if(!qDone(i,0)&&qProg(i)>=s.st[0].t){stt='✔·待交';dc='#e8cf4a';}else{const cq=p.qs.filter(function(q){return q.qi===i;})[0];if(cq){stt='▶ '+qProg(i)+'/'+s.st[cq.sj].t;dc='#b06ae8';}else{stt='· '+qProg(i)+'/'+s.st[qDone(i,0)?qDone(i,1)?2:0:0].t;dc='#77807a';}} // 目标数按档取（兼容村民线10/30/80）
       const zc88=zoneCoord(s.zone); // 需求88：成就列表标注怪物坐标
-      txt((r+1+col*per)+'. '+s.name+' 🧭'+zc88.x+','+zc88.y+' '+stt,cx0,cy0+r*13,9.5,dc);
-      if(qDone(i,0))txt('🎖'+s.st[0].d.split('：')[1],cx0+150,cy0+r*13,8.5,'#6a7a5a');
-      if(qDone(i,1))txt('🎖'+s.st[1].d.split('：')[1],cx0+196,cy0+r*13,8.5,'#6a7a5a');
-      if(qDone(i,2))txt('🎖'+s.st[2].d.split('：')[1],cx0+242,cy0+r*13,8.5,'#6a7a5a');
+      txt((r+1+col*per)+'. '+s.name+' 🧭'+zc88.x+','+zc88.y+' '+stt,cx0,cy0+r*FROW,FN,dc);
+      const badge=function(j){let d=s.st[j].d.split('：')[1]||'';const lim=Math.floor(((j===0?152:j===1?200:246)*SC)/FD*FD);return d.length>lim?d.slice(0,lim)+'…':d;};
+      if(qDone(i,0))txt('🎖'+badge(0),cx0+154*SC,cy0+r*FROW+1,FS,'#7c8f6a');
+      if(qDone(i,1))txt('🎖'+badge(1),cx0+202*SC,cy0+r*FROW+1,FS,'#7c8f6a');
+      if(qDone(i,2))txt('🎖'+badge(2),cx0+250*SC,cy0+r*FROW+1,FS,'#7c8f6a');
     }}
   /* 需求77：装备/材料收集成就列表（自动实时刷新） */
   const matN=Object.keys(p.colMat||{}).length,eqN=p.colEq||0;
   const COLS=[['📚 收藏家·凡品（拾装 10 件）',eqN>=10,'('+eqN+'/10)'],['📚 收藏家·珍品（拾装 50 件）',eqN>=50,'('+eqN+'/50)'],['📚 收藏家·大师（拾装 150 件）',eqN>=150,'('+eqN+'/150)'],['🧺 拾荒学徒（收集 20 种材料）',matN>=20,'('+matN+'/20)'],['🧺 拾荒宗师（收集 50 种材料）',matN>=50,'('+matN+'/50)']];
-  txt('🧵 收集成就（拾装/拾材自动计数）',x+14,y+h-70,10.5,'#ffd700',null,'bold');
-  for(let k=0;k<COLS.length;k++){const done=COLS[k][1];txt((done?'✔ ':'○ ')+COLS[k][0]+' '+COLS[k][2],x+14+(k%3)*180,y+h-56+((k/3)|0)*12,9.5,done?'#8fd08f':'#77807a');}
-  txt('勋章效果自动激活生效；击杀计数全程统计，无需重复接取已达标怪物',x+w/2,y+h-12,9.5,'#8a9a7a','center');
+  txt('🧵 收集成就（拾装/拾材自动计数）',x+14,y+h-72,12.5,'#ffd700',null,'bold');
+  for(let k=0;k<COLS.length;k++){const done=COLS[k][1];txt((done?'✔ ':'○ ')+COLS[k][0]+' '+COLS[k][2],x+14+(k%2)*276,y+h-56+((k/2)|0)*15,11,done?'#8fd08f':'#77807a');}
+  txt('勋章效果自动激活生效；击杀计数全程统计，无需重复接取已达标怪物',x+w/2,y+h-12,11,'#8a9a7a','center');
 }
 function drawAngelNPC(){ // 需求51/66：驻地任务交接人——具象化天使（光轮+羽冠+长发+宝袍+双层巨翼+星尘环绕）
   const x=ANGEL.x,y=ANGEL.y+Math.sin(t*.045)*5; // 轻微悬浮呼吸感
@@ -2715,6 +2806,9 @@ function bossAlive(key){return mobs.some(function(m){return m.key===key&&m.kind=
 function spawnBoss(key){if(bossAlive(key))return;spawnMob(key,2);flashS=.35;shakeN(8);arp([120,90,120,70],110);
   msg('⚠ 击杀20只精英达成——「'+MT[key].name+'·BOSS」红光冲天现身！能爆10件装备','#e85a5a');}
 const MOBCAP=100; // bug1-新44：全局存活怪上限，防止太多卡顿
+/* V1.10.2需求1：主世界普通怪死亡后固定 30 秒（1800 帧）才刷新，不再按区域 60 帧速刷；
+   定点守护怪（骑士/龙溪龟等）与神兽仍走各自 def.resp（精英 900 帧、神兽 2400 帧）不变 */
+const RESP_N=1800;
 function initWorld(){ // bug1-新43：不再一次性铺满全图，改为按区域就近懒加载
   for(const k in MT){MT[k]._loaded=false;if(MT[k]._elite==null)MT[k]._elite=MT[k].fixed?1:ri(2,4);}
   mobs.length=0;respawns.length=0;pet.x=p.x;pet.y=p.y-34;manageMobs();}
@@ -2860,6 +2954,7 @@ function toLogical(e){
     return {x:(u+LW*Z/2)/Z,y:(v+LH*Z/2)/Z};}
   const r=VIEW.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*LW,y:(e.clientY-r.top)/r.height*LH};}
 addEventListener('keydown',function(e){const k=e.key.toLowerCase();if(creUI){ // 需求79：创建面板内直接键入姓名（不弹窗）；需求8：中文输入法合成中不拦截，保证拼音候选正常工作
+  if(nameFocus)return; // V1.10.2需求10：系统键盘正操作原生输入框，这里必须原样放行
   if(e.isComposing||e.keyCode===229){if(k==='escape')creUI=null;return;}
   e.preventDefault();
   if(k==='backspace')creUI.name=creUI.name.slice(0,-1);
@@ -2868,7 +2963,7 @@ addEventListener('keydown',function(e){const k=e.key.toLowerCase();if(creUI){ //
   else if(e.key.length===1&&creUI.name.length<10&&!e.ctrlKey&&!e.metaKey&&/[\w·\u4e00-\u9fa5]/.test(e.key))creUI.name+=e.key;
   return;}
     if(k===' '||['q','b','c','h','t','j','escape','1','2','3','4'].includes(k))e.preventDefault();if(!keys[k]&&!loading())onKey(k);keys[k]=true;}); // V1.10.0需求3：加载遮罩期间屏蔽游戏键位
-addEventListener('compositionend',function(e){if(creUI){creUI.name=(creUI.name+(e.data||'')).slice(0,10);}}); // 中文输入法上屏
+addEventListener('compositionend',function(e){if(creUI&&!nameFocus){creUI.name=(creUI.name+(e.data||'')).slice(0,10);}}); // 中文输入法上屏（聚焦真实输入框时由 input 事件负责）
 addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
 /* --- bug1-新18：手机触控（虚拟方向杆 + 攻击/滚轮/技能/背包/人物按钮）--- */
 let touchMode=false,atkHold=0;const ptr={};
@@ -2961,6 +3056,16 @@ VIEW.addEventListener('pointermove',onPointerMove);
 /* V1.9.1需求3/5：面板开启时，底层 HUD 热区（头像/技能栏/回城/小地图下方设置钮）一律不响应——
    hot[] 按绘制顺序先注册先响应，之前“背包页隔空点到回城”“技能面板点学习却触发回城”均因 HUD 热区抢在前面 */
 function panelOn(){return bagOpen||skPanel||charPanel||chestOpen||questOpen||morphOpen||dexOpen||rideOpen||towerSelOpen||mountOpen||setOpen;}
+/* V1.10.2需求8：全平台板统一关闭入口——关闭钮、Esc、点遮罩空白、键盘快捷键全部走这里，
+   避免旧代码每处手写一长串 xxxOpen=false 而漏掉某个面板（需求7「成就页关不掉」正是这类遗漏） */
+function closeAllPanels(){bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=mountOpen=setOpen=false;
+  selEq=-1;skSel=-1;if(press)press.on=false;}
+function openOnly(k){closeAllPanels(); // 互斥开启：一次只允许一个面板
+  if(k==='bag'){bagOpen=true;selBag=-1;}else if(k==='skp')skPanel=true;else if(k==='cha')charPanel=true;
+  else if(k==='quest')questOpen=true;else if(k==='morph')morphOpen=true;else if(k==='dex')dexOpen=true;
+  else if(k==='chest')chestOpen=true;else if(k==='ride')rideOpen=true;else if(k==='mount')mountOpen=true;
+  else if(k==='tower')towerSelOpen=true;else if(k==='set')setOpen=true;
+  if(k==='set'){setOpen=true;msg('⚙ 设置：击杀播报分级 / 拾取物品播报 / 祝福弹幕开关与密度（再按 O 关闭）','#e8c86a');}}
 function hotAt(l,skipCell){
   const lock=panelOn();
   for(let ps=0;ps<2;ps++) // 第一遍只认 top（面板内主操作钮，允许压在网格上），第二遍再认其余
@@ -2981,8 +3086,8 @@ function onDownCore(l,e){
   } // 拖拽中交给 mouseup 换位
   if(justSwapped){justSwapped=false;return;}
   if(hotAt(l,false))return;
-  if(bagOpen||skPanel||charPanel||chestOpen||questOpen||morphOpen||dexOpen||rideOpen||towerSelOpen||mountOpen||setOpen){ // 手机单手：点面板外任意处关闭当前面板
-    if(!panelRect||l.x<panelRect.x||l.x>panelRect.x+panelRect.w||l.y<panelRect.y||l.y>panelRect.y+panelRect.h){bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;}
+  if(panelOn()){ // V1.10.2需求8：点遮罩层空白处即关闭（统一走 closeAllPanels）
+    if(!panelRect||l.x<panelRect.x||l.x>panelRect.x+panelRect.w||l.y<panelRect.y||l.y>panelRect.y+panelRect.h)closeAllPanels();
     return;}
   mouse.x=l.x;mouse.y=l.y;mouse.down=true;}
 VIEW.addEventListener('pointerdown',function(e){const l=toLogical(e);
@@ -3578,16 +3683,24 @@ function updateMobs(){
     const d=dist(m.x,m.y,p.x,p.y),sp=def.spd*NB()*(m.frost>0?.5:1)*(m.frzT>0?0:1)*(m.scnSpd||1); // v1.5.2需求7：场景移速加成/冻伤减速；V1.9需求2：夜战移速加成
     if(m.dot){if(--m.dot.t<=0)m.dot=null;else if(--m.dot.tick<=0){m.dot.tick=m.dot.iv;m.hp-=m.dot.dv;m.flash=2;floatTxt(m.x+8,m.y-14,''+m.dot.dv,m.dot.col);}} // 中毒/灼烧 DoT
     if(m.aggro&&t-(m.hateT||-9e9)>1800){m.aggro=false;floatTxt(m.x,m.y-20,'脱仇','#8a9a7a');} // 需求85：30秒未受击自动释放仇恨
-    /* V1.9.1需求A：全怪主动攻击——统一索敌半径 aggroR（2.8 倍 + 保底 1000），怪一入圈即锁定主角追击 */
+    /* V1.10.2需求5：索敌半径 = 10 个坐标点（50 像素），远程怪额外外扩一个射程；
+       V1.10.2需求2：远程平A 只属于白名单物种——近战怪不再隔空打人；
+       普通攻击一律 4~8 秒一次（MELEE_CD / RANGED_CD）。 */
+    const isR=!!def.ranged,KITE=150; // 远程怪维持的理想射击距离
     if(m.stun<=0&&m.frzT<=0&&p.dead===0&&(d<aggroR(def)||m.aggro)){
       const a=Math.atan2(p.y-m.y,p.x-m.x);
-      m.x+=Math.cos(a)*sp;m.y+=Math.sin(a)*sp;m.aggro=true; // 需求84：锁定后不限范围全图追击，不再按距离衰减
+      if(isR&&d<KITE){ // 远程怪：贴脸则后撤保持射击距离（风筝），不再硬撞
+        m.x-=Math.cos(a)*sp*.85;m.y-=Math.sin(a)*sp*.85;
+        if(d<70){m.x+=Math.cos(a+1.57)*sp*.5;m.y+=Math.sin(a+1.57)*sp*.5;}
+        pushEnt(m,8);} // V1.10.2需求2：后撤不得穿墙/越界
+      else{m.x+=Math.cos(a)*sp;m.y+=Math.sin(a)*sp;} // 近战怪（与远程怪拉开距离后）贴上去
+      m.aggro=true;
       if(d<aggroR(def))m.hateT=t; // V1.9.1：追击途中持续刷新仇恨，不再因 30s 脱仇而半路回家
-      /* V1.9.1需求B：攻击频次提升——普通 65→40、精英 28→22、BOSS 18→16（并配合受击硬直 40→28 帧，近战才压得满） */
-      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];m.aAct=ACT_MELEE;m.aDur=ACT_MELEE;m.aBack=0;burst(p.x,p.y-6,'#ff6a5a',3);sfx(220,.04,'square',.02);} // V1.9.12需求2：近战扑咬动作
-      /* v1.4需求36：全怪通用远程平A——仇恨/索敌中的怪持续向路过玩家发射元素弹（伤害50%，精英/BOSS 更快） */
+      /* 近战平A：进入贴身判定圈才出手，冷却 4~8 秒（远程怪被逼到脸上时同样可挥击保底） */
+      if(d<(m.r||def.r)+18&&m.cool<=0){hurtPlayer(Math.round(def.dmg*NB()*(m.dmgMul||1)*(m.scnAtk||1)*(m.kind===2?1.15:m.kind===1?1:0.9)),m);m.cool=MELEE_CD[m.kind===2?2:m.kind===1?1:0];m.aAct=ACT_MELEE;m.aDur=ACT_MELEE;m.aBack=0;burst(p.x,p.y-6,'#ff6a5a',3);asfx(220,.04,'square',.02);} // V1.9.12需求2：近战扑咬动作
+      /* 远程平A：仅白名单物种，7~4 秒一发，且不超过 RANGED_R */
       if(m.acool>0)m.acool--;
-      else if(d>60&&d<RANGED_R&&m.stun<=0){m.acool=RANGED_CD[m.kind===2?2:m.kind===1?1:0]+ri(0,18);m.aAct=ACT_RANGED;m.aDur=ACT_RANGED;m.aBack=1; // V1.9.12需求2：远程后坐动作
+      else if(isR&&d>50&&d<RANGED_R&&m.stun<=0&&m.cool<=0){m.acool=RANGED_CD[m.kind===2?2:m.kind===1?1:0];m.cool=m.acool;m.aAct=ACT_RANGED;m.aDur=ACT_RANGED;m.aBack=1; // V1.9.12需求2：远程后坐动作
         projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(a)*4.2,vy:Math.sin(a)*4.2,t:130,r:4,dmg:Math.round(def.dmg*.5*NB()*(m.dmgMul||1)*(m.scnAtk||1)),col:def.col||(EL[def.el]?EL[def.el].col:'#c9d0a8')});}
       mobCast(m,def,a,d); // v1.4需求36：每怪专属技能（普通怪也会施放）
       /* 需求73：精英/BOSS 专属技能——按五行分系；BOSS 额外六芒星爆 */
@@ -3628,11 +3741,11 @@ function updateMobs(){
       else if(K===1){p.ek[m.key]=(p.ek[m.key]||0)+1;
         if(p.set.kE)msg('💠 精英'+def.name+'被击杀！累计'+p.ek[m.key]+'/20 召出BOSS','#5a9de8');
         if(p.ek[m.key]>=20){p.ek[m.key]=0;spawnBoss(m.key);}
-        respawns.push({key:m.key,kind:1,t:900});} // 精英自动刷新：30秒后回归1-3只存量
+        respawns.push({key:m.key,kind:1,t:900});} // 精英自动刷新：15 秒后回归存量（需求1的 30 秒只约束普通怪）
       else if(K===2){if(p.set.kB)msg('🏆 BOSS「'+def.name+'·王」被讨伐！神装满地的快捡！','#ffd700');flashS=.4;
               if(def.onlyBoss){respawns.push({key:m.key,kind:2,t:def.resp||2400});msg('✦ '+def.name+'将于40秒后在此山重组真身','#e8cf4a');}} // 需求48：神兽单只死亡后排队重生
       else if(def.fixed){} // 定点守护怪（骑士/龙溪龟等）被杀后由区域懒加载复位，不排常规队
-      else{respawns.push({key:m.key,kind:0,t:def.resp||60});
+      else{respawns.push({key:m.key,kind:0,t:RESP_N}); // V1.10.2需求1：主世界普通怪统一 30 秒后才刷新
         if(p.set.kN){ // V1.8需求2：普通怪击杀播报可关
         if(m.key==='knight')msg('暗影骑士被击败！决斗场蓄势再现 (94,94)','#b8a8d8');
         if(m.key==='turtle')msg('龙溪龟的护盾碎裂了…','#7ee0ff');
@@ -4169,6 +4282,12 @@ function rr(x,y,w,h,r){C.beginPath();C.moveTo(x+r,y);C.arcTo(x+w,y,x+w,y+h,r);C.
 function panel(x,y,w,h){panelRect={x:x,y:y,w:w,h:h};rr(x,y,w,h,10);C.fillStyle='rgba(12,14,9,.93)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=2;C.stroke();rr(x,y,w,30,10);C.fillStyle='rgba(232,207,74,.08)';C.fill();}
 let panelRect=null;
 function btn(x,y,w,h,label,fn,col){rr(x,y,w,h,6);C.fillStyle=col||'#3a4a2a';C.fill();C.strokeStyle='rgba(255,255,255,.25)';C.lineWidth=1.5;C.stroke();txt(label,x+w/2,y+h/2,Math.min(15,h*.5),'#fff','center');hot.push({x:x,y:y,w:w,h:h,fn:fn});}
+/* V1.10.2需求7/8：统一关闭钮——热区在可见按钮四周各外扩 PAD 像素（手机上 26×22 太小几乎点不中，
+   点偏就落进面板矩形内 → 什么都不做，表现就是"关闭按钮关闭不掉"）；同时以 top 热区优先响应。 */
+function closeBtn(x,y,w,h,fn,lab){const PAD=13;
+  rr(x,y,w,h,7);C.fillStyle='rgba(120,30,26,.92)';C.fill();C.strokeStyle='#e07a6a';C.lineWidth=1.6;C.stroke();
+  txt(lab||'✕',x+w/2,y+h/2+1,(h*.62)|0||15,'#ffe9e4','center','700');
+  hot.push({x:x-PAD,y:y-PAD,w:w+PAD*2,h:h+PAD*2,fn:fn,top:1});}
 
 function draw(){
   const d=Z*DPR;C.setTransform(d,0,0,d,0,0);
@@ -4202,7 +4321,7 @@ function draw(){
   for(const c of clones)drawClone(c);
   for(const m of mobs){ // 精英蓝光/BOSS红光：缩放+脉动光晕+名称标签（bug1-新7/8）
       mobAura(m); // bug1-新33：所有怪物脚下霸气光环
-      if(m.kind){const sc=m.kind===2?1.55:1.12,gcol=m.kind===2?'#ff3a2a':'#4aa8ff',gp=.35+.25*Math.sin(t*.1+m.id);
+      if(m.kind){const sc=m.kind===2?1.85:1.12,gcol=m.kind===2?'#ff3a2a':'#4aa8ff',gp=.35+.25*Math.sin(t*.1+m.id);
         C.save();C.translate(m.x,m.y);C.scale(sc,sc);C.translate(-m.x,-m.y);
         const gr=C.createRadialGradient(m.x,m.y,4,m.x,m.y,34);gr.addColorStop(0,gcol);gr.addColorStop(1,'rgba(0,0,0,0)');
         C.globalAlpha=gp;C.fillStyle=gr;C.beginPath();C.arc(m.x,m.y,34,0,7);C.fill();C.globalAlpha=1;
@@ -4213,8 +4332,8 @@ function draw(){
       }else{drawMobArt(m);mvpFx(m,m.x,m.y);}
       if(m.sayT>0&&m.say){ // v1.5.3需求16：精英碎碎念/BOSS独白气泡
         C.save();C.globalAlpha=Math.min(1,m.sayT/40);
-        if(m.kind===2){const tw=m.say.length*13+22;rr(m.x-tw/2,m.y-96,tw,26,8);C.fillStyle='rgba(46,10,12,.93)';C.fill();C.strokeStyle='#d84a3a';C.lineWidth=1.6;C.stroke();txt(m.say,m.x,m.y-83,12,'#ffd2c2','center',null,true);}
-        else{const tw=m.say.length*10.5+16;rr(m.x-tw/2,m.y-72,tw,20,7);C.fillStyle='rgba(18,26,44,.92)';C.fill();C.strokeStyle='#5a8ac0';C.lineWidth=1.2;C.stroke();txt(m.say,m.x,m.y-62,10,'#cfe4ff','center',null,true);}
+        if(m.kind===2){const tw=m.say.length*16.5+24;rr(m.x-tw/2,m.y-102,tw,31,8);C.fillStyle='rgba(46,10,12,.93)';C.fill();C.strokeStyle='#d84a3a';C.lineWidth=1.8;C.stroke();txt(m.say,m.x,m.y-86,15,'#ffd2c2','center',null,true);} // V1.10.2需求6：BOSS 独白放大
+        else{const tw=m.say.length*13.5+18;rr(m.x-tw/2,m.y-76,tw,25,7);C.fillStyle='rgba(18,26,44,.92)';C.fill();C.strokeStyle='#5a8ac0';C.lineWidth=1.2;C.stroke();txt(m.say,m.x,m.y-63,12.5,'#cfe4ff','center',null,true);} // 精英碎碎念放大
         C.restore();}
       /* v1.4需求35：仇恨可视化——已锁敌头顶红❗闪烁；索敌圈内未锁敌淡👁 */
       if(m.aggro){if((t>>4)%2)txt('❗',m.x+(m.r||MT[m.key].r)*.72,m.y-(m.r||MT[m.key].r)-10,13,'#ff5a4a','center');}
@@ -4228,9 +4347,9 @@ function draw(){
     else drawPlayer();
     if(p.scn&&SCENES[p.scn]&&!rideOpen){const S=SCENES[p.scn];txt(S.ic+S.n+(p.ride?' ':''),p.x,p.y-68,11.5,S.col,'center',null,true);}
     if(p.sayT>0&&p.say){ // v1.5.3需求19：主角自言自语气泡
-      C.save();C.globalAlpha=Math.min(1,p.sayT/40);const tw=p.say.length*11+18;
-      rr(p.x-tw/2,p.y-94,tw,22,7);C.fillStyle='rgba(250,248,235,.94)';C.fill();C.strokeStyle='#8a6a30';C.lineWidth=1.3;C.stroke();
-      txt(p.say,p.x,p.y-83,10.5,'#2a2418','center',null,true);C.restore();}}
+      C.save();C.globalAlpha=Math.min(1,p.sayT/40);const tw=p.say.length*14+20;
+      rr(p.x-tw/2,p.y-98,tw,27,7);C.fillStyle='rgba(250,248,235,.94)';C.fill();C.strokeStyle='#8a6a30';C.lineWidth=1.3;C.stroke();
+      txt(p.say,p.x,p.y-85,13.5,'#2a2418','center',null,true);C.restore();}}
   drawAngelNPC(); // 需求51：驻地天使交接人（世界层渲染，靠近显提示）
   drawDungeons(); // v1.4需求33/34：每怪副本入口（v1.5：已开启）
     drawTowerWorld(); // v1.5需求3：主世界通天塔
@@ -4250,6 +4369,7 @@ function draw(){
   hot=[];
   if(setOpen&&(bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen))setOpen=false; // V1.8需求1：与其它面板互斥收起
   const anyPanel=bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.4需求16；v1.5.3需求11；V1.8：设置面板
+  if(!anyPanel)bossThreatTop(); // V1.10.2需求9：BOSS 威压层（面板打开时让位）
   drawHUD();drawSkillBar();drawMinimap();drawSetBtn();drawMsgs();drawKillFeed();drawZoneBanner();drawWxBan();drawBlessBand();drawClockChip(anyPanel);hotBase=hot.length; // V1.8需求3：祝福播报区（在面板与暗化遮罩之下）；V1.9需求1：时辰/天气顶栏读数
   if(!anyPanel)drawQuestTracker(); // 需求67：常驻任务列表（面板开启时不画）
   if(p.runT>=150&&!anyPanel)drawRunWind(); // 需求62：长距离奔跑风向速度线
@@ -4729,6 +4849,44 @@ function drawMobArt(m){
     C.beginPath();C.arc(m.x,m.y-r*.55,r*1.04,.3,2.1);C.stroke();}
   C.restore();
 }
+/* V1.10.2需求9：BOSS 要有"霸气"，跟精英/普通怪拉开三档差距。
+   屏幕层（世界平移已撤销，所以坐标用 sx=m.x-camX 换算）补三件事：
+   1) 屏幕正上方专属血条：名字+等级+精确血量，精英/小怪没有这个待遇；
+   2) 以 BOSS 为中心的三重压迫红环 + 全屏暗角，离得越近压得越紧；
+   3) 低血王冠火星闪烁（lineWidth 随呼吸跳动），营造"要拼命了"的气势。 */
+function bossThreat(m){
+  if(!m||m.kind!==2||m.hp<=0)return;
+  const sx=m.x-camX,sy=m.y-camY;
+  const pl=.5+.5*Math.sin(t*.06), dp=clamp(dist(m.x,m.y,p.x,p.y)/520,0,1);
+  /* 暗角 + 压迫环：越近越浓 */
+  C.save();
+  C.globalAlpha=(.10+.08*pl)*(1-dp*.7);
+  const vg=C.createRadialGradient(LW/2,LH/2,LH*.3,LW/2,LH/2,LH*.95);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(150,10,10,1)');
+  C.fillStyle=vg;C.fillRect(0,0,LW,LH);
+  C.globalAlpha=.55+.25*pl;
+  C.strokeStyle='rgba(255,60,40,'+(.30*(1-dp*.6)).toFixed(3)+')';C.lineWidth=2.4;
+  for(let i=0;i<3;i++){const rr2=96+i*30+pl*8;C.beginPath();C.arc(sx,sy,rr2,0,7);C.stroke();}
+  C.restore();
+  /* 顶部专属血条 */
+  const low=clamp(m.hp/m.maxhp,0,1), bx=292, bw=Math.min(470,LW-bx-214), by=34; // 让开左上 HUD(278)、顶栏时辰条(y≤30) 与右上小地图(772)
+  C.save();
+  C.globalAlpha=.92;rr(bx-3,by-3,bw+6,30,8);C.fillStyle='rgba(16,6,6,.88)';C.fill();
+  C.strokeStyle='#c8392a';C.lineWidth=1.8+(low<.25?1.4*pl:0);C.stroke();
+  rr(bx,by+11,bw,15,5);C.fillStyle='#2a0d0d';C.fill();
+  const hg=C.createLinearGradient(bx,by,bx+bw,by);hg.addColorStop(0,'#ff8a3a');hg.addColorStop(.5,'#e8262a');hg.addColorStop(1,'#7a0f1c');
+  C.save();C.beginPath();rr(bx,by+11,bw*low,15,5);C.clip();C.fillStyle=hg;C.fillRect(bx,by+11,bw,15);C.restore();
+  C.fillStyle='rgba(255,255,255,.12)';C.fillRect(bx,by+11,bw*low,5);
+  C.save();C.globalAlpha=.3+.4*pl;C.fillStyle='#ffdca0';C.fillRect(bx+bw*low-3,by+11,3,15);C.restore();
+  C.restore();
+  C.globalAlpha=1;
+  txt('☠ '+MT[m.key].name+'　Lv'+m.lvl,LW/2,by+6,15,'#ffe1c8','center','bold',true);
+  txt(Math.ceil(m.hp)+' / '+m.maxhp,bx+bw-4,by+18.5,10.5,'#ffd7c2','right','700',true);
+}
+/* 只画"最近的一只"BOSS，避免同屏两只时血条互相覆盖 */
+function bossThreatTop(){let best=null,bd=1e9;
+  for(const m of mobs){if(m.kind!==2||m.hp<=0)continue;const d=dist(m.x,m.y,p.x,p.y);if(d<bd){bd=d;best=m;}}
+  if(best&&bd<820)bossThreat(best);}
 function drawMobHp(m){ // 需求5：所有怪物血条（未满时显示）+ v1.4需求7：头顶常驻 Lv
   const r=m.r||9,off=(m.kind===2?42:m.kind===1?32:r+15),w=Math.max(26,r*(m.kind?2.6:2.4)),x=m.x,y=m.y-off;
   const lv=m.lvl||MT[m.key].lvl;
@@ -5338,7 +5496,7 @@ function drawSetBtn(){
 function drawMsgs(){
   msgs.forEach(function(m,i){
     C.globalAlpha=Math.min(1,m.t/50);
-    txt(m.txt,LW/2,LH-92-i*22,14,m.col,'center');
+    txt(m.txt,LW/2,LH-95-i*24,16,m.col,'center'); // V1.10.2需求6：播报文字加大
     C.globalAlpha=1;
   });
 }
@@ -5417,29 +5575,29 @@ let qTrackOpen=true; // V1.10.1需求6：左侧任务追踪可收起/展开（�
 function drawQuestTracker(){
   const md=MAINLIN[p.main]; // v1.5.3需求13：主线置顶常驻追踪
   if(!md&&!p.qs.length)return;
-  const x=10,y=230,w=300; // V1.10.1需求6：加宽容纳放大字体
+  const x=10,y=230,w=326; // V1.10.1需求6：加宽容纳放大字体；V1.10.2需求6：继续放宽
   if(!qTrackOpen){ // 收起态：仅一条标题栏，点击展开
     C.save();C.globalAlpha=.94;
     rr(x,y,w,26,7);C.fillStyle='rgba(8,10,6,.74)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.2;C.stroke();
-    txt('📜 任务追踪（'+p.qs.length+'）▸ 展开',x+w/2,y+13,13,'#ffd700','center',null,true);
+    txt('📜 任务追踪（'+p.qs.length+'）▸ 展开',x+w/2,y+14,15,'#ffd700','center',null,true); // V1.10.2需求6：收起态字号放大
     C.restore();
     hot.push({x:x,y:y,w:w,h:26,fn:function(){qTrackOpen=true;sfx(760,.06,'triangle',.03);}});
     return;}
-  const rows=Math.min(p.qs.length,8),mt=p.lvl>=5?18:0,h=32+rows*20+(md?32:0)+mt; // V1.10.1需求6：字号行高整体放大
+  const rows=Math.min(p.qs.length,8),mt=p.lvl>=5?22:0,RH=23,h=36+rows*RH+(md?36:0)+mt; // V1.10.1需求6：字号行高整体放大；V1.10.2需求6：再放大一档
   C.save();C.globalAlpha=.94;
   rr(x,y,w,h,7);C.fillStyle='rgba(8,10,6,.74)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.2;C.stroke();
   hot.push({x:x,y:y,w:w,h:24,fn:function(){qTrackOpen=false;sfx(420,.06,'square',.03);}}); // 点标题行收起
   let oy=0;
   if(md){const mnm=md.k==='tower'?'登塔':(MT[md.k]?MT[md.k].name:'');
-    txt('📖 主线 '+md.c+'《'+md.t+'》',x+w/2,y+11,12.5,'#ff9ad5','center',null,true);
-    txt((p.lvl<md.lv?'⛔ 解锁需 Lv'+md.lv:'🎯 '+mnm+' '+mainProg()+'/'+md.n),x+w/2,y+26,11.5,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);oy=32;}
-  txt('📜 支线 '+p.qs.length+'/'+QMAX+' · ▾ 收起',x+w/2,y+12+oy,12.5,'#ffd700','center',null,true);
+    txt('📖 主线 '+md.c+'《'+md.t+'》',x+w/2,y+12,14,'#ff9ad5','center',null,true);
+    txt((p.lvl<md.lv?'⛔ 解锁需 Lv'+md.lv:'🎯 '+mnm+' '+mainProg()+'/'+md.n),x+w/2,y+28,13,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);oy=36;}
+  txt('📜 支线 '+p.qs.length+'/'+QMAX+' · ▾ 收起',x+w/2,y+13+oy,14,'#ffd700','center',null,true);
   for(let s=0;s<rows;s++){const q=p.qs[s],st=STORY[q.qi].st[q.sj],prog=qProg(q.qi),ok=prog>=st.t;
     const zc=zoneCoord(STORY[q.qi].zone); // 需求75：目标坐标
-    txt((s+1)+'. '+STORY[q.qi].name+' 🧭'+zc.x+','+zc.y,x+8,y+28+oy+s*20,11.5,ok?'#8fd08f':'#dfe4da',null,null,true);
-    txt(prog+'/'+st.t+(ok?' ✓':''),x+w-8,y+28+oy+s*20,11.5,ok?'#ffd700':'#8a9a7a','right',null,true);}
-  if(p.qs.length>rows)txt('…另有 '+(p.qs.length-rows)+' 项（J 查看）',x+w/2,y+h-6-mt,11,'#8a9a7a','center',null,true);
-  if(mt){const mn=mntCur();txt(mn?'🏇 坐骑：讨伐 '+mn.mkn:'🏇 '+MOUNTS.length+'骑已齐',x+w/2,y+h-6,11,'#e8c86a','center',null,true);}
+    txt((s+1)+'. '+STORY[q.qi].name+' 🧭'+zc.x+','+zc.y,x+8,y+30+oy+s*RH,13,ok?'#8fd08f':'#dfe4da',null,null,true);
+    txt(prog+'/'+st.t+(ok?' ✓':''),x+w-8,y+30+oy+s*RH,13,ok?'#ffd700':'#8a9a7a','right',null,true);}
+  if(p.qs.length>rows)txt('…另有 '+(p.qs.length-rows)+' 项（J 查看）',x+w/2,y+h-7-mt,12.5,'#8a9a7a','center',null,true);
+  if(mt){const mn=mntCur();txt(mn?'🏇 坐骑：讨伐 '+mn.mkn:'🏇 '+MOUNTS.length+'骑已齐',x+w/2,y+h-6,12.5,'#e8c86a','center',null,true);}
   C.restore();
 }
 /* ===== 需求62：长时间移动后全屏风向速度线，表达奔跑如飞 ===== */
@@ -5496,7 +5654,7 @@ function drawBag(){
   btn(x+w-430,y+6,150,24,'🧺 扩展+2行 '+bagUpCost()+'金',expandBag,'#5a4a2a');
   btn(x+w-150,y+6,112,24,'💰 一键卖装备',function(){sellAll();},'#7a5a1e');
   btn(x+w-270,y+6,112,24,'🧹 一键整理',function(){doSort();},'#3a4a6a');
-  btn(x+w-32,y+6,24,24,'✕',function(){bagOpen=false;selEq=-1;});
+  closeBtn(x+w-40,y+6,30,26,function(){bagOpen=false;selEq=-1;sfx(420,.06,'square',.03);});
   /* 需求76：背包自动售卖开关——装备/武器/药品/技能书/材料 各自独立，锁定物品不卖 */
   const asN=p.autoSell||(p.autoSell={eq:false,wp:false,pot:false,book:false,mat:false});
   const AS=[['eq','装备','#5a9de8'],['wp','武器','#b06ae8'],['pot','药品','#59c959'],['book','技能书','#e8b33a'],['mat','材料','#c9a24a']];
@@ -5651,7 +5809,7 @@ function drawChest(){
   const cw=448,chh=514,x=(LW-cw)/2,y=20,cell=40,gx=x+24,gy=y+108;
   panel(x,y,cw,chh);
   txt('📦 据点仓库（第'+(chestPage+1)+'/'+CHESTPAGES+'页 · '+chest.filter(Boolean).length+'/'+chest.length+'格）',x+16,y+14,15,'#e8cf4a');
-  btn(x+cw-32,y+6,24,24,'✕',function(){chestOpen=false;});
+  closeBtn(x+cw-40,y+6,30,26,function(){chestOpen=false;sfx(420,.06,'square',.03);});
   txt('点击仓库物品→取出到背包；到背包面板选中物品点「存仓库」',x+16,y+40,10,'#9ab');
   for(let pg=0;pg<CHESTPAGES;pg++)btn(x+24+pg*80,y+58,76,34,'第'+(pg+1)+'页',function(){chestPage=pg;},pg===chestPage?'#5a7a3a':'#3a4a3a');
   const base=chestPage*CHESTMASK;
@@ -5731,7 +5889,7 @@ function drawChar(){
   if(wipeArm&&t-wipeArm>180)wipeArm=0;
   if(reArm&&t-reArm>180)reArm=0;
   panel(x,y,w,h);txt('🧍 '+(p.gender==='女'?'♀':'♂')+p.name+' · 人物面板（档'+(curSlot+1)+'）',x+16,y+15,15,'#e8cf4a');
-  btn(x+w-32,y+6,24,24,'✕',function(){charPanel=false;});
+  closeBtn(x+w-40,y+6,30,26,function(){charPanel=false;sfx(420,.06,'square',.03);});
   txt('Lv'+p.lvl,x+16,y+44,13,'#cdd6c0');
   bar(x+92,y+44,220,10,p.exp/expNeed(),'#d8c34a','#3a3214');
   txt('EXP '+p.exp+'/'+expNeed(),x+202,y+49,9,'#fff','center');
@@ -5781,7 +5939,7 @@ function drawChar(){
 function drawSkPanel(){
   const w=640,h=530,x=(LW-w)/2,y=8;
   panel(x,y,w,h);txt('⚡ 技能搭配：主动任选4上栏（带主武器×1.5）· 法术需技能书学习 · 被动到级自动生效',x+16,y+15,13,'#e8cf4a');
-  btn(x+w-30,y+5,24,22,'✕',function(){skPanel=false;skSel=-1;});
+  closeBtn(x+w-38,y+5,30,26,function(){skPanel=false;skSel=-1;sfx(420,.06,'square',.03);});
   // 当前技能栏选择
   txt('技能栏：',x+16,y+52,13,'#cdd6c0');
   for(let i=0;i<4;i++){
@@ -5926,12 +6084,12 @@ function resetPlayer(){ // 创建新角色前重置为初始态
 }
 let creUI=null; // 需求79：页面内创建角色面板（姓名/性别/捏脸均不弹窗）
 function createCharacter(slot){ // 需求33+79+80：打开页面内创建面板
-  creUI={slot:slot,name:'',gender:'男',face:{hat:0,face:0,hair:0,top:0,pants:0,shoe:0}};
+  creUI={slot:slot,name:'',gender:'男',face:{hat:0,face:0,hair:0,top:0,pants:0,shoe:0}};nameFocus=false; // V1.10.2需求10：重开面板复位叠层
 }
 function confirmCreate(){ // 创建面板确认→真正建角
   if(!creUI)return;
   const slot=creUI.slot,nm=creUI.name.trim().slice(0,10)||'无名猎人',gd=creUI.gender,fc=creUI.face;
-  creUI=null;
+  nameClose();creUI=null;
   resetPlayer();
   p.name=nm;p.gender=gd;p.face={hat:fc.hat,face:fc.face,hair:fc.hair,top:fc.top,pants:fc.pants,shoe:fc.shoe};curSlot=slot;
   started=true;
@@ -5952,6 +6110,8 @@ function creRects(){ // 创建面板几何（绘制与命中共用）
 }
 function clickCreate(l){ // 创建面板点击路由
   const R=creRects(),inR=function(r){return l.x>=r.x&&l.x<=r.x+r.w&&l.y>=r.y&&l.y<=r.y+r.h;};
+  if(inR(R.name)){nameOpen();return;} // V1.10.2需求10：点姓名格直接调起系统键盘
+  if(nameFocus)nameClose();
   if(!inR(R.P)){creUI=null;return;} // 点面板外关闭
   if(inR(R.gender[0]))creUI.gender='男';
   else if(inR(R.gender[1]))creUI.gender='女';
@@ -5982,8 +6142,10 @@ function drawCreate(){ // 需求79/80：页面内创建面板——姓名键入+
   /* 姓名 */
   txt('姓名（支持中文输入法，最多 10 字）',R.name.x,R.name.y-12,11.5,'#c9b96a');
   rr(R.name.x,R.name.y,R.name.w,R.name.h,6);C.fillStyle='rgba(16,20,12,.95)';C.fill();C.strokeStyle='#8a7a3a';C.lineWidth=1.5;C.stroke();
-  txt(creUI.name||'',R.name.x+10,R.name.y+R.name.h/2+1,15,'#eaffea',null,'500',true);
-  if((t>>4)%2)txt('|',R.name.x+12+C.measureText(creUI.name||'').width*1.05,R.name.y+R.name.h/2+1,15,'#ffd700',null,'700',true);
+  syncNameInput(); // V1.10.2需求10：每帧跟随缩放/旋转对齐叠层
+  if(!nameFocus){txt(creUI.name||'',R.name.x+10,R.name.y+R.name.h/2+1,15,'#eaffea',null,'500',true); // 聚焦时文字由原生输入框显示，避免重影
+    if((t>>4)%2)txt('|',R.name.x+12+C.measureText(creUI.name||'').width*1.05,R.name.y+R.name.h/2+1,15,'#ffd700',null,'700',true);}
+  if(nameFocus){rr(R.name.x,R.name.y,R.name.w,R.name.h,6);C.strokeStyle='#ffd700';C.lineWidth=2;C.stroke();}
   if(!creUI.name)txt('不填则为「无名猎人」',R.name.x+R.name.w-8,R.name.y+R.name.h/2+1,10,'#66705e','right',null,true);
   /* 性别 */
   txt('性别',R.gender[0].x,R.gender[0].y+R.gender[0].h/2,12.5,'#c9b96a');
@@ -6008,7 +6170,7 @@ function drawCreate(){ // 需求79/80：页面内创建面板——姓名键入+
 function wipeSlot(i){const m=slotMeta(i);if(!m){msg('档'+(i+1)+' 本来就是空的','#888');return;}try{localStorage.removeItem(slotKey(i));}catch(e){}if(curSlot===i)curSlot=-1;msg('🗑 已清除档'+(i+1)+'：'+m.name,'#e85a5a');}
 function doRestart(){ // 回到选档界面（不重载页面，保留其它档位）
   if(started)doSave(true);
-  started=false;bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;curSlot=-1;reArm=0;wipeArm=0;creUI=null;
+  started=false;bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;curSlot=-1;reArm=0;wipeArm=0;creUI=null;nameFocus=false;
 }
 function handleStartClick(l){ // 选档/创建界面点击路由
   if(creUI){clickCreate(l);return;}
