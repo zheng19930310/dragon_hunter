@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.11.0</title>
+<title>降龙猎手 · 五行觉醒 V1.11.1</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -546,10 +546,12 @@ function enterInstance(type,name,col,keepHome,geo){ // V1.6：geo 可选——�
   if(p.mr){p.mr=false;msg('🏇 实例空间无法乘骑——你下了坐骑','#e8c86a');} // V1.7需求6
   INST.on=true;INST.type=type;INST.name=name;INST.col=col;
   if(!geo){INST.x=8780;INST.y=6620;INST.w=1060;INST.h=800;}else{INST.x=geo.x;INST.y=geo.y;INST.w=geo.w;INST.h=geo.h;} // V1.6：geo 已换算到世界系
+  if(INST.walls||INST.obs||INSTWALLS.length)dropInstWalls(); // V1.11.1需求6：旧版此处只置空引用、不拆碰撞箱，通天塔/迷宫/副本同平面复用 → 上一层围墙与石柱残留在 OBST/OGRID 里，画面上看不见却拦住玩家（实测每进一层累积 14 个）
   INST.walls=null;INST.obs=null;INST.pow=0;INST.found=false;INST.mazeOut=null;
   INST.exit=null;INST.next=null;INST.bossKilled=0;INST.killed=0;INST.boss=0;INST.floor=0;INST.key=null;
   mobs.length=0;respawns.length=0;projs.length=0;coins.length=0; // 需求5：主世界怪/弹幕/金币瞬间卸载，防内存溢出
   if(lost)msg('🧹 清理了 '+lost+' 件遗落在副本中的拾取物','#8a9a7a');
+  glog('biz','enterInstance '+(name||'')+' type='+type,{obst:OBST.length,iwall:INSTWALLS.length,mobs:mobs.length},null); // V1.11.1需求7：里程碑入日志，导出后可对照复现
   loadStart('🌀 地图加载中'); // V1.10.0需求3：进副本 3 秒加载遮罩
 }
 function enterDungeon(dr){ // 需求1：小怪 + 5~6精英 + 1~3 BOSS，数值强化、爆率提升、不刷新；V1.10.0需求2：普通怪超过 50 一律压到 50
@@ -603,7 +605,7 @@ function exitInst(died){
   if(!INST.on)return;
   if(INST.type==='tower'&&tbN()>0)msg('🗼 离塔——第 '+INST.floor+' 层攒下的 '+tbN()+' 重修行增益随风消散（下次进塔重叠）','#7af0c8'); // v1.5.3需求12
   p.tb=null;
-  if(INST.walls||INST.obs)dropInstWalls(); // V1.6：迷宫围墙随退场拆除；V1.10.0：副本障碍物同样拆除，不污染主世界碰撞网格
+  if(INST.walls||INST.obs||INSTWALLS.length)dropInstWalls(); // V1.6/V1.10.0：副本围墙与障碍物随退场拆除；V1.11.1需求6：判定改用 INSTWALLS 实际清单——enterInstance 已把 INST.walls/obs 置空，旧判定会漏拆（实测退塔后残留 1 个隐形墙格）
   INST.obs=null;
   loadStart('🌀 地图加载中'); // V1.10.0需求3：出副本 3 秒加载遮罩
   const hx=INST.homeX,hy=INST.homeY;
@@ -613,7 +615,8 @@ function exitInst(died){
   p.x=died?3500:hx;p.y=died?2260:hy;
   manageMobs(); // 回主世界立即重新懒加载周边怪物
   msg(died?'💀 你在副本中阵亡——被送回落鸦村养伤（未拾取掉落 '+lost+' 件已消散）':'🌀 退出副本，回到主世界'+(lost?'（地上 '+lost+' 件未拾取掉落已消散）':''),'#8ab8d8');
-  fxRing(p.x,p.y,6,80,'#8affff',3);}
+  fxRing(p.x,p.y,6,80,'#8affff',3);
+  glog('biz','exitInst died='+(died?1:0),{obst:OBST.length,iwall:INSTWALLS.length,mobs:mobs.length,items:items.length},null);}
 function checkTowerAch(){ // 需求4：每 5 层一个成就
   const tm=p.ach2.towerMax||0;let done=p.ach2.towerAch||0;
   while(done<Math.floor(tm/5)){const k=done+1;
@@ -898,14 +901,17 @@ const WX=[
   {k:'snow', n:'飘雪',ic:'❄',col:'#dff0ff',tint:'rgba(150,190,232,.13)',  tip:'雪落无声'},
   {k:'fog',  n:'大雾',ic:'🌫',col:'#cfd6cc',tint:'rgba(196,204,196,.20)',  tip:'雾失楼台'},
   {k:'wind', n:'疾风',ic:'🍃',col:'#a8e8c0',tint:'rgba(140,192,162,.10)',  tip:'大风卷地'}];
-let schI=SCH_START,dark=SHICHEN[SCH_START].dk,nightB=0,wxI=0,wxT=0,wxSeq=-1;
+let schI=SCH_START,dark=SHICHEN[SCH_START].dk,nightB=0,wxI=0,wxT=0,wxSeq=-1,fogRoll=-1; // V1.11.1需求4：fogRoll=最近一次完成雾投掷的窗口号（0=晨·卯辰 1=昏·申酉），保证一个窗口只投一次低概率
 /* V1.9.12需求1：大雾只在早晨（卯3·辰4）与傍晚（申8·酉9）概率出现，其余时辰一律不出雾；
    V1.10.2需求4：雾会影响视野与体验，概率由 .28 下调到 .12（较低概率），即晨昏四时辰内也大概率是晴好天 */
 const FOG_K='fog',FOG_OK=[3,4,8,9],FOG_P=.12;
 function isFog(i){return WX[i].k===FOG_K;}
-function pickWx(i){ // V1.9.12需求1：早晚时辰按 FOG_P 概率出雾；非早晚的抽取池直接剔除雾
-  if(FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P)return WX.findIndex(function(w){return w.k===FOG_K;});
+function canFog(i){return FOG_OK.indexOf(i)>=0;} // V1.11.1需求4：大雾唯一合法时段——早晨卯辰 + 傍晚申酉
+function fogSlot(i){return (i===3||i===4)?0:((i===8||i===9)?1:-1);} // V1.11.1需求4：投掷窗口号——晨(卯辰)=0 / 昏(申酉)=1 / 其余=-1（不可出雾）
+function pickWx(i){ // V1.11.1需求4：重写——旧版每 2 分钟（SCH_FRAME*3）边界都会重投一次雾，辰时实测命中率 27.5%，不符合"小概率"
+  if(canFog(i)&&Math.random()<FOG_P)return WX.findIndex(function(w){return w.k===FOG_K;});
   let n;do{n=ri(0,WX.length-1);}while(isFog(n));return n;}
+function pickNonFog(){let x;do{x=ri(0,WX.length-1);}while(isFog(x));return x;} // V1.11.1需求4：非雾时段/雾已定档时的常规抽取
 function wxNow(){return WX[wxI];}
 /* V1.10.1需求4：转变天气时 5 秒大提示横幅——新旧天气对照，比普通播报更醒目 */
 const WXBAN={t:0,from:null,to:null};
@@ -940,17 +946,21 @@ function updateClock(){ /* 每帧推时辰：明暗度在相邻时辰标称值�
     else if(i===6)msg('🔆 午时天光最盛：视野全开，夜战加成归零','#8fd08f');
     sfx(660,.12,'sine',.03);}
   const seq=Math.floor(t/(SCH_FRAME*3)); /* 需求4：每 3 个时辰随机换一次天气（纯视觉，不参与任何数值） */
-  if(seq!==wxSeq){
-    const old=wxI;wxSeq=seq;
-    do{wxI=pickWx(i);}while(wxI===old); // V1.9.12需求1：受时段约束的天气抽取
-    wxT=t;
-    if(started&&old!==wxI){wxBan(old,wxI);const W=WX[wxI];msg('🌦 天象转换：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}
-  }else if(chg){ /* V1.9.12需求1：时辰边界雾守卫——离早晚必散雾，入早晚按概率起雾（解决雾赖过时段） */
-    if(isFog(wxI)&&FOG_OK.indexOf(i)<0){const oldf=wxI;do{wxI=ri(0,WX.length-1);}while(isFog(wxI));wxT=t;
-      if(started){wxBan(oldf,wxI);const W=WX[wxI];msg('🌦 时辰更替，大雾散去——'+W.ic+' '+W.n,W.col);}}
-    else if(!isFog(wxI)&&FOG_OK.indexOf(i)>=0&&Math.random()<FOG_P){const oldf=wxI;wxI=WX.findIndex(function(w){return w.k===FOG_K;});wxT=t;
-      if(started){wxBan(oldf,wxI);const W=WX[wxI];msg('🌫 晨昏生雾：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);}}
-  }
+  const fs=fogSlot(i); // V1.11.1需求4：当前时辰所属的雾窗口
+  if(isFog(wxI)&&fs<0){ /* 硬约束①（每帧最先判）：一旦离开卯辰申酉，雾立即散去——其它时辰绝无大雾 */
+    const old=wxI;wxI=pickNonFog();wxT=t;wxSeq=seq; // V1.11.1需求4：同步换天节拍号，否则下一帧 seq!==wxSeq 会再抽一次天气（表现为 2 帧内连换两条横幅）
+    if(started){wxBan(old,wxI);const W=WX[wxI];msg('🌦 时辰更替，大雾散去——'+W.ic+' '+W.n,W.col);}
+  }else if(fs>=0){ /* V1.11.1需求4：晨昏窗口——整窗口只做一次低概率投掷（旧版每 2 分钟重投致辰时雾率 27.5%） */
+    if(fogRoll!==fs){
+      fogRoll=fs;wxSeq=seq;const old=wxI;
+      if(Math.random()<FOG_P){wxI=WX.findIndex(function(w){return w.k===FOG_K;});wxT=t;
+        if(started){wxBan(old,wxI);const W=WX[wxI];msg('🌫 晨昏生雾：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}}
+      else{do{wxI=pickNonFog();}while(wxI===old);wxT=t;
+        if(started&&wxI!==old){wxBan(old,wxI);const W=WX[wxI];msg('🌦 天象转换：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}}
+    } /* 本窗口已投掷：窗口内保持当前天气（含雾），直到离窗被①散去 */
+  }else if(seq!==wxSeq){ /* 非晨昏时段的常规换天：每 3 时辰一次，抽取池永不含雾 */
+    const old=wxI;wxSeq=seq;do{wxI=pickNonFog();}while(wxI===old);wxT=t;
+    if(started){wxBan(old,wxI);const W=WX[wxI];msg('🌦 天象转换：'+W.ic+' '+W.n+'——'+W.tip+'（仅视觉效果，不影响战力）',W.col);sfx(880,.1,'sine',.03);arp([523,659,784],60);}}
   if(WXBAN.t>0)WXBAN.t--; // V1.10.1需求4：横幅 5 秒倒计时（面板暂停时同样流逝）
 }
 function drawNightView(){ /* 需求3：视野随夜色收窄，天亮渐开，白昼全屏可视 */
@@ -1283,6 +1293,12 @@ function drawSetPanel(){
   btn(cx3,py+298,cw3,26,'🧨 试放三条祝福',blessTest,'#8a2a2a');
   btn(cx3,py+330,cw3,26,'↺ 重洗本轮词库',blessReset,'#3a3226');
   txt('弹幕从右向左飞过播报区，牌匾级好词会挂红底金字巨幅',cx3,py+374,9.5,'#8a9a7a',null,'400',true);
+  /* V1.11.1需求7：运行日志区（右侧卡片区下方空档） */
+  txt('🧾 运行日志 · 问题收集',cx3,py+398,12,'#8affff');
+  const GL=glogSummary();
+  txt('记录 '+GL.ev+' 条｜错误 '+GL.err+'｜告警 '+GL.warn+'｜丢弃 '+GL.drop+'｜'+(GL.fps||0)+' FPS',cx3,py+414,9.5,GL.err?'#ff8a6a':'#8a9a7a',null,'400',true);
+  btn(cx3,py+422,150,24,'⬇ 导出 JSON 日志',glogExport,'#2a4a5a');
+  btn(cx3+158,py+422,92,24,'🧹 清空记录',function(){GLOG.ev=[];GLOG.drop=0;GLOG.errN=0;GLOG.warnN=0;msg('🧾 运行日志已清空','#8affff');},'#3a3226');
   btn(px+18,py+ph-38,158,28,'🏆 成就面板 (J)',function(){setOpen=false;questOpen=true;sfx(660,.07,'triangle',.03);},'#5a4a2a');
   btn(px+pw-116,py+ph-38,100,28,'✕ 关闭 (O)',function(){setOpen=false;sfx(420,.06,'square',.03);},'#4a4a3a');
 }
@@ -1904,7 +1920,7 @@ function pass(i){return SK[i].p===1&&p.lvl>=SK[i].lv;}
 function skLvlOf(i){return Math.max(1,p.skLvl[i]||0);}
 function unlocked(i){const s=SK[i];if(s.p)return p.lvl>=s.lv;if(s.book)return (p.skLvl[i]||0)>=1;return p.lvl>=s.lv;}
 function bookCount(bk){let n=0;for(let i=0;i<bagMax();i++){const it=bag[i];if(it&&it.book===bk)n+=it.count||1;}return n;}
-function takeBooks(bk,k){for(let i=0;i<bagMax()&&k>0;i++){const it=bag[i];if(it&&it.book===bk){const c=it.count||1;if(c<=k){k-=c;bag[i]=null;}else it.count=c-k;}}}
+function takeBooks(bk,k){for(let i=0;i<bagMax()&&k>0;i++){const it=bag[i];if(it&&it.book===bk){const c=it.count||1;if(c<=k){k-=c;bag[i]=null;}else{it.count=c-k;k=0;}}}} // V1.11.1需求5：修复旧 else 分支未清零 k，导致同一类书多堆叠时被逐堆重复扣减（显示需N本、实扣N×堆数）；现严格扣满即停
 /* bug1-新32/34：每个技能固定逐级伤害表（10级），每3级大增幅、满级(10)特殊强化，各技能成长幅度不同 */
 const SKGROW=[
   [1,1.30,1.65,2.05,2.55,3.20,4.00,4.60,5.40,7.20], // 0  万箭齐发
@@ -2107,6 +2123,103 @@ function mobShotFx(m,a){
   burst(m.x+Math.cos(a)*14,m.y-8+Math.sin(a)*14,col||'#ffd700',k===1?4:8);
   if(k===1){sfx(420,.05,'square',.03);floatTxt(m.x,m.y-30,'★ 精准射击','#7ec8ff');}
   else{shakeN(4);flashS=Math.max(flashS,.07);sfx(120,.12,'sawtooth',.05);floatTxt(m.x,m.y-34,'☠ BOSS 狙击','#ff6a5a');}}
+/* ============ V1.11.1需求7：运行问题收集日志（JSON）============
+   目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
+   记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
+   约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
+const GLOG_MAX=600,GLOG_VER='1.11.1';
+const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
+function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
+function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
+  try{return{t:t,scene:INST.on?('INST:'+INST.type+':'+(INST.name||'')):gzone(),
+    x:Math.round(p.x/WS),y:Math.round(p.y/WS),lvl:p.lvl,hp:p.hp+'/'+maxHp(),mp:Math.round(p.mp),
+    mobs:mobs.length,items:items.length,projs:projs.length,fx:fx.length,parts:parts.length,obst:OBST.length,
+    iwall:INSTWALLS.length,bag:bag.filter(function(b){return b;}).length,
+    shichen:(typeof SHICHEN!=='undefined'?SHICHEN[schI].n:''),wx:(typeof wxNow==='function'?wxNow().k:''),
+    dark:+(dark||0).toFixed(2),fps:+(GFPS||0).toFixed(1),ver:GLOG_VER};}
+  catch(e){return {ctxErr:''+e};}}
+function gstack(e){try{const r=((e&&e.stack)||'').split(String.fromCharCode(10));return r.slice(0,8);}catch(_){return [];}}
+function glog(cat,msg,detail,lvl){ /* cat=err|perf|flow|biz；lvl=error|warn|info */
+  const L=lvl||(cat==='err'?'error':cat==='perf'?'warn':'info');
+  if(L==='error')GLOG.errN++;else if(L==='warn')GLOG.warnN++;
+  if(GLOG.ev.length>=GLOG_MAX){GLOG.ev.shift();GLOG.drop++;}
+  GLOG.ev.push({i:GLOG.ev.length,ts:Date.now(),st:+((performance.now?performance.now():0)-GLOG.t0).toFixed(1),
+    cat:cat,lvl:L,msg:msg,detail:detail==null?null:detail,c:gctx()});}
+/* —— 帧时间与 FPS —— */
+let GFPS=60,_gf=[],_glast=0,_gslow=0,_gspike=0;
+function gperf(now){
+  if(!_glast){_glast=now;return;}
+  const dt=now-_glast;_glast=now;
+  _gf.push(dt);if(_gf.length>60)_gf.shift();
+  if(dt>0)GFPS=1000/dt;
+  if(dt>50){_gspike++;
+    if(_gspike===1||_gspike%20===0)glog('perf','frame spike '+Math.round(dt)+'ms',{dt:Math.round(dt),spikes:_gspike,fps:+GFPS.toFixed(1),mobs:mobs.length,fx:fx.length,parts:parts.length,projs:projs.length,items:items.length,obst:OBST.length,iwall:INSTWALLS.length},'warn');}
+  if(_gf.length>=60){const avg=_gf.reduce(function(a,b){return a+b;},0)/_gf.length;
+    if(avg>25){_gslow++;
+      if(_gslow%10===0)glog('perf','sustained low fps ~'+Math.round(1000/avg),{avg:+avg.toFixed(1),mobs:mobs.length,items:items.length,projs:projs.length,fx:fx.length,parts:parts.length,obst:OBST.length,iwall:INSTWALLS.length,slowWindows:_gslow},'warn');
+      if(_gslow===60){glog('perf','PERF_REGRESSION: 60s sustained <40fps',{avg:+avg.toFixed(1)},'error');_gslow=0;}}}}
+/* —— 异常拦截 —— */
+(function(){
+  const seen={};
+  function note(kind,e){
+    const str=(e&&(e.message||e.msg||e.error&&e.error.message))||(''+e);
+    const key=kind+'|'+str.slice(0,160);
+    if(seen[key]!=null){seen[key]++;if(seen[key]%20!==0)return;
+      glog('err',kind+' (repeated x'+seen[key]+'): '+str,{src:(e&&e.filename)||null,line:(e&&e.lineno)||null,stack:gstack(e&&(e.stack?e:e.error))},'error');return;}
+    seen[key]=1;
+    glog('err',kind+': '+str,{src:(e&&e.filename)||null,line:(e&&e.lineno)||null,col:(e&&e.colno)||null,
+      stack:gstack(e&&e.stack?e:e.error)},'error');}
+  window.addEventListener('error',function(e){try{note('window.onerror',e);}catch(_){}},true);
+  window.addEventListener('unhandledrejection',function(e){try{note('unhandledrejection',e&&(e.reason!=null?e.reason:e));}catch(_){}});
+  const _ce=console.error?console.error.bind(console):null;
+  if(_ce)console.error=function(){try{note('console.error',{message:Array.prototype.join.call(arguments,' ')});}catch(_){}_ce.apply(null,arguments);};
+})();
+/* —— 运行期自检（低频，只在真的坏了才记，避免刷屏） —— */
+function gselfCheck(){
+  try{
+    if(started&&(t%600)===0){
+      if(INSTWALLS.length&&!INST.on)glog('flow','stale instance walls after exit: '+INSTWALLS.length,{obst:OBST.length,iwall:INSTWALLS.length},'error');
+      if(!INST.on&&OBST.length<200)glog('flow','OBST unexpectedly shrunk in overworld: '+OBST.length,{obst:OBST.length},'error');
+      if(isFog(wxI)&&fogSlot(schI)<0)glog('flow','fog outside 卯辰申酉 (needs check)',{wx:wxNow().k,sch:SHICHEN[schI].n},'error');
+      if(mobs.length>MOBCAP+30)glog('perf','mob overflow '+mobs.length+' > cap '+MOBCAP,{mobs:mobs.length,items:items.length},'warn');
+      if(items.length>400)glog('perf','ground item pileup '+items.length,{items:items.length,coins:coins.length},'warn');
+      if(projs.length>500)glog('perf','projectile pileup '+projs.length,{projs:projs.length},'warn');
+      if(!isFinite(p.x)||!isFinite(p.y))glog('flow','player coords NaN',{x:p.x,y:p.y},'error');
+      if(p.hp>maxHp()+1)glog('flow','hp over max',{hp:p.hp,max:maxHp()},'warn');}}
+  catch(e){glog('err','gselfCheck threw: '+e.message,{stack:gstack(e)},'error');}}
+/* —— 导出 JSON —— */
+function glogExport(){
+  try{
+    const doc={app:'降龙猎手',version:GLOG_VER,exportedAt:new Date().toISOString(),
+      ua:navigator.userAgent,viewport:{LW:LW,LH:LH,WS:WS,W:W,H:H},
+      summary:{events:GLOG.ev.length,dropped:GLOG.drop,errors:GLOG.errN,warnings:GLOG.warnN,
+        uptimeSec:+(((performance.now?performance.now():0)-GLOG.t0)/1000).toFixed(1),
+        fps:+(GFPS||0).toFixed(1),frame:t,shichen:(typeof SHICHEN!=='undefined'?SHICHEN[schI].n:''),weather:(typeof wxNow==='function'?wxNow().k:'')},
+      player:{name:p.name,lvl:p.lvl,gold:p.gold,hp:p.hp+'/'+maxHp(),mp:Math.round(p.mp)+'/'+maxMp(),
+        x:Math.round(p.x),y:Math.round(p.y),grid:[Math.round(p.x/WS),Math.round(p.y/WS)],
+        inst:INST.on?{type:INST.type,floor:INST.floor,name:INST.name}:null,equip:EQSLOTS.map(function(k){return p.equip[k]?p.equip[k].name:null;}),
+        skLvl:p.skLvl,ach2:p.ach2,set:p.set},
+      counters:{mobs:mobs.length,items:items.length,coins:coins.length,projs:projs.length,fx:fx.length,parts:parts.length,
+        obst:OBST.length,instWalls:INSTWALLS.length,respawns:respawns.length,guards:GUARDS.length,patrols:PATROLS.length,npcs:NPCS.length},
+      byCat:{err:GLOG.ev.filter(function(e){return e.cat==='err';}).length,
+        perf:GLOG.ev.filter(function(e){return e.cat==='perf';}).length,
+        flow:GLOG.ev.filter(function(e){return e.cat==='flow';}).length,
+        biz:GLOG.ev.filter(function(e){return e.cat==='biz';}).length},
+      events:GLOG.ev};
+    const txt=JSON.stringify(doc,null,1);
+    const blob=new Blob([txt],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='dragon_hunter_log_V'+GLOG_VER+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},4000);
+    msg('🧾 已导出运行日志 '+GLOG.ev.length+' 条（错误 '+GLOG.errN+'／告警 '+GLOG.warnN+'）——把该 JSON 发给运维或 Qoder 即可排查','#8affff');
+    sfx(880,.1,'sine',.04);
+    GLOG.snap=txt.length;}
+  catch(e){msg('🧾 日志导出失败：'+e.message,'#ff8a6a');glog('err','glogExport failed: '+e.message,{stack:gstack(e)},'error');}}
+function glogSummary(){return {ev:GLOG.ev.length,err:GLOG.errN,warn:GLOG.warnN,drop:GLOG.drop,fps:+(GFPS||0).toFixed(1)};}
+/* ============ /V1.11.1需求7 ============ */
 function shakeN(n){shake=Math.max(shake,n);}
 function later(f,d){sched.push({f:f,t:d||0});}
 function bagFirst(){const i=bag.indexOf(null);return (i>=0&&i<bagMax())?i:-1;}
@@ -2148,14 +2261,14 @@ function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|
 /* 需求59/68：营地村民——集中部署在落鸦村中央广场（天使周围），简单对话 + 纳入成就任务线（对话次数即进度） */
 const ANGEL={x:3525,y:2060}; // 需求68：任务交接人——天使住在营地广场中心
 const NPCS=[
- {key:'npc_smith',name:'铁匠托洛',x:3345,y:2160,hue:22,lines:['嘿！锤子敲铁，火星子比流星雨还旺！','你的装备交给我，强化到+25稳稳的！','想打一把屠龙刀？先拿一万金币来挂号！','炉子烧了三十年，没一把剑比你自己磨的快。','听说玄武山的石头能磨刀——嚒，那得先打得穿它龟壳！']},
- {key:'npc_hunter',name:'猎人阿达',x:3705,y:2160,hue:120,lines:['昨晚龙的影子又落在山岗上了……','听我的：风之谷的精灵不对劲，别 solo。','弓要擦，刀要磨，人要活着回来。','我数过，史莱姆草原一夜要死三十只——都被你揠了吧？','神陨之巅的石巨人心脏是座钟，滴答声三里外都能听见。']},
- {key:'npc_sage',name:'贤者玄尘',x:3345,y:1955,hue:265,lines:['众生缘尽，仙亦长叹。','五行相生相克，武器亦然——选对属性，事半功倍。','你身上功德在涨……成就勋章会记得你做的每一件事。','十二星兽轮转，对应十二宫命盘，打完星座再去会会四神。','天使就在广场中央等你，她的故事线比龙更长。']},
- {key:'npc_girl',name:'村口小蜜',x:3705,y:1955,hue:330,lines:['猎人哥哥，帮我带一块星星石好不好嘛~','星座大包包里的星星石亮晶晶，最好了！','托洛叔叔又砸到锤子了，嘻嘻。','妈妈说不要和拿弓的人说话……但你看起来很酷！','长大我要去凤凰岭看朱雀！']},
- {key:'npc_teashop',name:'茶肆西施阿茶',x:3520,y:2300,hue:15,lines:['新沏的龙井，二文钱一碗，先尝后买！','猎人哥哥的大名如雷贯耳——我这茶肆都翻台啦','茶渣占卜？那是书生的花活，我这只卖茶','打完怪坐下喝两碗再回城，暖胃又回血','我这茶摊摆的是江湖，泡的是人情世故']},
- {key:'npc_storyteller',name:'说书人老周',x:3665,y:2310,hue:200,lines:['啪！惊堂木一响——今天开讲《猎龙传》！','话说那英雄登坛，风云际会，一矢定千里！','刷完这页书，客官可愿赏几个铜板？','人间三大乐：酒、剑、月；猎人三爽：砍怪、数钱、睡懒觉！','欲知后事如何——且听下回分解！']},
- {key:'npc_herbman',name:'采药女阿萝',x:3350,y:2320,hue:90,lines:['草药带晨露，心里有甜味','今早采了一篓星星草，去药铺能换俩肉包','沼泽的蛙草开花时最药性，可惜我不敢去','止血散要不要？免费试用，好用再买！','药农的筐里，一半是草，一半是诗']},
- {key:'npc_taoist',name:'道士紫云',x:3290,y:1880,hue:280,lines:['道可道，非常道；店可开，非常店','观施主印堂发黑……哦不，发金光！此乃猎天之相！','每日三叩首，财位天上来——福生无量天尊','杀孽太重要焚香化解，请一炷，打折','夜饭菰蒲无兼肉，羡子清吟得满卷——啊，好诗！']},
+ {key:'npc_smith',name:'铁匠托洛',x:3260,y:1730,hue:22,lines:['嘿！锤子敲铁，火星子比流星雨还旺！','你的装备交给我，强化到+25稳稳的！','想打一把屠龙刀？先拿一万金币来挂号！','炉子烧了三十年，没一把剑比你自己磨的快。','听说玄武山的石头能磨刀——嚒，那得先打得穿它龟壳！']},
+ {key:'npc_hunter',name:'猎人阿达',x:3900,y:2620,hue:120,lines:['昨晚龙的影子又落在山岗上了……','听我的：风之谷的精灵不对劲，别 solo。','弓要擦，刀要磨，人要活着回来。','我数过，史莱姆草原一夜要死三十只——都被你揠了吧？','神陨之巅的石巨人心脏是座钟，滴答声三里外都能听见。']},
+ {key:'npc_sage',name:'贤者玄尘',x:2810,y:2150,hue:265,lines:['众生缘尽，仙亦长叹。','五行相生相克，武器亦然——选对属性，事半功倍。','你身上功德在涨……成就勋章会记得你做的每一件事。','十二星兽轮转，对应十二宫命盘，打完星座再去会会四神。','天使就在广场中央等你，她的故事线比龙更长。']},
+ {key:'npc_girl',name:'村口小蜜',x:3520,y:1820,hue:330,lines:['猎人哥哥，帮我带一块星星石好不好嘛~','星座大包包里的星星石亮晶晶，最好了！','托洛叔叔又砸到锤子了，嘻嘻。','妈妈说不要和拿弓的人说话……但你看起来很酷！','长大我要去凤凰岭看朱雀！']},
+ {key:'npc_teashop',name:'茶肆西施阿茶',x:4048,y:1782,hue:15,lines:['新沏的龙井，二文钱一碗，先尝后买！','猎人哥哥的大名如雷贯耳——我这茶肆都翻台啦','茶渣占卜？那是书生的花活，我这只卖茶','打完怪坐下喝两碗再回城，暖胃又回血','我这茶摊摆的是江湖，泡的是人情世故']},
+ {key:'npc_storyteller',name:'说书人老周',x:4140,y:2318,hue:200,lines:['啪！惊堂木一响——今天开讲《猎龙传》！','话说那英雄登坛，风云际会，一矢定千里！','刷完这页书，客官可愿赏几个铜板？','人间三大乐：酒、剑、月；猎人三爽：砍怪、数钱、睡懒觉！','欲知后事如何——且听下回分解！']},
+ {key:'npc_herbman',name:'采药女阿萝',x:2932,y:2548,hue:90,lines:['草药带晨露，心里有甜味','今早采了一篓星星草，去药铺能换俩肉包','沼泽的蛙草开花时最药性，可惜我不敢去','止血散要不要？免费试用，好用再买！','药农的筐里，一半是草，一半是诗']},
+ {key:'npc_taoist',name:'道士紫云',x:3008,y:1884,hue:280,lines:['道可道，非常道；店可开，非常店','观施主印堂发黑……哦不，发金光！此乃猎天之相！','每日三叩首，财位天上来——福生无量天尊','杀孽太重要焚香化解，请一炷，打折','夜饭菰蒲无兼肉，羡子清吟得满卷——啊，好诗！']},
 ];
 NPCS.forEach(function(n,i){STORY.push({key:n.key,name:n.name,zone:'town',
   st:[0,1,2].map(function(j){const e=QEFFK[(i*3+j*2)%8];return{t:[10,30,80][j],e:e,v:j===0?1:j===1?2:4,txt:'与 '+n.name+' 交谈 ×'+[10,30,80][j],d:'【落鸦村】'+['初识','熟络','莫逆'][j]+'：'+QEFF[e]};})});});
@@ -2181,6 +2294,187 @@ STORY.push({key:'ach_tower',custom:'tower',name:'塔之王',zone:'town',
 /* V1.8需求6：福满乾坤成就线——一轮回 48 条祝福全部播完记 1 轮，三档 1/3/6 轮（进度存 p.ach2.blessR） */
 STORY.push({key:'ach_bless',custom:'blessR',name:'福满乾坤',zone:'town',
   st:[0,1,2].map(function(j){const e=['gold','hp','atk'][j];return{t:[1,3,6][j],e:e,v:j+2,txt:'福满乾坤：圆成第 '+[1,3,6][j]+' 轮祝福大典',d:'【成就·祝福】'+['初闻喜炮','喜满衣襟','福泽绵长'][j]+'阶：'+QEFF[e]};})});
+/* ============ V1.11.1需求2/3：基地防卫体系——四门守军 + 近畿四支巡逻卫队 ============
+   设计口径：
+   · 守卫驻在寨墙豁口（出入口）内侧，怪物追进基地范围内即自动交战；
+   · 守军吃"营地法阵"庇护，不会被怪物打死（怪物 AI 只锁定主角，改动最小、不干扰既有仇恨/掉落体系）；
+   · 守军 DPS 有硬上限且只在近畿出手，绝不出击抢副本/远区人头；
+   · 守军补刀的人头不计主角经验与成就（见 guardKill），只留掉落与金币——避免刷怪挂机化。 */
+const GUARD_R=400;                // V1.11.1需求2：守卫索敌半径（约 80 个坐标点）——追到门口的怪在门外即被拦截
+const GUARD_LEASH=170;            // 守卫离岗最大距离——到点必须回岗，保证"出入口始终有人"
+const PATROL_R=330;               // 巡逻队索敌半径
+const PATROL_LEASH=620;           // 巡逻队偏离路线的最大追击距离
+const PATROL_LEG=280;             // V1.11.1需求3：每段路线 4.7 秒（60fps），全队同步换段
+const PATROL_GAP=26;              // 队内纵向间距（世界像素）——三人名次错开成一路纵队
+const ESCORT_CD={atk:52,spear:150,bolt:170,smite:230,roar:300}; // 守军出手节奏（帧）：普攻约 0.9 秒一档，技能 2.5~5 秒
+const GDMG=30;                    // 守军普攻基础伤（按主角等级与目标血量缩放，见 escDmg）
+/* 四门（寨墙豁口）世界坐标：北3525·1650 东4350·2050 南3550·2850 西2700·1750 */
+const GSKILL={
+  spear:{k:'spear',n:'贯岳突刺',ic:'🔱',col:'#ffd27a',d:'长枪贯线：沿枪锋方向捅穿一条直线上的所有追兵'},
+  bolt :{k:'bolt', n:'连弩攒射',ic:'🏹',col:'#7ec8ff',d:'三发连弩：锁定最近之敌连续攒射'},
+  smite:{k:'smite',n:'圣光惩戒',ic:'✨',col:'#fff2c8',d:'圣光新星：以自身为心荡涤四周，附带定身'},
+  roar :{k:'roar', n:'磐岳吼震',ic:'🛡',col:'#c9a24a',d:'磐岳怒吼：震退贴身追兵并短暂眩晕'}};
+function mkGuard(x,y,gate,sk,ii){
+  return {x:x,y:y,hx:x,hy:y,gate:gate,sk:sk,ii:ii,cd:ri(20,60),scd:ri(60,160),anim:0,face:0,hit:0,tgt:null};}
+const GUARDS=[
+  mkGuard(3452,1712,'北门',GSKILL.roar ,0),mkGuard(3598,1712,'北门',GSKILL.spear,1),
+  mkGuard(4288,1988,'东门',GSKILL.bolt ,2),mkGuard(4288,2118,'东门',GSKILL.smite,3),
+  mkGuard(3482,2788,'南门',GSKILL.spear,4),mkGuard(3618,2788,'南门',GSKILL.roar ,5),
+  mkGuard(2762,1706,'西门',GSKILL.smite,6),mkGuard(2762,1832,'西门',GSKILL.bolt ,7)];
+/* 近畿四支巡逻卫队：每队 3 人，各守一片环形路线（基地四周的空地），有专属协同技能 */
+/* V1.11.1需求3：四队各沿基地一侧巡回（西/东/北/南），路线避开五栋民居、水井、摊位柜台与四门守军岗哨 */
+const PSQUAD=[
+  {n:'赤缨枪队',col:'#ff7a5a',sk:GSKILL.spear,wp:[[2790,1860],[2790,2320],[2980,2630],[3180,2300]]},
+  {n:'劲弩队',  col:'#7ec8ff',sk:GSKILL.bolt ,wp:[[4260,1920],[4260,2360],[4060,2630],[3900,2280]]},
+  {n:'雷法队',  col:'#c9b3ff',sk:GSKILL.smite,wp:[[3080,1740],[3520,1980],[4030,1800],[3760,1730]]},
+  {n:'铁壁队',  col:'#e8c86a',sk:GSKILL.roar ,wp:[[3120,2740],[3560,2500],[4040,2660],[3520,2780]]}];
+const PATROLS=[];
+PSQUAD.forEach(function(S,qi){
+  S.wp.forEach(function(w,wi){for(let k=0;k<3;k++){
+    const off=(k-1)*PATROL_GAP;
+    PATROLS.push({x:w[0]+off,y:w[1]+off,qi:qi,wi:wi,mk:k,ii:PATROLS.length,legPh:(qi*3+k)%PATROL_LEG,sk:S.sk,hx:w[0],hy:w[1]+off,cd:ri(30,90),scd:ri(80,200),anim:0,face:0,hit:0,tgt:null});}});}); // V1.11.1：目标点同样带队形偏移，否则开局即误判"到点"而跳格
+function escDmg(m,base){ /* 守军伤害标定：随主角等级成长，但对高血量档位设硬上限，绝不替主角清场 */
+  const cap=Math.max(60,Math.round(maxHp()*.14+atkTotal()*.30));
+  return Math.round(Math.min(cap,base*(1+(p.lvl-1)*.06))*rnd(.9,1.1));}
+function guardHitMob(m,d,col,tag){ /* 守军打怪——不享五行克制、不吃词条、不计主角经验 */
+  if(!m||m.hp<=0)return;
+  m.hp-=d;m.flash=5;m.sqT=7;m.byGuard=1;m.dealt=(m.dealt||0)+0;
+  floatTxt(m.x+rnd(-6,6),m.y-22,(tag?tag+' ':'')+d,col);burst(m.x,m.y,col,4);
+  m.aggro=true;m.hateT=t;}
+function guardKill(m,i){ /* 需求2/3：守军补刀的人头——留掉落、去经验与成就计数 */
+  const def=MT[m.key];
+  burst(m.x,m.y,'#cfd8e8',14);fxRing(m.x,m.y,6,34,'#cfd8e8',2.4);
+  killDrop(m,def);
+  sfx(240,.09,'square',.04);
+  floatTxt(m.x,m.y-34,'🛡 守军斩敌','#cfe4ff');
+  if(!m.box)respawns.push({key:m.key,kind:m.kind||0,t:m.kind===1?900:RESP_N});
+  mobs.splice(i,1);}
+function mobAt(x,y,r,excl){ /* V1.11.1需求2：先挑"已锁定主角、正追进基地"的怪——守卫的职责就是接应追兵 */
+  let best=null,bs=1e18;
+  for(const m of mobs){if(m.hp<=0||m.box)continue; // 副本/塔内怪不归守军管
+    if(excl&&excl.indexOf(m)>=0)continue;
+    const d=dist(x,y,m.x,m.y);if(d>r)continue;
+    const sc=d-(m.aggro?400:0); // 追兵优先（等效于索敌半径外扩 400）
+    if(sc<bs){bs=sc;best=m;}}
+  return best;}
+function lineClear(x0,y0,x1,y1){const t=wallCastT(x0,y0,x1,y1);return t<0?1:t;}
+function escFx(g){g.anim=14;g.hit=1;}
+/* ---- 守卫技能落地 ---- */
+function guardSpear(g,m){const a=Math.atan2(m.y-g.y,m.x-g.x),L=340;
+  const k=lineClear(g.x,g.y,g.x+Math.cos(a)*L,g.y+Math.sin(a)*L);
+  const ex=g.x+Math.cos(a)*L*k,ey=g.y+Math.sin(a)*L*k;
+  for(const mo of mobs){if(mo.box||mo.hp<=0)continue;
+    const px=clamp(mo.x,g.x,ex),py=clamp(mo.y,g.y,ey); // 点到线段距离：整条枪路通穿
+    if(dist(mo.x,mo.y,px,py)<(mo.r||MT[mo.key].r)+16&&dist(g.x,g.y,px,py)<=L*k)
+      guardHitMob(mo,escDmg(mo,26),'#ffd27a','🔱');}
+  fxSpear(g.x,g.y,ex,ey);escFx(g);shakeN(3);sfx(320,.12,'triangle',.05);
+  floatTxt(g.x,g.y-40,'🔱 贯岳突刺','#ffd27a');}
+function guardBolt(g,m){const a=Math.atan2(m.y-g.y,m.x-g.x);
+  for(let i=0;i<3;i++)later(function(){projs.push({k:'gbolt',x:g.x,y:g.y-8,vx:Math.cos(a)*7.4,vy:Math.sin(a)*7.4,t:96,r:4,dmg:escDmg(m,11),col:'#7ec8ff'});},i*7); // V1.11.1需求2：独立守军弹种，绝不伤及主角
+  escFx(g);sfx(880,.06,'square',.03);floatTxt(g.x,g.y-38,'🏹 连弩攒射','#7ec8ff');}
+function guardSmite(g){const R=170;
+  for(const mo of mobs){if(mo.box||mo.hp<=0)continue;if(dist(g.x,g.y,mo.x,mo.y)<R+(mo.r||MT[mo.key].r)){
+    guardHitMob(mo,escDmg(mo,17),'#fff2c8','✨');mo.stun=Math.max(mo.stun||0,46);}}
+  fxRing(g.x,g.y,10,R,'#fff2c8',4);fx.push({k:'rune',x:g.x,y:g.y-2,col:'#fff2c8',t:24,max:24});
+  escFx(g);sfx(760,.16,'sine',.05);floatTxt(g.x,g.y-40,'✨ 圣光惩戒','#fff2c8');}
+function guardRoar(g){const R=120;
+  for(const mo of mobs){if(mo.box||mo.hp<=0)continue;if(dist(g.x,g.y,mo.x,mo.y)<R+(mo.r||MT[mo.key].r)){
+    const a=Math.atan2(mo.y-g.y,mo.x-g.x);guardHitMob(mo,escDmg(mo,13),'#c9a24a','🛡');mo.stun=Math.max(mo.stun||0,60);
+    if(mo.kind!==2){mo.x+=Math.cos(a)*46;mo.y+=Math.sin(a)*46;}}}}
+function guardRoarFx(g){fxRing(g.x,g.y,8,120,'#c9a24a',5);shakeN(6);sfx(120,.24,'sawtooth',.07);
+  escFx(g);floatTxt(g.x,g.y-40,'🛡 磐岳吼震','#c9a24a');guardRoar(g);}
+function guardCast(g,m){const sk=g.sk||GSKILL.spear; // 巡逻队员沿用本队技能
+  if(sk.k==='spear')guardSpear(g,m);
+  else if(sk.k==='bolt')guardBolt(g,m);
+  else if(sk.k==='smite')guardSmite(g);
+  else guardRoarFx(g);
+  g.scd=ESCORT_CD[sk.k]+ri(0,60);}
+/* ---- 巡逻队协同技（每队一门） ---- */
+function squadCenter(S){let x=0,y=0,c=0;for(const e of S)if(e.tgt||e.alert){x+=e.x;y+=e.y;c++;}
+  if(!c){for(const e of S){x+=e.x;y+=e.y;c++;}}return{x:x/c,y:y/c};}
+function squadSkill(S,qi){const st=PSQUAD[qi],c=squadCenter(S),mo=mobAt(c.x,c.y,PATROL_R); // V1.11.1：队号必须显式传入——filter 出的数组不带 qi 字段
+  if(!mo)return;
+  if(st.sk.k==='spear'){for(const e of S)guardSpear(e,mo);}
+  else if(st.sk.k==='bolt'){for(const e of S)guardBolt(e,mo);}
+  else if(st.sk.k==='smite'){fxLightning(mo.x,mo.y);
+    for(const e of S){if(dist(e.x,e.y,mo.x,mo.y)<420)guardHitMob(mo,escDmg(mo,9),'#c9b3ff','⚡');}
+    floatTxt(c.x,c.y-44,'⚡ 雷法协同·三芒连引','#c9b3ff');sfx(920,.1,'square',.04);}
+  else{guardRoarFx({x:c.x,y:c.y,anim:0,hit:0});for(const e of S)escFx(e);}
+  for(const e of S)e.scd=ESCORT_CD[st.sk.k]+ri(120,220);}
+/* ---- 单个护军实体推进：巡逻/守卫共用 ---- */
+function escortStep(e,mode,rad){
+  if(e.anim>0)e.anim--;if(e.hit>0)e.hit--;
+  if(e.cd>0)e.cd--;if(e.scd>0)e.scd--;
+  if(INST.on||p.dead>0)return;
+  let tx=e.x,ty=e.y;
+  if(mode==='p'){ /* V1.11.1需求3：路线按"队级节拍"推进——全队同时换段，三人保持纵向队形；
+                      旧版按各自到点判定换段，队形偏移(±30)会让成员永远差一点到点，出现原地抖动 */
+    if((t%PATROL_LEG)===e.legPh){const S=PSQUAD[e.qi];e.wi=(e.wi+1)%S.wp.length;}
+    const W=PSQUAD[e.qi].wp[e.wi],off=(e.mk-1)*PATROL_GAP;
+    e.hx=W[0];e.hy=W[1]+off;
+    tx=e.hx;ty=e.hy;}
+  else{tx=e.hx;ty=e.hy;}
+  let m=e.tgt;
+  if(m&&(m.hp<=0||m.box||dist(e.x,e.y,m.x,m.y)>rad)){m=null;e.tgt=null;}
+  if(!m&&((t+e.ii*7)%11===0)){const r0=mode==='p'?PATROL_R:GUARD_R;
+    m=mobAt(e.x,e.y,r0);if(m)e.tgt=m;}
+  const spd=mode==='p'?1.3:1.15;
+  if(m){const d=dist(e.x,e.y,m.x,m.y),a=Math.atan2(m.y-e.y,m.x-e.x);e.face=a;
+    const keep=(m.r||MT[m.key].r)+16;
+    if(d>keep)  {e.x+=Math.cos(a)*spd;e.y+=Math.sin(a)*spd;}
+    else{e.x+=Math.cos(a+1.57)*spd*.5;e.y+=Math.sin(a+1.57)*spd*.5;}
+    if(d<keep+22&&e.cd<=0){guardHitMob(m,escDmg(m,GDMG),'#e8e0c0',null);
+      fxSlash(m.x,m.y,a,26,1.5,'#e8e0c0');e.cd=ESCORT_CD.atk;escFx(e);sfx(260,.04,'square',.02);}
+    if(d<rad*.9&&e.scd<=0)guardCast(e,m);
+    /* 需求2/3：怪物在基地内围殴主角时，守军优先解围——主角半径 150 内的敌人受守军集火（已在上面自动锁定） */
+  }else{const d=dist(e.x,e.y,tx,ty);if(d>6){const a=Math.atan2(ty-e.y,tx-e.x);e.face=a;e.x+=Math.cos(a)*spd*.8;e.y+=Math.sin(a)*spd*.8;}}
+  /* 归位约束：守卫不离岗太远，巡逻队不追出近畿 */
+  const dh=dist(e.x,e.y,e.hx,e.hy),lim=mode==='p'?PATROL_LEASH:GUARD_LEASH;
+  if(dh>lim){e.tgt=null;const a=Math.atan2(e.hy-e.y,e.hx-e.x);e.x+=Math.cos(a)*spd*1.6;e.y+=Math.sin(a)*spd*1.6;} // 越界即放弃目标、强制归位
+  pushEnt(e,10); // 墙体实体碰撞：守军同样不能穿房穿墙（需求6 修复后可见障碍与碰撞一致）
+}
+function updateEscort(){
+  for(const g of GUARDS)escortStep(g,'g',GUARD_R);
+  for(const e of PATROLS)escortStep(e,'p',PATROL_R);
+  for(let q=0;q<PSQUAD.length;q++){const S=PATROLS.filter(function(e){return e.qi===q;});
+    if(S.some(function(e){return e.scd<=0;})&&S.some(function(e){return e.tgt;})){squadSkill(S,q);break;}} // 每帧最多一支队释放协同技，避免同刻四队齐放的特效洪峰
+}
+function drawSentinel(e,hue,kind,tag){
+  const x=e.x,y=e.y,bob=Math.sin(t*.07+e.ii+x*.01)*1.6,back=e.anim>0?-(e.anim/14)*4:0;
+  C.fillStyle='rgba(0,0,0,.32)';C.beginPath();C.ellipse(x,y+15,12,4.4,0,0,7);C.fill();
+  C.save();C.translate(x,y+bob);
+  const g=C.createRadialGradient(-4,-16,2,0,-8,26);g.addColorStop(0,'hsl('+hue+',42%,74%)');g.addColorStop(1,'hsl('+hue+',36%,34%)');
+  C.fillStyle='#3a3b2e';C.fillRect(-7,-4,5,18);C.fillRect(2,-4,5,18); // 护腿
+  C.fillStyle=g;rr(-9,-24,18,22,5);C.fill();                      // 胸甲
+  C.strokeStyle='rgba(255,255,255,.28)';C.lineWidth=1.2;rr(-9,-24,18,22,5);C.stroke();
+  C.fillStyle='hsl('+hue+',30%,26%)';C.fillRect(-9,-15,18,3);       // 腰带
+  C.fillStyle='#d8cfc0';C.beginPath();C.arc(0,-30+back*.4,7,0,7);C.fill(); // 盔
+  C.fillStyle='hsl('+hue+',55%,50%)';C.fillRect(-7,-38+back*.4,14,4);      // 盔缨
+  C.fillStyle='#2a2418';C.fillRect(-4,-31+back*.4,8,3);             // 面甲缝
+  if(kind===0){C.fillStyle='#8a8f9a';C.fillRect(11,-34+back,3,34);C.beginPath();C.moveTo(12.5,-42+back);C.lineTo(8,-32+back);C.lineTo(17,-32+back);C.closePath();C.fill();}
+  else if(kind===1){C.strokeStyle='#7a5a30';C.lineWidth=2.4;C.beginPath();C.arc(12,-16+back*.6,10,-1.2,1.2);C.stroke();
+    C.strokeStyle='#e8e0c0';C.lineWidth=1.2;C.beginPath();C.moveTo(2,-16+back*.6);C.lineTo(22,-16+back*.6);C.stroke();}
+  else{C.fillStyle='#9aa3b2';rr(-20,-22,10,20,3);C.fill();C.strokeStyle='hsl('+hue+',50%,66%)';C.lineWidth=1.4;C.stroke();
+    C.fillStyle='#e8c86a';C.beginPath();C.arc(-15,-12,3,0,7);C.fill();}
+  C.restore();
+  if(e.hit>0){C.save();C.globalAlpha=.35+.4*Math.sin(e.hit*.6);C.strokeStyle='#fff2c8';C.lineWidth=2;
+    C.beginPath();C.arc(x,y-10,22,0,7);C.stroke();C.restore();}
+  if(tag)txt(tag,x,y-46,10.5,'rgba(232,224,192,.92)','center',null,true);}
+function drawEscort(){
+  const tz=ZR('town');
+  const inView=!(tz.x>camX+LW+800||tz.x+tz.w<camX-800||tz.y>camY+LH+800||tz.y+tz.h<camY-800);
+  if(!inView)return;
+  for(const g of GUARDS){const sk=g.sk;
+    drawSentinel(g,sk.k==='spear'?36:sk.k==='bolt'?208:sk.k==='smite'?48:24,sk.k==='spear'?0:sk.k==='bolt'?1:2,null);
+    txt('🛡'+g.gate+'·'+sk.ic+sk.n,g.x,g.y-46,9.5,'rgba(226,216,180,.9)','center',null,true);}
+  for(const e of PATROLS){const S=PSQUAD[e.qi];
+    drawSentinel(e,e.mk===0?210:e.mk===1?30:120,e.mk%3,null);} // 同队三人分持枪/弩/盾， hue 与武器错开
+  for(let q=0;q<PSQUAD.length;q++){const S=PATROLS.filter(function(e){return e.qi===q;}),c=squadCenter(S);
+    const al=.55+.35*Math.sin(t*.05+q);
+    C.save();C.globalAlpha=al;txt('🚩 '+PSQUAD[q].n+' '+PSQUAD[q].sk.ic,clamp(c.x,2760,4290),clamp(c.y,1700,2800)-52,11,PSQUAD[q].col,'center',null,true);C.restore();}}
+/* 守军长枪划痕特效（世界层一次性） */
+function fxSpear(x0,y0,x1,y1){fx.push({k:'spear',x:x0,y:y0,x1:x1,y1:y1,t:10,max:10});}
+/* ============ /V1.11.1需求2/3 ============ */
 function npcNear(){for(let i=0;i<NPCS.length;i++)if(dist(p.x,p.y,NPCS[i].x,NPCS[i].y)<150)return i;return -1;}
 function npcTalk(i){const n=NPCS[i];
   p.kills[n.key]=(p.kills[n.key]||0)+1;
@@ -2265,14 +2559,14 @@ function drawVillager(n,i){ // v1.4需求29：村民立绘真实华丽化——�
 }
 /* ============ v1.5.3需求18：营地商业区——摊位/幡旗/零部件；需求19：建筑可破坏（10次击毁，5分钟自动修复） ============ */
 const STALLS=[
- {t:'tea',x:3552,y:2338,hue:20,flag:'茶'},
- {t:'story',x:3668,y:2352,hue:205,flag:'书'},
- {t:'herb',x:3318,y:2352,hue:95,flag:'药'},
- {t:'fortune',x:3262,y:1916,hue:285,flag:'命'},
+ {t:'tea',x:4080,y:1820,hue:20,flag:'茶'},
+ {t:'story',x:4140,y:2360,hue:205,flag:'书'},
+ {t:'herb',x:2900,y:2580,hue:95,flag:'药'},
+ {t:'fortune',x:2980,y:1920,hue:285,flag:'命'},
  {t:'wine',x:3438,y:2216,hue:45,flag:'酒'}];
 (function buildStalls(){for(const s of STALLS){const b={x:s.x-30,y:s.y+4,w:60,h:12,STALL:1};OBST.push(b);oadd(b);}})(); // 摊位柜台作为小障碍，队伍得绕——市井气
 function drawStalls(){ // 世界层：木架条纹雨棚+货摊+木箱陶罐+招幌幡旗（部件感）
-  if(camX>4500||camX+LW<2950||camY>3100||camY+LH<1700)return; // 视口剔除：全在村内
+  if(camX>4600||camX+LW<2760||camY>3120||camY+LH<1620)return; // V1.11.1需求1：摊位重排后放宽视口剔除边界（仍为纯剔除判定，不参与玩法）
   for(const s of STALLS){const x=s.x,y=s.y,wv=Math.sin(t*.06+s.x)*2;
     C.fillStyle='rgba(0,0,0,.28)';C.beginPath();C.ellipse(x,y+16,40,7,0,0,7);C.fill(); // 地影
     C.fillStyle='#5a4326';C.fillRect(x-34,y-26,4,42);C.fillRect(x+30,y-26,4,42); // 支柱
@@ -3257,7 +3551,7 @@ function hitMob(m,mult,opts){
   const td=setCnt('真伤');d+=td>=6?25:td>=3?12:td>=2?5:0; // 真伤套：固定真伤（需求74：6件+25）
   if(m.shT>0)d=Math.round(d*.5); // 龙溪龟护盾减伤
   const se=swEl();if(se&&Math.random()<.15)applyElem(m,se); // 副武器属性触发
-    m.hp-=d;m.dealt=(m.dealt||0)+d;m.flash=5;
+    m.hp-=d;m.dealt=(m.dealt||0)+d;m.flash=5;m.byGuard=0; // V1.11.1需求2/3：主角亲手命中即回收击杀归属（守军只补真正无人认领的人头）
     m.sqT=7; // V1.8.1：受击挤压，由怪物 tick 递减
   if(crit&&pass(19))bumpPass(19);
   if(pass(16))bumpPass(16);if(pass(17))bumpPass(17); // 需求23：嗜血/狂暴被动按使用次数熟练升级
@@ -3634,7 +3928,8 @@ function hurtPlayer(dmg,src,tru){
   floatTxt(p.x,p.y-34,'-'+d,'#e85a5a');sfx(140,.15,'sawtooth',.06);
   if(pass(18)&&src){hitMob(src,1,{col:'#59c959'});bumpPass(18);}
   if(pass(21))bumpPass(21);
-  if(p.hp<=0){p.hp=0;p.dead=110;burst(p.x,p.y,'#c95a4a',18);sfx(90,.4,'sawtooth',.07);
+  if(p.hp<=0){p.hp=0;p.dead=110;burst(p.x,p.y,'#c95a4a',18);sfx(90,.4,'sawtooth',.07); // V1.11.1需求7：阵亡留一条含现场的记录，便于复盘"怎么死的"
+    glog('biz','player died',{hit:dmg,raw:d,killer:src&&src.key?MT[src.key].name:(src?'非怪物来源（反伤等）':'环境/场景'),tru:!!tru,mobs:mobs.length,near:src&&src.x?Math.round(dist(p.x,p.y,src.x,src.y)):-1},'warn');
     if(INST.on)exitInst(true); // v1.5：副本中阵亡自动送回落鸦村
     const loss=Math.floor(p.gold*.1);p.gold-=loss;msg('你被拍扁了… 掉落 '+loss+' 金币','#e85a5a');}
 }
@@ -3747,7 +4042,7 @@ function updateMobs(){
       else if(m.scn==='holy'&&m.hp<m.maxhp)m.hp=Math.min(m.maxhp,m.hp+Math.round(m.maxhp*.012));}
     if(m.key==='turtle'){if(m.shT>0)m.shT--;else{if(m.shCd==null)m.shCd=180;if(--m.shCd<=0){m.shT=150;m.shCd=300;fxRing(m.x,m.y,10,44,'#7ee0ff',3);sfx(500,.2,'sine',.05);}}}
     const d=dist(m.x,m.y,p.x,p.y),sp=def.spd*NB()*(m.frost>0?.5:1)*(m.frzT>0?0:1)*(m.scnSpd||1); // v1.5.2需求7：场景移速加成/冻伤减速；V1.9需求2：夜战移速加成
-    if(m.dot){if(--m.dot.t<=0)m.dot=null;else if(--m.dot.tick<=0){m.dot.tick=m.dot.iv;m.hp-=m.dot.dv;m.flash=2;floatTxt(m.x+8,m.y-14,''+m.dot.dv,m.dot.col);}} // 中毒/灼烧 DoT
+    if(m.dot){if(--m.dot.t<=0)m.dot=null;else if(--m.dot.tick<=0){m.dot.tick=m.dot.iv;m.hp-=m.dot.dv;m.flash=2;m.byGuard=0;floatTxt(m.x+8,m.y-14,''+m.dot.dv,m.dot.col);}} // V1.11.1需求2/3：主角系持续伤害（灼烧/毒）跳死的人头归主角 // 中毒/灼烧 DoT
     if(m.aggro&&t-(m.hateT||-9e9)>1800){m.aggro=false;floatTxt(m.x,m.y-20,'脱仇','#8a9a7a');} // 需求85：30秒未受击自动释放仇恨
     /* V1.10.2需求5：索敌半径 = 10 个坐标点（50 像素），远程怪额外外扩一个射程；
        V1.10.2需求2：远程平A 只属于白名单物种——近战怪不再隔空打人；
@@ -3801,6 +4096,7 @@ function updateMobs(){
       else{m.x=clamp(m.x,z.x+4,z.x+z.w-4);m.y=clamp(m.y,z.y+4,z.y+z.h-4);}}
     pushEnt(m,(m.r||def.r||10)+2); // 需求83：房屋墙体实体碰撞
     if(m.hp<=0){
+      if(m.byGuard){guardKill(m,i);continue;} // V1.11.1需求2/3：守军补刀——只留掉落与金币，不计主角经验/击杀成就/祝福播报
       const K=m.kind||0;
       killDrop(m,def);burst(m.x,m.y,m.key==='slime'?'#5fbf4a':m.key==='fire'?'#ff7a3a':m.key==='knight'?'#9a8ae8':m.key==='turtle'?'#7ee0ff':m.key==='miner'?'#e8c86a':m.key==='bandit'?'#d86a5a':'#7aa04a',K?22:12);
       p.kills[m.key]=(p.kills[m.key]||0)+1;gainExp(def.exp*(K===2?15:K===1?5:1));sfx(m.key==='slime'||m.key==='fire'?420:260,.12,'square',.05);
@@ -3925,6 +4221,15 @@ function updateProjs(){
         for(let c=0;c<3;c++)spawnTornado(pa+(c-1)*.8,a.d*.8,a.slvl+1,0,a.x,a.y); // 继承 80%
         fxRing(a.x,a.y,8,a.r*1.4,'#8fe8c8',3);sfx(520,.12,'sine',.04);}
       if(a.t<=0)projs.splice(i,1);continue;}
+    if(a.k==='gbolt'){ /* V1.11.1需求2：守军连弩弹——独立弹种，只伤魔物不误伤主角；出界/到期/撞墙即散 */
+      a.t--;
+      if(a.gt==null)a.gt=2;
+      if(a.gt>0)a.gt--;
+      else if(nearObst(a.x,a.y,2)){burst(a.x,a.y,a.col||'#7ec8ff',4);projs.splice(i,1);continue;}
+      if(a.t<=0||a.x<0||a.y<0||a.x>W||a.y>H){projs.splice(i,1);continue;}
+      for(const m of mobs){if(m.hp<=0)continue;
+        if(dist(a.x,a.y,m.x,m.y)<(m.r||MT[m.key].r)+a.r){guardHitMob(m,a.dmg,a.col,'🏹');burst(a.x,a.y,a.col||'#7ec8ff',5);projs.splice(i,1);break;}}
+      continue;}
     if(a.k==='bullet'&&a.seek){const tg=nearMob(460);if(tg){const sp2=Math.hypot(a.vx,a.vy),a2=Math.atan2(tg.y-a.y,tg.x-a.x);a.vx=Math.cos(a2)*sp2;a.vy=Math.sin(a2)*sp2;}parts.push({x:a.x,y:a.y,vx:0,vy:0,col:'#ff6aff',t:7,s:2.5});} // v1.4：追踪弹
     a.x+=a.vx;a.y+=a.vy;a.t--;
     if(a.k==='stone'){ // V1.8需求9：敌方直线弹道（stone 全系怪物专属技/套装法术）撞墙即碎；3 帧出生宽限防贴脸自灭
@@ -4441,6 +4746,7 @@ function draw(){
     drawTowerWorld(); // v1.5需求3：主世界通天塔
     if(INST.on)drawInstWorld(); // v1.5需求1：副本平面/围墙/通道
   drawStalls();drawBreakables(); // v1.5.3需求18/19：商业摊位与建筑损伤态
+  drawEscort(); // V1.11.1需求2/3：四门守军 + 近畿四支巡逻卫队
   for(let i=0;i<NPCS.length;i++)drawVillager(NPCS[i],i); // 需求59：营地村民
   drawPet(); // bug1-新41：拾取小精灵
   drawBossPet(); // v1.4需求6：四神兽宝宝宠物
@@ -5324,6 +5630,8 @@ function drawProjs(){
       C.globalAlpha=al*.85;C.fillStyle='#bfffe8';C.beginPath();C.ellipse(0,-H,a.r*1.15,a.r*.4,0,0,7);C.fill();
       C.restore();C.globalAlpha=1;}
     else if(a.k==='ice'){C.save();C.translate(a.x,a.y);C.rotate(Math.atan2(a.vy,a.vx));C.fillStyle='#9adcfa';C.beginPath();C.moveTo(8,0);C.lineTo(0,4);C.lineTo(-8,0);C.lineTo(0,-4);C.closePath();C.fill();C.fillStyle='#dff6ff';C.fillRect(-2,-1.5,5,3);C.restore();}
+    else if(a.k==='gbolt'){C.fillStyle=a.col||'#7ec8ff';C.beginPath();C.arc(a.x,a.y,3.6,0,7);C.fill();
+      C.strokeStyle=a.col||'#7ec8ff';C.globalAlpha=.5;C.lineWidth=1.6;C.beginPath();C.moveTo(a.x,a.y);C.lineTo(a.x-a.vx*2.2,a.y-a.vy*2.2);C.stroke();C.globalAlpha=1;}
     else if(a.k==='stone'){C.fillStyle='#9a9aa5';C.beginPath();C.arc(a.x,a.y,4.5,0,7);C.fill();C.fillStyle='#6a6a75';C.beginPath();C.arc(a.x-1,a.y-1,2,0,7);C.fill();}
     else if(a.k==='bullet'){C.save();C.translate(a.x,a.y);C.rotate(Math.atan2(a.vy,a.vx));C.fillStyle=a.col;C.fillRect(-7,-1.5,11,3);C.fillStyle='#fff';C.fillRect(3,-1,3,2);C.globalAlpha=.35;C.fillStyle=a.col;C.fillRect(-16,-1,10,2);C.globalAlpha=1;C.restore();}
     /* v1.4需求15：新增6种专属弹道渲染——消除复用，每个技能视觉唯一 */
@@ -5369,6 +5677,9 @@ function drawProjs(){
   }
 }
 function drawFx(f){
+  if(f.k==='spear'){const u=f.t/f.max;C.save();C.globalAlpha=u;C.strokeStyle='#ffe9b0';C.lineWidth=3+3*(1-u);
+    C.beginPath();C.moveTo(f.x,f.y);C.lineTo(f.x1,f.y1);C.stroke();C.globalAlpha=u*.5;C.lineWidth=9*(1-u)+2;
+    C.strokeStyle='rgba(255,210,122,.5)';C.stroke();C.restore();return;}
   const al=f.t/f.max;
   if(f.k==='slash'){
     C.save();C.translate(f.x,f.y);C.rotate(f.ang);C.lineCap='round';
@@ -6328,6 +6639,14 @@ function drawStart(){
 /* ============ 主循环 ============ */
 function loop(){
   t++;
+  try{gperf(performance.now?performance.now():Date.now());}catch(e){glog('err','gperf threw: '+e.message,null,'error');} // V1.11.1需求7：帧耗时采样
+  try{gselfCheck();}catch(e){glog('err','gselfCheck threw: '+e.message,null,'error');}
+  try{loopBody();}catch(e){ /* V1.11.1需求7：主循环兜底——异常必须被记录并上报一次，同时不让游戏黑屏冻结 */
+    glog('err','loop threw: '+((e&&e.message)||e),{stack:gstack(e)},'error');
+    loopErrN=(loopErrN||0)+1;if(loopErrN===1||loopErrN%120===0)msg('⚠ 运行异常已记录（第 '+loopErrN+' 次）——按 O 打开设置可导出日志 JSON','#ff8a6a');}
+  requestAnimationFrame(loop);
+}
+function loopBody(){
   updateClock(); // V1.9需求1/4：推十二时辰与天气轮换（面板暂停时时间照流，与祝福弹幕同构）
   updateMusic(); // V1.10.1需求5：背景音乐循环（面板暂停时照常演奏）
   if(press.on&&!drag.on&&bagOpen&&performance.now()-press.t0>=HOLD){ // bug1-新37：长按满2秒进入拖动模式
@@ -6335,14 +6654,13 @@ function loop(){
   const paused=bagOpen||skPanel||charPanel||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.5.2需求9；v1.5.3需求11：选层面板也暂停；V1.8：设置面板也暂停
   if(loading()){ // V1.10.0需求3：加载遮罩期间冻结世界更新与输入，仅推进倒计时与特效
     LOAD.t--;if(LOAD.t<=0){LOAD.txt='';if(INST.on)msg('🗺 '+(INST.name||'副本')+' 展开完毕——开战！','#8affff');else msg('🗺 回到落鸦村——地图加载完毕','#8affff');}
-    updateFx();draw();requestAnimationFrame(loop);return;}
+    updateFx();draw();return;} // V1.11.1需求7：rAF 统一由 loop() 驱动，loopBody 只负责本帧逻辑与绘制
   if(started&&t%20===0)manageMobs(); // bug1-新43：持续按主角位置懒加载/卸载怪物
-  if(started&&!paused){updateRide();checkMain();updatePlayer();updateChatter();updateMobs();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
+  if(started&&!paused){updateRide();checkMain();updatePlayer();updateChatter();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
   else updateFx();
   if(started)updateBless(); // V1.8需求3/5：祝福弹幕与屏幕粒子（面板开启也照常飞）
     if(started&&p.dead===0&&t%600===0)setTimeout(function(){doSave(true);},0); // bug1-新23：每 10 秒异步自动存档
   draw();
-  requestAnimationFrame(loop);
 }
 function greetMsgs(){
   msg('五行克制：克×1.5 被克×0.7，伤害数字按武器五行上色；主动技能伴生使用次数自动升级','#7ee0ff');
