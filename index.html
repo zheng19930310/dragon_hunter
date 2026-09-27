@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.11.1</title>
+<title>降龙猎手 · 五行觉醒 V1.11.2</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -551,6 +551,7 @@ function enterInstance(type,name,col,keepHome,geo){ // V1.6：geo 可选——�
   INST.exit=null;INST.next=null;INST.bossKilled=0;INST.killed=0;INST.boss=0;INST.floor=0;INST.key=null;
   mobs.length=0;respawns.length=0;projs.length=0;coins.length=0; // 需求5：主世界怪/弹幕/金币瞬间卸载，防内存溢出
   if(lost)msg('🧹 清理了 '+lost+' 件遗落在副本中的拾取物','#8a9a7a');
+  mqEv('inst',type); // V1.11.2需求1：主线"引导参加副本"步骤（tower/dun/maze/petdun/mount）
   glog('biz','enterInstance '+(name||'')+' type='+type,{obst:OBST.length,iwall:INSTWALLS.length,mobs:mobs.length},null); // V1.11.1需求7：里程碑入日志，导出后可对照复现
   loadStart('🌀 地图加载中'); // V1.10.0需求3：进副本 3 秒加载遮罩
 }
@@ -1982,7 +1983,7 @@ const p={x:3500,y:2260,hp:100,mp:50,lvl:1,exp:0,gold:0,aim:0,cool:0,inv:0,flash:
   name:'无名猎人',gender:'男',
   dashT:0,dashCd:0,dvx:0,dvy:0,dir:1,walk:0,dead:0,books:{},ap:10,st:{str:0,agi:0,vit:0,spi:0,def:0},npcT:{},runT:0,movA:0,morph:null,morphCd:0,recallCd:0, // 需求59：npcT=对话轮次；需求62：runT=连续移动时长/movA=移动方向；需求71：morph=变身状态；v1.4需求9：morphCd=变身冷却帧计数；v1.4需求17：recallCd=回城冷却帧计数
   equip:{mweap:null,sweap:null,hat:null,top:null,pants:null,boots:null,acc:null,neck:null},
-  slots:[0,8,4,11],skcd:[0,0,0,0],skLvl:{},skUse:{},store:{},ek:{},bagRows:10,qs:[],qa:{},qv:0,main:0,encN:0, // 需求50/70：qs=进行中任务列表(≤10)、qa=成就位图、qv=已交付数、encN=已发大鼓励次数
+  slots:[0,8,4,11],skcd:[0,0,0,0],skLvl:{},skUse:{},store:{},ek:{},ekN:{},bagRows:10,qs:[],qa:{},qv:0,main:0,encN:0, // 需求50/70：qs=进行中任务列表(≤10)、qa=成就位图、qv=已交付数、encN=已发大鼓励次数；V1.11.2：ek=召BOSS倒计时（每 20 归零）、ekN=精英累计净击杀（主线判定的唯一依据，只增不减）
   autoSell:{eq:false,wp:false,pot:false,book:false,mat:false},colEq:0,colMat:{},ach2:{enhOk:0,drillOk:0,skLvlMax:0,morphN:0,petLvl:0,towerMax:0,towerKills:0,towerAch:0,mazeK:0,mazeEx:0,petKill:0,mountN:0,blessR:0},morphUsed:{}, // 需求76：自动售卖开关；需求77：装备/材料收集计数；v1.4需求27/28：ach2=五大系统联动成就计数；v1.5需求3/4：tower*=爬塔进度；V1.6/V1.7：mazeK/mazeEx/petKill/mountN；V1.8：blessR=祝福大典圆成轮数
   set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度
   mounts:{un:{},sel:''},mr:false, // V1.7：un=已解锁坐骑、sel=当前坐骑、mr=野外自由乘骑旗标
@@ -2030,7 +2031,7 @@ function atkTotal(){let a=5+(p.lvl-1)*2+p.st.str*2;
   for(const s of['hat','top','pants','boots','acc','neck']){const e=p.equip[s];if(e)a+=e.atk+(e.enh||0)*((s==='acc'||s==='neck')?2:0);}
   a+=morphAtk(); // 需求71：变身怪物攻击10倍加成
   a+=petAtk(); // v1.4需求6：宠物攻击加成
-  return Math.round(a*(1+affSum('atkPct')/100+mAtk()+(setPieces('烈焰')>=6?.30:setPieces('烈焰')>=4?.15:0)+(setPieces('真伤')>=4?.08:0)+(setPieces('吸血')>=4?.10:0))*(1+achEff().atk/100)*(1+tbV('atk')*.02));}
+  return Math.round(a*(1+affSum('atkPct')/100+mAtk()+(setPieces('烈焰')>=6?.30:setPieces('烈焰')>=4?.15:0)+(setPieces('真伤')>=4?.08:0)+(setPieces('吸血')>=4?.10:0))*(1+achEff().atk/100)*(1+tbV('atk')*.02)*(1+digAtkPct()));}
 function defTotal(){let d=p.st.def+p.st.vit*.5+achEff().def+morphDef()+petDef();for(const s of ARMSLOTS){const e=p.equip[s];if(e)d+=e.def+(e.enh||0);}const sw=p.equip.sweap;if(sw)d+=Math.round(sw.def*.6);if(setPieces('守护')>=2)d+=15;if(setPieces('守护')>=4)d+=Math.round(maxHp()*.05);if(setPieces('守护')>=6)d+=40; // 需求74：守护6件防御+40
   return Math.round(d+tbV('def')*2);} // 需求27：体力挂钩防御力；需求71：变身防御加成；v1.4需求6：宠物防御
 /* v2.0 修复强化 bug：武器强化只加攻，不再错误获得生命；生命加成仅防具/饰品 */
@@ -2127,7 +2128,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.11.1';
+const GLOG_MAX=600,GLOG_VER='1.11.2';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -2477,11 +2478,217 @@ function fxSpear(x0,y0,x1,y1){fx.push({k:'spear',x:x0,y:y0,x1:x1,y1:y1,t:10,max:
 /* ============ /V1.11.1需求2/3 ============ */
 function npcNear(){for(let i=0;i<NPCS.length;i++)if(dist(p.x,p.y,NPCS[i].x,NPCS[i].y)<150)return i;return -1;}
 function npcTalk(i){const n=NPCS[i];
+  /* V1.11.2需求1：主线"对话/交付"步骤——先结算交付，再走普通对话 */
+  if(mqDeliver(n))return;
   p.kills[n.key]=(p.kills[n.key]||0)+1;
   const li=(p.npcT[i]||0)%n.lines.length;p.npcT[i]=(p.npcT[i]||0)+1;
   n.say=n.lines[li];n.sayT=240;
   msg('💬 '+n.name+'：“'+n.say+'”（第'+p.kills[n.key]+'次交谈，故事线进度在 J 面板查看）','hsl('+n.hue+',70%,75%)');sfx(620+li*40,.07,'triangle',.04);
 }
+/* V1.11.2需求1：向 NPC 交付——材料交付(give) / 武器交付(gweap) / 纯对话(talk) */
+function mqDeliver(n){
+  if(!p.mq)return false;
+  const st=mqCur();if(!st||st.npc!==n.key)return false;
+  if(st.t==='talk'){mqEv('talk',n.key);return false;} // 对话照常播放台词，只累加计数
+  if(st.t==='give'){
+    if(mqMat(st.m)<st.n){msg('📦 交付【'+st.d+'】还差材料：'+st.m+' '+mqMat(st.m)+'/'+st.n,'#e8b33a');return true;}
+    mqMatTake(st.m,st.n);mqEv('give',n.key);
+    msg('📦 已交付 '+n.name+'：'+st.m+' ×'+st.n,'#8fd08f');sfx(1040,.12,'triangle',.04);
+    fxRing(n.x,n.y,6,44,'#8fd08f',3);return true;}
+  if(st.t==='gweap'){
+    const bi=bag.findIndex(function(it){return it&&(it.slot==='mweap'||it.slot==='sweap')&&(it.q||0)>=st.q&&!it.lock;});
+    if(bi<0){msg('🗡 需要 1 件品质≥'+['白','绿','蓝','紫','橙','红','金'][st.q]+'的武器（背包里放一件再找'+n.name+'）','#e8b33a');return true;}
+    const it=bag[bi];bag[bi]=null;mqEv('gweap',n.key);
+    msg('🗡 '+n.name+'收走并熔炼了【'+it.name+'】——'+st.d+'完成','#8fd08f');sfx(760,.14,'square',.04);
+    fxRing(n.x,n.y,6,50,'#ffd700',3);return true;}
+  return false;}
+/* ============ V1.11.2需求2：藏宝NPC「探宝人金算盘」——一次接单、十处挖宝 ============
+   原话口径：增加一个藏宝NPC，每次接取一个任务，则可以去十个地方进行挖宝。
+   宝物随机：武器、装备、宝宝蛋、释放boss、临时增加攻击、陷阱掉血、祝福等。
+   本实现共 10 类：装备 / 武器 / 金币 / 材料 / 陷阱掉血 / 临时加攻 / 释放BOSS / 宝宝蛋 / 祝福 / 残页秘籍。
+   实现要点：
+   · 接单：付费 300 金买「藏宝图」→ 现场生成 10 个互不重叠的宝藏点（含坐标/指引）；
+   · 挖宝：走到宝藏点 46 像素内按 E（与对话同一入口，宝藏优先），一次点位一次产出；
+   · 结算：十点挖完必须回 NPC 交图领赏（金币+经验+属性点），才能再接下一单；
+   · 掉落十类按权重轮盘抽取，"释放boss"与"陷阱掉血"为负/风险项，"祝福/临时加攻"为增益项；
+   · 进度入档 p.dig，界面追踪器与小地图同步点位。 */
+const DIG_NPC={x:3490,y:2480,name:'探宝人金算盘',key:'npc_dig',fee:300}; // 实测选点：距天使/猎户/传送阵/房墙均 >415px，避免其 170px 交涉圈遮挡 nearDoor 与 nearAngel
+const DIG_TOT=10,DIG_R=46;
+/* 交互禁区：[x, y, 半径]——半径取"该设施触发圈 + 宝点判定圈"的和，保证站在宝点上不会误触其它 E 功能 */
+const DIG_BLOCK=[[ANGEL.x,ANGEL.y,230+DIG_R],[HORSE.x,HORSE.y,150+DIG_R],[TOWER_PT.x,TOWER_PT.y,130+DIG_R],
+  [MAZE_PT.x,MAZE_PT.y,110+DIG_R],[PETDUN_PT.x,PETDUN_PT.y,110+DIG_R],[MNT_NPC.x,MNT_NPC.y,170+DIG_R],
+  [DIG_NPC.x,DIG_NPC.y,170+DIG_R]];
+NPCS.forEach(function(n){DIG_BLOCK.push([n.x,n.y,150+DIG_R]);}); // 村民按 E 圈同样不能压宝（实测漏掉时 4000 点中 299 点压在村民圈上）
+/* 十类宝物权重（合计 118，按 DIG_SUM 归一）：装备/武器最常见，宝宝蛋与残页稀有，陷阱/放怪是风险项 */
+const DIG_LOOT=[
+  {k:'equip',w:22,ic:'🛡',n:'装备'},
+  {k:'weap',w:20,ic:'🗡',n:'武器'},
+  {k:'gold',w:18,ic:'💰',n:'一窖金币'},
+  {k:'mat',w:14,ic:'🧺',n:'稀材'},
+  {k:'trap',w:12,ic:'⚠️',n:'陷阱'},
+  {k:'buff',w:9,ic:'🔥',n:'暴怒之力'},
+  {k:'boss',w:8,ic:'☠️',n:'惊醒了什么'},
+  {k:'egg',w:5,ic:'🥚',n:'宝宝蛋'},
+  {k:'bless',w:6,ic:'🎊',n:'祝福'},
+  {k:'book',w:4,ic:'📕',n:'残页秘籍'}];
+const DIG_SUM=DIG_LOOT.reduce(function(a,x){return a+x.w;},0);
+function nearDigNpc(){return !INST.on&&p.dead===0&&dist(p.x,p.y,DIG_NPC.x,DIG_NPC.y)<170;}
+function digAct(){return !!(p.dig&&p.dig.pts&&p.dig.pts.some(function(q){return !q.got;}));} // 语义＝仍有未挖点（挖满即 false，才能进交图分支）
+function digLeft(){if(!p.dig)return 0;return digAct()?p.dig.pts.filter(function(q){return !q.got;}).length:0;}
+function digNext(){if(!digAct())return null;for(let i=0;i<p.dig.pts.length;i++)if(!p.dig.pts[i].got)return p.dig.pts[i];return null;}
+function digNearSpot(){if(!digAct()||INST.on||p.dead)return -1;
+  for(let i=0;i<p.dig.pts.length;i++){const q=p.dig.pts[i];if(!q.got&&dist(p.x,p.y,q.x,q.y)<DIG_R)return i;}
+  return -1;}
+function digPoint(zk){ /* 生成一个可用的宝藏点：区域内部落位、避开房墙、彼此拉开 320 像素 */
+  for(let tryI=0;tryI<26;tryI++){
+    const r=ZONES[zk],e={x:r.x*WS+rnd(30,r.w*WS-30),y:r.y*WS+rnd(30,r.h*WS-30)};
+    if(zk==='town')pushEnt(e,26);
+    e.x=clamp(e.x,40,W-40);e.y=clamp(e.y,40,H-40);
+    let far=true;
+    for(const q of p.dig.pts)if(dist(e.x,e.y,q.x,q.y)<320){far=false;break;}
+    if(dist(e.x,e.y,p.x,p.y)<260)far=false; // 别把宝埋在脚下
+    /* V1.11.2需求2：宝点不得压在交互圈上——开挖优先级高于 door/angel，
+       若埋在传送阵/塔基/天使/马桩/村民脚下，玩家按 E 就变成挖宝、进不去副本。 */
+    for(const bl of DIG_BLOCK)if(dist(e.x,e.y,bl[0],bl[1])<bl[2]){far=false;break;}
+    if(far)return e;}
+  /* 兜底（小区域被前几点挤满时）：仍留在本区内，取"离已有点最远"的候选——
+     这样 z 标签始终与真实区块一致，也不会把宝点丢进无怪区。 */
+  const r2=ZONES[zk];let best=null,bd=-1;
+  for(let t2=0;t2<60;t2++){
+    const e2={x:r2.x*WS+rnd(24,r2.w*WS-24),y:r2.y*WS+rnd(24,r2.h*WS-24)};
+    let m=1e9;for(const q of p.dig.pts)m=Math.min(m,dist(e2.x,e2.y,q.x,q.y));
+    let blocked=false;for(const bl of DIG_BLOCK)if(dist(e2.x,e2.y,bl[0],bl[1])<bl[2]){blocked=true;break;}
+    if(blocked)continue;
+    if(dist(e2.x,e2.y,p.x,p.y)<200)continue;
+    if(m>bd){bd=m;best=e2;}}
+  return best||{x:r2.x*WS+r2.w*WS/2,y:r2.y*WS+r2.h*WS/2};}
+function digTake(){ /* 接取一单藏宝图 */
+  if(p.gold<DIG_NPC.fee){msg('💰 接一单藏宝图需 '+DIG_NPC.fee+' 金（现 '+p.gold+' 金）','#e85a5a');return;}
+  p.gold-=DIG_NPC.fee;
+  p.dig={got:0,tot:DIG_TOT,pts:[],fee:DIG_NPC.fee,t:t};
+  /* 10 处：2 处村郊（低风险）+ 8 处按等级带选怪区（有怪才有风险与收益） */
+  const pool=[];
+  for(const k in MT){const d=MT[k];if(d.lvl<=p.lvl+12)pool.push(d.zone);}
+  const uniq=Array.from(new Set(pool));
+  if(uniq.length<3)for(const k in ZONES)if(k!=='town')uniq.push(k);
+  for(let i=0;i<DIG_TOT;i++){
+    const zk=i<2?'town':uniq[(Math.random()*uniq.length)|0];
+    const e=digPoint(zk);
+    /* 兜底点可能落到别的区块：z 必须改写为真实所在区，否则提示与图注会说错地方 */
+    let zt=zk;for(const k in ZONES){const r=ZR(k);if(e.x>=r.x&&e.x<=r.x+r.w&&e.y>=r.y&&e.y<=r.y+r.h){zt=k;break;}}
+    p.dig.pts.push({x:e.x,y:e.y,z:zt,got:0});}
+  msg('🗺 藏宝图到手！十处宝地已标注在小地图与左侧追踪器——挖满回来交图','#ffd700');
+  msg('🧭 第一处：'+(ZONES[p.dig.pts[0].z].label||p.dig.pts[0].z).replace(/ ?\([\d, ]*\)/,'')+' → ('+Math.round(p.dig.pts[0].x/WS)+','+Math.round(p.dig.pts[0].y/WS)+')','#8fd08f');
+  sfx(760,.14,'triangle',.05);fxRing(DIG_NPC.x,DIG_NPC.y,6,52,'#ffd700',3);
+  glog('biz','dig take',{fee:DIG_NPC.fee,gold:p.gold,lvl:p.lvl},null);}
+function digReport(){ /* 十点挖完回NPC交图 */
+  const g=600+p.lvl*40,xp=500+p.lvl*60;
+  p.gold+=g;gainExp(xp);p.ap+=1;
+  msg('🗺 交图完成！'+DIG_NPC.name+'拨开算珠：赏金币+'+g+' 经验+'+xp+' 属性点+1','#ffd700');
+  floatTxt(p.x,p.y-50,'🗺 +'+g+'金','#ffd700');sfx(1040,.14,'triangle',.05);
+  fxRing(DIG_NPC.x,DIG_NPC.y,6,60,'#ffd700',4);
+  glog('biz','dig report',{got:p.dig?p.dig.got:0,gold:g,exp:xp},null);
+  p.dig=null;}
+function digRoll(){ /* 轮盘抽取一类宝物 */
+  let r=Math.random()*DIG_SUM;
+  for(const x of DIG_LOOT){r-=x.w;if(r<=0)return x;}
+  return DIG_LOOT[0];}
+function digMobKey(){ /* 与主角同级或略高的怪，用于爆装/放BOSS的物种 */
+  const ks=Object.keys(MT).filter(function(k){return !MT[k].onlyBoss&&MT[k].lvl<=p.lvl+10&&MT[k].lvl>=Math.max(1,p.lvl-15);});
+  return ks.length?ks[(Math.random()*ks.length)|0]:'slime';}
+function digSpot(q){ /* 就地开挖 */
+  q.got=1;p.dig.got=(p.dig.got||0)+1;
+  const L=digRoll(),x=q.x,y=q.y;
+  fxRing(x,y,4,40,'#e8c86a',3);burst(x,y,'#c9a24a',14);sfx(220,.16,'sawtooth',.05);shakeN(3);
+  if(L.k==='equip'||L.k==='weap'){
+    /* makeItem 的槽位是随机的：要武器就必须反复掷到武器槽（最多 12 次），
+       否则强行改 slot 会让 itemIcon 读不到 it.w 而崩。掷不到就退化成装备。 */
+    let it=null;
+    for(let tryI=0;tryI<14;tryI++){const cand=makeItem(digMobKey(),null,1);
+      if(L.k==='weap'){if(cand.slot==='mweap'){it=cand;break;}if(!it&&(cand.slot==='sweap'))it=cand;} // 主手优先，退而取副手
+      else{if(cand.slot!=='mweap'&&cand.slot!=='sweap'){it=cand;break;}if(!it)it=cand;}}        // 装备＝非武器部位优先
+    if(!it)it=makeItem(digMobKey(),null,0);
+    it.x=x+rnd(-10,10);it.y=y+rnd(-8,8);items.push(it);
+    const wp=(it.slot==='mweap'||it.slot==='sweap');
+    msg('⛏ 挖出一口木箱——【'+it.name+'】（'+(wp?'武器·':'装备·')+QN[it.q]+'）','#ffd700');}
+  else if(L.k==='gold'){
+    const n=ri(6,11),v=Math.round((60+p.lvl*26)*(1+goldBonus()/100));
+    for(let i=0;i<n;i++)coins.push({x:x+rnd(-24,24),y:y+rnd(-18,18),v:v,t:1200});
+    msg('⛏ 铜钱崩出来一地！约 '+(n*v)+' 金','#e8cf4a');}
+  else if(L.k==='mat'){
+    const sy=['enh','drill','skill','morph','pet'][(Math.random()*5)|0],mm=matOf(sy,p.lvl+ri(0,10));
+    const it=matItem(mm.ic,mm.name,mm.price,x,y);it.count=ri(2,5);items.push(it);
+    msg('⛏ 油布包里有 '+it.count+' 个【'+mm.name+'】','#8fd08f');}
+  else if(L.k==='egg'){
+    const pk=Object.keys(PETDEFS)[(Math.random()*4)|0];
+    items.push(eggItem(pk,x+rnd(-6,6),y+rnd(6,12)));
+    msg('🥚 土里滚出一枚温热的【'+PETDEFS[pk].name+'蛋】！','#ffd700');flashS=.2;}
+  else if(L.k==='boss'){
+    const bk=digMobKey();spawnMob(bk,2,{x:x+70,y:y+20});
+    msg('☠️ 一锹下去压住了封印——「'+MT[bk].name+'·BOSS」破土而出！','#e85a5a');
+    floatTxt(x,y-40,'☠️ 惊动BOSS','#e85a5a');flashS=.35;shakeN(9);sfx(120,.3,'sawtooth',.06);}
+  else if(L.k==='buff'){
+    const pct=20+ri(0,20),sec=30+ri(0,30);
+    p.dbuff={atk:pct,t:sec*60};
+    msg('🔥 宝气入体——攻击临时 +'+pct+'%（'+sec+' 秒）','#ff9a5a');
+    floatTxt(x,y-40,'🔥 攻+'+pct+'%','#ff9a5a');sfx(660,.2,'square',.05);}
+  else if(L.k==='trap'){
+    const dm=Math.max(1,Math.round(maxHp()*(.12+Math.random()*.13)));
+    hurtPlayer(dm,null,true);
+    msg('⚠️ 是陷阱！墓道弩机射穿脚踝，损失 '+dm+' 生命','#e85a5a');shakeN(8);}
+  else if(L.k==='bless'){
+    blessFire(6);msg('🎊 宝光冲霄——福气四溢（祝福弹幕 ×6）','#ff9ad5');}
+  else{
+    const bk=['fire','thunder','poison','storm'][(Math.random()*4)|0];
+    items.push(bookItem(bk,x,y+rnd(-4,4)));
+    msg('📕 泥块里剔出一页【'+SKB[bk]+'】','#b06ae8');}
+  glog('biz','dig spot',{loot:L.k,got:p.dig?p.dig.got:0,tot:p.dig?p.dig.tot:DIG_TOT,x:Math.round(x),y:Math.round(y)},null);
+  if(!digLeft())msg('🗺 十处已挖完——回 ('+Math.round(DIG_NPC.x/WS)+','+Math.round(DIG_NPC.y/WS)+') 找'+DIG_NPC.name+'交图领赏','#ffd700');}
+function updateDig(){ /* 临时攻值倒计时 */
+  if(p.dbuff&&p.dbuff.t>0){p.dbuff.t--;if(p.dbuff.t<=0){p.dbuff=null;msg('🔥 宝气散尽，攻击加成结束','#ff9a5a');}}}
+function digAtkPct(){return (p.dbuff&&p.dbuff.t>0)?p.dbuff.atk/100:0;}
+function drawDigNPC(){ /* 藏宝NPC 立绘：斗笠 + 罗盘 + 铁锹 + 钱串 */
+  if(INST.on)return;
+  const x=DIG_NPC.x,y=DIG_NPC.y;
+  if(x>camX+LW+160||x<camX-160||y>camY+LH+160||y<camY-160)return;
+  const br=Math.sin(t*.05)*1.4;
+  C.fillStyle='rgba(0,0,0,.34)';C.beginPath();C.ellipse(x,y+18,12,4,0,0,7);C.fill();
+  C.strokeStyle='#6a5230';C.lineWidth=2;C.beginPath();C.moveTo(x+11,y-24);C.lineTo(x+15,y+16);C.stroke(); // 锹柄
+  C.fillStyle='#b9c0cc';C.beginPath();C.moveTo(x+11,y+14);C.lineTo(x+19,y+14);C.lineTo(x+17,y+24);C.lineTo(x+13,y+24);C.closePath();C.fill(); // 锹头
+  C.fillStyle='#3a2f1e';rr(x-8,y-16,16,20,3);C.fill(); // 短打
+  C.fillStyle='#8a6a3a';rr(x-8,y-6,16,10,2);C.fill(); // 腰带钱袋
+  C.fillStyle='#e6b98a';C.beginPath();C.arc(x,y-22,6.6,0,7);C.fill(); // 头
+  C.fillStyle='#241a12';C.beginPath();C.arc(x-2.4,y-22,1,0,7);C.fill();C.beginPath();C.arc(x+2.4,y-22,1,0,7);C.fill();
+  C.fillStyle='#c9a24a';C.beginPath();C.ellipse(x,y-28-br*.3,14,4,0,0,7);C.fill(); // 斗笠
+  C.strokeStyle='#8a6a2a';C.lineWidth=1;C.beginPath();C.ellipse(x,y-28-br*.3,14,4,0,0,7);C.stroke();
+  const g=C.createRadialGradient(x-8,y+2,1,x-8,y+2,12);g.addColorStop(0,'rgba(255,215,120,'+(.3+.2*Math.sin(t*.12))+')');g.addColorStop(1,'transparent');
+  C.fillStyle=g;C.beginPath();C.arc(x-8,y+2,12,0,7);C.fill(); // 罗盘微光
+  C.fillStyle='#efe6c0';C.beginPath();C.arc(x-8,y+2,3,0,7);C.fill();
+  txt('🗺 '+DIG_NPC.name,x,y-40,12.5,'#ffd700','center',null,true);
+  if(!INST.on&&dist(p.x,p.y,x,y)<230){
+    const hint=digAct()?('按 E 查看行程：还剩 '+digLeft()+' 处（站到 ✕ 上按 E 开挖）')
+      :(p.dig?'按 E 交图领赏（十处已挖满）':'按 E 请一张藏宝图（'+DIG_NPC.fee+'金 · 十处宝地）');
+    txt(hint,x,y-54,12,'#fff2b0','center',null,true);}
+  if((t>>4)%2){const r2=C.createRadialGradient(x,y+16,2,x,y+16,30);r2.addColorStop(0,'rgba(255,215,80,.22)');r2.addColorStop(1,'transparent');C.fillStyle=r2;C.beginPath();C.arc(x,y+16,30,0,7);C.fill();}}
+function drawDigSpots(){ /* 世界层：未挖点画十字宝记 + 光圈；已挖点留坑 */
+  if(!p.dig||!p.dig.pts)return;
+  for(const q of p.dig.pts){
+    if(q.x>camX+LW+90||q.x<camX-90||q.y>camY+LH+90||q.y<camY-90)continue;
+    if(q.got){C.strokeStyle='rgba(60,45,25,.8)';C.lineWidth=2;C.beginPath();C.ellipse(q.x,q.y,11,5,0,0,7);C.stroke();
+      C.fillStyle='rgba(20,14,8,.5)';C.beginPath();C.ellipse(q.x,q.y,9,4,0,0,7);C.fill();continue;}
+    const pu=.55+.45*Math.sin(t*.11);
+    C.save();C.globalAlpha=.5+.4*pu;C.strokeStyle='#ffd700';C.lineWidth=2;
+    C.beginPath();C.arc(q.x,q.y,15+pu*4,0,7);C.stroke();C.restore();
+    C.strokeStyle='#ffe14a';C.lineWidth=2.6;C.beginPath(); // ✕ 宝记
+    C.moveTo(q.x-7,q.y-7);C.lineTo(q.x+7,q.y+7);C.moveTo(q.x+7,q.y-7);C.lineTo(q.x-7,q.y+7);C.stroke();
+    if(dist(p.x,p.y,q.x,q.y)<DIG_R)txt('⛏ 按 E 开挖',q.x,q.y-26,13,'#fff2b0','center',null,true);
+    else if(dist(p.x,p.y,q.x,q.y)<300)txt('宝',q.x,q.y-22,11.5,'rgba(255,225,120,'+(.5+.4*pu)+')','center',null,true);}}
+function digTrackerTxt(){ /* 追踪器/面板共用的藏宝图一行 */
+  if(!p.dig)return '';
+  if(digAct()){const nx=digNext();
+    return '🗺 藏宝图 '+(p.dig.got||0)+'/'+DIG_TOT+(nx?'　下一处 → ('+Math.round(nx.x/WS)+','+Math.round(nx.y/WS)+')':'');}
+  return '🗺 藏宝图已挖满 '+DIG_TOT+'/'+DIG_TOT+'　→ ('+Math.round(DIG_NPC.x/WS)+','+Math.round(DIG_NPC.y/WS)+') 交图';}
+/* ============ /V1.11.2需求2 ============ */
 function drawVillager(n,i){ // v1.4需求29：村民立绘真实华丽化——四 NPC 各具体型/服饰/道具 + 体积光影 + 待机呼吸
   const x=n.x,y=n.y+Math.sin(t*.06+i)*2,hue=n.hue;
   const sw=Math.sin(t*.05+i)*1.6; // 衣摆/道具轻摆
@@ -2670,6 +2877,190 @@ const MAINLIN=[
 {k:'baihu',n:1,lv:90,c:'终章',t:'白虎下山签合同',go:'四象神兽白虎拒签《大陆和平公约》，理由：「没打过我，不服。」天使：「最后一单，打完让它签。」',ok:'白虎按爪印签了公约。公司年会你压轴上台，天使亲自颁发：年度最佳猎人。'},
 {k:'tower',n:100,lv:95,c:'番外',t:'通天塔的答案',go:'传说通天塔顶藏着「猎人为何而猎」的答案。天使破例请了假：「这次，我陪你去。」',ok:'你们登上塔顶，答案只有一行字：「为了回到落鸦村，有人等你吃晚饭。」'}
 ];
+
+/* ============ V1.11.2需求1：主线任务链——由"等级门槛 + 杀N只"升级为多目标步骤链 ============
+   设计口径（对应用户原话"需要更加生动，而非简单的等级限制"）：
+   · 每章 2~3 个步骤，步骤类型覆盖：杀普通怪/精英/BOSS、材料收集、NPC对话、材料交付、
+     武器交付、引导入副本（产蛋秘境/御骑境/幻境/迷宫/通天塔）、获得坐骑、获得宝宝、
+     变身引导、变身后释放技能、变身到指定坐标、指定场景生存 N 秒、爬塔层数；
+   · 等级门槛保留（仍是章节解锁条件），但不再等于"卡等级"——达标前可先把步骤进度攒满；
+   · 进度可跨存档恢复：杀怪类用"步骤起点基线 + 全局计数差值"，事件类用 p.mq.c 计数器。 */
+/* 步骤字段：t=类型 k=怪 key n=目标数 d=标题 tip=引导文案 z=区域 sec=秒 m=材料名前缀
+   npc=NPC key it=副本类型 mk=变身怪 key idx=技能槽 r=判定半径 q=武器品质下限 */
+const MQT=[
+ /* 第1章 草原失业危机 Lv1 */[
+  {t:'kill',k:'slime',n:8,d:'草原清剿',tip:'史莱姆草原（坐标 24,27 一带）猎杀史莱姆 ×8'},
+  {t:'mat',m:'粘质液',n:3,z:'slime',d:'采集样本',tip:'史莱姆必掉「粘质液」——捡满 3 份（走过即可拾取）'},
+  {t:'talk',npc:'npc_smith',n:1,d:'交验样本',tip:'把样本拿给北墙内的铁匠托洛看看（走近按 E）'}],
+ /* 第2章 哥布林拖欠工资 Lv5 */[
+  {t:'kill',k:'goblin',n:12,d:'结清工资',tip:'哥布林营地（113,43）讨伐哥布林 ×12'},
+  {t:'give',npc:'npc_smith',m:'粗糙·磨石',n:3,d:'交付磨石',tip:'背包攒够 3 个「粗糙·磨石」后，找铁匠托洛交付'},
+  {t:'mount',it:'mount',n:1,d:'领一匹脚力',tip:'Lv5 起：去基地东北角找弼马温（4250,2500）接坐骑任务并讨伐御骑境BOSS'}],
+ /* 第3章 消防员不入火场 Lv10 */[
+  {t:'kill',k:'fire',n:15,d:'后山消防',tip:'史莱姆营地（7,25）讨伐烈焰史莱姆 ×15'},
+  {t:'inst',it:'petdun',n:1,d:'踏入产蛋秘境',tip:'Lv10 解锁：踩基地南侧金阵（3180,2770）进入产蛋秘境'},
+  {t:'pet',it:'petdun',n:1,d:'孵一只伙伴',tip:'秘境四神兽必爆宝宝蛋——回背包点蛋上阵（任一宠物槽）'}],
+ /* 第4章 铠甲回收计划 Lv15 */[
+  {t:'kill',k:'knight',n:12,d:'拆解报废铠甲',tip:'暗影骑士竞技场（94,94）讨伐暗影骑士 ×12'},
+  {t:'ekill',k:'knight',n:3,d:'专挑硬骨头',tip:'同一区里等蓝光精英·暗影骑士，讨伐精英 ×3（精英 5 倍血、爆 5 件）'},
+  {t:'inst',it:'dun',z:'arena',n:1,d:'进入幻境副本',tip:'走到暗影骑士区的⛩副本入口按 E——幻境里精英与BOSS成堆'},
+  {t:'bkill',k:'knight',n:1,d:'斩骑士长',tip:'在暗影骑士幻境副本里斩杀 1 只 BOSS 即算达成'}],
+ /* 第5章 龟速职场生存 Lv20 */[
+  {t:'kill',k:'turtle',n:15,d:'收复快递柜',tip:'龙溪龟区（174,15）讨伐龙溪龟 ×15'},
+  {t:'surv',z:'badlands',sec:60,d:'荒原历练',tip:'在法外荒原（147,154）连续生存 60 秒（离开或阵亡则重计）'},
+  {t:'talk',npc:'npc_hunter',n:1,d:'汇报历练',tip:'回基地南广场找猎人阿达（3900,2620）说说荒原见闻'}],
+ /* 第6章 矿区股权纠纷 Lv25 */[
+  {t:'kill',k:'miner',n:20,d:'清收矿区',tip:'黄金矿洞（163,69）讨伐黄金矿工 ×20'},
+  {t:'ekill',k:'miner',n:4,d:'矿霸执法',tip:'矿洞里蹲蓝光精英·黄金矿工，讨伐精英 ×4'},
+  {t:'mat',m:'金矿石',n:5,z:'mine',d:'收缴金矿石',tip:'矿工掉落「金矿石」——捡满 5 块'},
+  {t:'gweap',npc:'npc_smith',q:2,n:1,d:'熔炼一件兵器',tip:'打造或拾取 1 件品质≥蓝（q2）的武器，交给铁匠托洛熔炼'}],
+ /* 第7章 年终奖抢劫案 Lv30 */[
+  {t:'kill',k:'bandit',n:25,d:'追回年终奖',tip:'法外荒原讨伐法外狂徒 ×25'},
+  {t:'mat',m:'粗糙·灵能尘',n:4,z:'badlands',d:'拾取灵能尘',tip:'狂徒与精英会掉「粗糙·灵能尘」——攒 4 个'},
+  {t:'talk',npc:'npc_sage',n:2,d:'请教线索',tip:'找西侧贤者玄尘（2810,2150）谈两次话（按 E 重复交谈）'}],
+ /* 第8章 风投失败 Lv35 */[
+  {t:'morph',k:'slime',n:1,z:'slime',d:'学会变身术',tip:'史莱姆成就满 10 杀解锁变身——按 V 打开变身面板化作史莱姆'},
+  {t:'msk',npc:'npc_sage',n:1,d:'变身演武',tip:'保持变身状态，按下 1~4 号技能槽释放一次任意主动技能'},
+  {t:'kill',k:'wind',n:30,d:'风投尽调',tip:'风之谷（25 段）讨伐被污染的风精灵 ×30'}],
+ /* 第9章 沙漠亮剑行动 Lv40 */[
+  {t:'kill',k:'scorp',n:35,d:'回寄恐吓信',tip:'毒蝎荒漠（30 段）讨伐沙漠毒蝎 ×35'},
+  {t:'ekill',k:'scorp',n:6,d:'掐掉带头的',tip:'荒漠里讨伐蓝光精英·沙漠毒蝎 ×6（精英击杀累计 20 只可召本区 BOSS）'},
+  {t:'matk',mk:'scorp',z:'scorp',r:150,d:'潜行侦察',tip:'变身为沙漠毒蝎，走进荒漠区域中心 150 像素内（骗过哨卡）'},
+  {t:'give',npc:'npc_taoist',m:'精铁·磨石',n:3,d:'换取卦金',tip:'交 3 个「精铁·磨石」给西北道士紫云（3008,1884）'}],
+ /* 第10章 强拆巨人 Lv45 */[
+  {t:'kill',k:'rock',n:40,d:'依法拆除',tip:'巨人之丘（35 段）讨伐岩石巨人 ×40'},
+  {t:'bkill',k:'rock',n:1,d:'拔掉石心',tip:'在岩石巨人幻境副本中斩杀 1 只 BOSS'},
+  {t:'surv',z:'rock',sec:90,d:'钉子户反扑',tip:'在巨人之丘连续生存 90 秒（离开或阵亡则重计）'}],
+ /* 第11章 塔里的高材生 Lv50 */[
+  {t:'kill',k:'mage',n:45,d:'学术打假',tip:'暗影法塔（40 段）讨伐暗影法师 ×45'},
+  {t:'inst',it:'maze',n:1,d:'闯万妖迷宫',tip:'踩基地南侧紫阵（迷宫阵）进入全BOSS长廊'},
+  {t:'talk',npc:'npc_storyteller',n:2,d:'说书润色',tip:'找东侧说书人老周（4140,2318）聊两次，把你的战绩编进书里'}],
+ /* 第12章 熔岩团建 Lv55 */[
+  {t:'kill',k:'lava',n:50,d:'温泉水复温',tip:'熔岩领域（45 段）讨伐熔岩领主 ×50'},
+  {t:'mat',m:'玄金·兽粮',n:6,z:'lava',d:'备足兽粮',tip:'收集 6 个「玄金·兽粮」喂饱你的宝宝'},
+  {t:'give',npc:'npc_smith',m:'玄金·磨石',n:4,d:'委托锻造',tip:'交 4 个「玄金·磨石」给铁匠托洛，换一件趁手兵器'}],
+ /* 第13章 飞升插队者 Lv60 */[
+  {t:'kill',k:'ascend',n:12,d:'恢复排队',tip:'飞升仙池（50 段）讨伐飞升神龟 ×12'},
+  {t:'msk',npc:'npc_sage',n:2,d:'化形连击',tip:'变身后释放 2 次主动技能（变身中按 1~4）'},
+  {t:'matk',mk:'ascend',z:'ascend',r:150,d:'混进VIP通道',tip:'变身为飞升神龟，走到仙池中心 150 像素内'}],
+ /* 第14章 沼泽环评风暴 Lv65 */[
+  {t:'kill',k:'marsh',n:50,d:'环境执法',tip:'瘴幽沼泽（55 段）讨伐瘴幽沼泽蛙 ×50'},
+  {t:'surv',z:'marsh',sec:120,d:'毒雾取证',tip:'在瘴幽沼泽连续生存 120 秒取证（离开或阵亡则重计）'},
+  {t:'talk',npc:'npc_herbman',n:2,d:'求解药',tip:'找西南采药女阿萝（2932,2548）谈两次讨止血散'}],
+ /* 第15章 雷崖限电事故 Lv70 */[
+  {t:'kill',k:'cliff',n:50,d:'抓赔电费的鸟',tip:'雷霆悬崖（60 段）讨伐雷霆崖鹰 ×50'},
+  {t:'bkill',k:'cliff',n:1,d:'鹰王伏法',tip:'在雷霆崖鹰幻境副本中斩杀 1 只 BOSS'},
+  {t:'give',npc:'npc_hunter',m:'星神·凿子',n:3,d:'采雷针',tip:'交 3 个「星神·凿子」给猎人阿达换证据清单'}],
+ /* 第16章 冰川冻结的年报 Lv75 */[
+  {t:'kill',k:'icef',n:55,d:'解冻年报',tip:'秘蓝冰原（65 段）讨伐秘蓝冰帝 ×55'},
+  {t:'mat',m:'星辉石',n:3,z:'zod1',d:'收集星辉',tip:'星座区星灵兽掉落「星辉石」——捡 3 颗'},
+  {t:'inst',it:'tower',n:1,d:'登塔查证',tip:'踩基地西南通天塔基座（2820,2710）按 E 入塔'}],
+ /* 第17章 血月强制加班 Lv80 */[
+  {t:'kill',k:'altar',n:60,d:'砸场子',tip:'血月祭坛（70 段）讨伐血月祭祭司 ×60'},
+  {t:'ekill',k:'altar',n:10,d:'砸掉领班的',tip:'祭坛里讨伐蓝光精英·血月祭祭司 ×10，加班文化的直接负责人'},
+  {t:'msk',npc:'npc_sage',n:3,d:'反996演武',tip:'变身后释放 3 次主动技能'},
+  {t:'matk',mk:'altar',z:'altar',r:150,d:'混进晨会',tip:'变身为血月祭祭司，走进祭坛中心 150 像素内'}],
+ /* 第18章 神陨之巅查岗 Lv85 */[
+  {t:'kill',k:'god',n:65,d:'点名册',tip:'神陨之巅（75 段）讨伐神陨石巨人 ×65'},
+  {t:'ekill',k:'god',n:12,d:'叫醒装睡的',tip:'神陨之巅讨伐蓝光精英·神陨石巨人 ×12'},
+  {t:'bkill',k:'god',n:1,d:'叫醒旷工的',tip:'在神陨石巨人幻境副本中斩杀 1 只 BOSS'},
+  {t:'surv',z:'god',sec:150,d:'山顶守夜',tip:'在神陨之巅连续生存 150 秒（离开或阵亡则重计）'}],
+ /* 第19章 白虎下山签合同 Lv90 */[
+  {t:'kill',k:'baihu',n:1,d:'最后一单',tip:'白虎谷·西（170,1400）讨伐白虎·西方神武'},
+  {t:'give',npc:'npc_girl',m:'星神·灵能尘',n:5,d:'兑现承诺',tip:'把 5 个「星神·灵能尘」交给北门内的村口小蜜（3520,1820）'},
+  {t:'talk',npc:'npc_sage',n:1,d:'论功',tip:'回西侧找贤者玄尘收尾这趟传说'}],
+ /* 番外 通天塔的答案 Lv95 */[
+  {t:'twr',it:'tower',n:100,d:'登上塔顶',tip:'通天塔第 100 层——答案在塔顶，不在等级里'},
+  {t:'talk',npc:'npc_taoist',n:1,d:'下山复命',tip:'回西北找道士紫云，让他也算一卦'}]
+];
+MQT.forEach(function(S,ci){S.forEach(function(st,si){st.id=ci+'.'+st.t+si;});});
+/* 步骤类型元信息（面板与追踪器共用） */
+const MQIC={kill:'⚔️',ekill:'💠',bkill:'☠️',mat:'🧺',talk:'💬',give:'📦',gweap:'🗡',inst:'🌀',
+  mount:'🏇',pet:'🥚',surv:'🛡',morph:'🌀',matk:'🎭',msk:'✨',twr:'🗼'};
+function mqZoneOf(st){
+  if(!st)return null;
+  if(st.k&&MT[st.k])return MT[st.k].zone;
+  if(st.z)return st.z;
+  if(st.mk&&MT[st.mk])return MT[st.mk].zone;
+  if(st.npc){const n=NPCS.find(function(x){return x.key===st.npc;});if(n)return 'town';}
+  if(st.it==='petdun'||st.it==='maze')return 'town';
+  if(st.it==='tower')return 'town';
+  return null;}
+function mqHint(st){ /* 需求75 口径：给一句"去哪儿干什么"，附坐标 */
+  if(!st)return '';
+  const z=mqZoneOf(st);
+  if(st.npc){const n=NPCS.find(function(x){return x.key===st.npc;});
+    if(n)return '🧭 '+n.name+' → ('+Math.round(n.x/WS)+','+Math.round(n.y/WS)+')';}
+  if(st.it==='petdun')return '🧭 产蛋秘境阵 → ('+Math.round(PETDUN_PT.x/WS)+','+Math.round(PETDUN_PT.y/WS)+')';
+  if(st.it==='maze')return '🧭 万妖迷宫阵 → ('+Math.round(MAZE_PT.x/WS)+','+Math.round(MAZE_PT.y/WS)+')';
+  if(st.it==='tower')return '🧭 通天塔 → ('+Math.round(TOWER_PT.x/WS)+','+Math.round(TOWER_PT.y/WS)+')';
+  if(st.it==='mount')return '🧭 弼马温 → ('+Math.round(MNT_NPC.x/WS)+','+Math.round(MNT_NPC.y/WS)+')';
+  if(z&&ZONES[z]){const c=zoneCoord(z);return '🧭 '+ZONES[z].label+' → ('+c.x+','+c.y+')';}
+  return '';}
+/* ---- 主线进度容器：p.mq={ch,st,c:{},base:{},sv:{}} ---- */
+function mqNew(ch){return {ch:ch,st:0,c:{},base:{},sv:0};}
+function mqSync(){ /* 章节变化/旧档首次进入：复位步骤与基线（c/base 是对象，勿用 Array 判空） */
+  if(!p.mq||p.mq.ch!==p.main||typeof p.mq.c!=='object'||typeof p.mq.base!=='object')p.mq=mqNew(p.main);
+  const S=MQT[p.main];if(!S||!S.length)return;
+  if(p.mq.st>=S.length)p.mq.st=S.length-1;}
+function mqCur(){const S=MQT[p.main];return S?S[Math.min(p.mq.st,S.length-1)]:null;}
+function mqMat(m){ /* 材料前缀匹配（星辉石·♈ 等变体名一并计入） */
+  let n=0;const lim=bagMax();
+  for(let i=0;i<lim;i++){const it=bag[i];
+    if(it&&it.slot==='mat'&&!it.book&&!it.relic&&it.name&&it.name.indexOf(m)===0)n+=(it.count==null?1:it.count);} // V1.11.2：count=0 的空堆不能按 1 计
+  return n;}
+function mqMatTake(m,c){let left=c;const lim=bagMax();
+  for(let i=0;i<lim&&left>0;i++){const it=bag[i];
+    if(it&&it.slot==='mat'&&!it.book&&!it.relic&&it.name&&it.name.indexOf(m)===0){
+      const c0=(it.count==null?1:it.count),mv=Math.min(left,c0);it.count=c0-mv;left-=mv;if(it.count<=0)bag[i]=null;}} // V1.11.2：交付后空堆必须清槽
+  return left===0;}
+function mqKillBase(st){ /* 杀怪类：记录步骤起点的全局计数，之后按差值算进度 */
+  const id=st.id;if(p.mq.base[id]==null){
+    p.mq.base[id]=st.t==='kill'?(p.kills[st.k]||0):st.t==='ekill'?(p.ekN[st.k]||0):0;} // V1.11.2：精英基线读 ekN（ek 每召一只BOSS就归零）
+  return p.mq.base[id];}
+function mqProg(){
+  const st=mqCur();if(!st)return 0;
+  switch(st.t){
+    case 'kill':return Math.max(0,(p.kills[st.k]||0)-mqKillBase(st));
+    case 'ekill':return Math.max(0,(p.ekN[st.k]||0)-mqKillBase(st));
+    case 'bkill':case 'morph':case 'msk':case 'matk':case 'inst':case 'mount':case 'pet':
+    case 'give':case 'gweap':case 'talk':return p.mq.c[st.id]||0;
+    case 'mat':return Math.min(mqMat(st.m),st.n);
+    case 'surv':return Math.floor((p.mq.sv||0)/60);
+    case 'twr':return p.ach2.towerMax||0;
+  }
+  return 0;}
+function mqNeed(){const st=mqCur();return st?(st.t==='surv'?st.sec:(st.n||1)):1;} // V1.11.2需求1：matk 等"一次性"步骤无 n 字段→默认 1，否则恒判不达标
+function mqDone(){return mqProg()>=mqNeed();}
+function mqAdd(id,n){p.mq.c[id]=(p.mq.c[id]||0)+(n||1);}
+function mqEv(t,val,amt){ /* 事件驱动：仅当前步骤匹配才计数（val 过滤怪/副本/NPC/变身怪）；
+   注意：这里只累加计数，"达成→推进"统一交给 checkMain，避免多处推进互相打架 */
+  if(!started||!p.mq)return;
+  const st=mqCur();if(!st||st.t!==t)return;
+  if(st.k!=null&&val!=null&&st.k!==val)return;
+  if(st.it!=null&&val!=null&&st.it!==val)return;
+  if(st.npc!=null&&val!=null&&st.npc!==val)return;
+  if(st.mk!=null&&val!=null&&st.mk!==val)return;
+  mqAdd(st.id,amt||1);}
+function mqTxt(st){ /* 一行目标文案 */
+  if(!st)return '';
+  const ic=MQIC[st.t]||'🎯';
+  return ic+' '+st.d+' '+mqProg()+'/'+mqNeed()+(st.t==='surv'?'秒':'');}
+/* V1.11.2需求1：主线分线文案（追踪器 + 任务面板共用）。只读，不改状态；
+   p.mq 尚未建立时（未开局/旧档首帧）返回兜底行，避免面板崩。 */
+function mqLines(){
+  const df=MAINLIN[p.main];if(!df)return null;
+  const S=MQT[p.main]||[],st=p.mq?mqCur():null;
+  const si=p.mq?Math.min(p.mq.st,Math.max(0,S.length-1)):0;
+  const chap='📖 主线 '+df.c+'《'+df.t+'》',stp=S.length?'步骤'+(si+1)+'/'+S.length:'';
+  const gate=p.lvl<df.lv?'⛔交章需Lv'+df.lv+'（现Lv'+p.lvl+'）':'✔可交章';
+  return {step:st,n:S.length,si:si,gate:p.lvl<df.lv,lv:df.lv,
+    prog:st?mqTxt(st):'',
+    hint:st?(mqHint(st)||st.tip||''):'',
+    sub:st?(st.tip||''):(df.ok||''),
+    chap:chap,stp:stp,gateTxt:gate,
+    head:chap+(stp?' '+stp:'')+'　'+(p.lvl<df.lv?gate:gate)};}
+/* ============ /V1.11.2需求1 数据表 ============ */
 function mainProg(){const df=MAINLIN[p.main];if(!df)return 0;return df.k==='tower'?(p.ach2.towerMax||0):(p.kills[df.k]||0);}
 function mainAdvance(){ // 达成即自动推进：发奖 + 剧情播报（主线只能一章一章完成）
   const df=MAINLIN[p.main];p.main++;
@@ -2679,12 +3070,52 @@ function mainAdvance(){ // 达成即自动推进：发奖 + 剧情播报（主�
   const nx=MAINLIN[p.main];
   if(nx)msg('📩 新工单【'+nx.c+' '+nx.t+'】解锁条件 Lv'+nx.lv+'：'+nx.go,'#c9e8ff');
   else msg('🏆 降龙公司史诗全部通关。从今天起，你就是传说本身。','#ff9ad5');
+  mqSync(); // V1.11.2需求1：换章即复位步骤索引
+  glog('biz','main chapter done',{ch:df.c,t:df.t,main:p.main,lvl:p.lvl},null);
   flashS=Math.max(flashS,.2);arp([523,659,784,1046],85);sfx(880,.12,'triangle',.05);floatTxt(p.x,p.y-52,'📖 '+df.c+' 完成!','#ff9ad5');}
-function checkMain(){ // loop 每帧校验当前主章节：等级门槛 + 讨伐目标（只推一章，顺序解锁）
+/* V1.11.2需求1：单步达成——小奖 + 播报 + 推进到本章下一步 */
+function mainStepWin(st){
+  const df=MAINLIN[p.main],S=MQT[p.main]||[];
+  const g=120*(p.main+1)*(st.n||1),xp=180*(p.main+1)*(st.n||1);
+  p.gold+=g;gainExp(xp);
+  msg('✅ 主线 '+df.c+' 步骤【'+st.d+'】完成（'+MQIC[st.t]+'）奖励：金币+'+g+' 经验+'+xp,'#8fd08f');
+  floatTxt(p.x,p.y-46,'✅ '+st.d,'#8fd08f');sfx(920,.1,'triangle',.04);fxRing(p.x,p.y,6,54,'#8fd08f',3);
+  glog('biz','main step done',{ch:p.main,step:st.t,id:st.id,gold:g,exp:xp},null);
+  if(p.mq.st<S.length-1){p.mq.st++;
+    const ns=MQT[p.main][p.mq.st];
+    msg('📋 下一步：'+ns.d+'——'+ns.tip,'#c9e8ff');
+    if(ns.t==='pet'&&!bagHasEgg())msg('🥚 提示：宝宝蛋出自产蛋秘境/四神兽——进秘境斩杀神兽必爆蛋','#e8c86a');}
+  else msg('📜 '+df.c+'《'+df.t+'》所有步骤已跑完——回去找天使交章','#ffd700');}
+function bagHasEgg(){for(let i=0;i<bagMax();i++)if(bag[i]&&bag[i].slot==='egg')return true;return false;}
+function checkMain(){ /* V1.11.2需求1：等级门槛 + 步骤链双轨——
+   ① 步骤进度实时累计（不受等级限制，先练级先攒着）；
+   ② 本章全部步骤跑完 且 达到章节等级 → 才真正交章推进。 */
   if(!started||p.dead>0)return;
+  mqSync();
   const df=MAINLIN[p.main];if(!df)return;
+  const st=mqCur();if(!st)return;
+  const last=(p.mq.st>=(MQT[p.main].length-1));
+  /* —— 需要每帧现场判定的步骤 —— */
+  if(st.t==='matk'){ /* 变身指定怪 + 抵达指定区域中心 */
+    if(p.morph&&p.morph.key===st.mk&&!INST.on){
+      const z=ZR(st.z),cx=z.x+z.w/2,cy=z.y+z.h/2;
+      if(dist(p.x,p.y,cx,cy)<(st.r||150))mqEv('matk',st.mk);}}
+  else if(st.t==='surv'){ /* 指定场景生存 N 秒：人形站在区内才计时，离区/进副本/变身/阵亡清零 */
+    const z=ZR(st.z),inZ=p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h;
+    if(!INST.on&&inZ&&!p.morph)p.mq.sv=(p.mq.sv||0)+1;
+    else p.mq.sv=0;}
+  else if(st.t==='pet'){ /* 上阵任一宝宝即算 */
+    if((p.pets||[]).some(function(x){return x;}))mqEv('pet',null);}
+  else if(st.t==='mount'){
+    if(p.mounts&&p.mounts.un&&Object.keys(p.mounts.un).length)mqEv('mount',null);}
+  /* —— 统一的"步骤达成→推进"：所有类型都走这里，事件型只负责累加计数 —— */
+  if(!last&&mqDone())mainStepWin(st);
+  /* —— 交章判定：等级门槛 + 全步完成 —— */
   if(p.lvl<df.lv)return;
-  if(mainProg()>=df.n)mainAdvance();}
+  if(mqAllDone())mainAdvance();}
+function mqAllDone(){ /* 末步达标即视为整章完成（前序步在达成时就已推进索引） */
+  const S=MQT[p.main];if(!S||!S.length)return true;
+  return p.mq.st>=S.length-1&&mqProg()>=mqNeed();}
 /* 需求78：里程碑提前——圣辉头环 15 个成就即得，天使形态 30 个成就即觉醒（不再绑全部 QALL） */
 const WING_T=10,RING_T=15,ANGEL_T=30;
 /* 需求75：接取任务时自动提示目标怪物/NPC 所在的营地世界坐标（小地图/任务面板/常驻追踪器均可见） */
@@ -2755,16 +3186,22 @@ function achEff(){ // 成就勋章效果聚合（自动激活，无需佩戴）
 function achN(){let n=0;for(let i=0;i<STORY.length;i++)for(let j=0;j<3;j++)if(qDone(i,j))n++;return n;}
 function nearAngel(){return dist(p.x,p.y,ANGEL.x,ANGEL.y)<230;} // 需求51/68：天使站在营地中央广场
 /* v1.4需求26：抽取 doTalk，给触控与键盘共用；当前周围是否可交互 NPC */
-function talkTarget(){if(nearDoor())return 'door';if(nearHorse())return 'horse';if(nearAngel())return 'angel';const ni=npcNear();if(ni>=0)return ni;return null;}
+function talkTarget(){if(digNearSpot()>=0)return 'spot';if(nearDigNpc())return 'dig';if(nearDoor())return 'door';if(nearHorse())return 'horse';if(nearAngel())return 'angel';const ni=npcNear();if(ni>=0)return ni;return null;}
 function doTalk(){
   if(p.ride){endRide('🏇 你勒马下鞍');return;} // v1.5.2需求9：骑行中任意处按 E 即下马
   const tt=talkTarget();
-  if(tt==='door'){tryDoor();return;} // v1.5需求1/3：副本入口/塔/通道优先（E 与💬共用）
+  /* V1.11.2需求2：藏宝——宝藏点优先于一切（站点上按 E 即开挖），其次才是 NPC 接单/交图 */
+  if(tt==='spot'){const di=digNearSpot();if(di>=0)digSpot(p.dig.pts[di]);return;}
+  if(tt==='dig'){digTalkNpc();return;} // v1.5需求1/3：副本入口/塔/通道优先（E 与💬共用）
   if(tt==='horse'){rideOpen=true;ridePage=0;msg('🏇 营地马桩：在面板上点选目的地，马儿会自动避开魔物群疾驰','#e8c86a');return;} // v1.5.2需求9
   if(tt==='angel')angelInteract();
   else if(typeof tt==='number')npcTalk(tt);
   else msg('附近没有可交谈的人（天使/村民需走近再按 E）','#8ab8d8');
 }
+function digTalkNpc(){ /* 与藏宝NPC交涉：挖满→交图；无单→接单；有单未完→提示进度 */
+  if(digAct()){const n=digLeft();msg('🗺 图上还剩 '+n+' 处未挖——小地图金色针即宝位（走到 ✕ 上按 E）','#ffd700');return;}
+  if(p.dig&&!digAct()){digReport();return;}
+  digTake();}
 function angelInteract(){ // 需求70：交付全部已达标任务→自动补接至10个上限
   if(p.morph){msg('🌀 变身期间不能接交任务（先解除变身）','#c9a2ff');return;}
   if(!nearAngel()){msg('需到营地天使处才能交接任务（落鸦村中央广场）','#8ab8d8');return;}
@@ -2861,6 +3298,7 @@ function doMorph(key){
   if(firstTime){if(countMat(mm.name)<1){msg('精血不足：首次变身需 1 个【'+mm.name+'】，击杀 Lv≥'+MAT_TIERS[mm.tier].lvl+' 怪物掉落','#e8b33a');return;}takeMats(mm.name,1);}
   const prev=p.morph?p.morph.key:null;
   p.morph={key,tier:tier,i:MORPH_DUR};morphOpen=false;p.morphUsed[key]=1;p.ach2=(p.ach2||{});p.ach2.morphN=Object.keys(p.morphUsed).length;
+  mqEv('morph',key); // V1.11.2需求1：主线"变身某怪物"步骤
   msg((prev?'🌀 变身切换：你从 '+MT[prev].name+' 化作 ':'🌀 变身术发动！你化作 ')+MORPH_FORM[tier]+'·'+MT[key].name+'：攻+'+morphAtk()+' 血+'+morphHp()+' 防+'+morphDef()+'（持续60秒'+(firstTime?'，已消 1×'+mm.name:'')+'）','#c9a2ff');
   sfx(320,.3,'sine',.06);fxRing(p.x,p.y,6,90,'#c9a2ff',4);flashS=.2;}
 function releaseMorph(){if(!p.morph)return;p.morph=null;setMorphCd();morphOpen=false;msg('✨ 解除变身，恢复人形（冷却30秒）','#c9a2ff');sfx(660,.12,'triangle',.04);}
@@ -2952,10 +3390,11 @@ function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方
   const wing=p.qv>=WING_T,ring=p.qv>=RING_T,angel=p.qv>=ANGEL_T;
   txt('进度 '+p.qv+'/'+QALL+' ｜ 🪽光之翼 '+(wing?'✔已获得':'需'+WING_T+'(现'+p.qv+')')+' ｜ 👑圣辉头环 '+(ring?'✔已获得':'需'+RING_T+'(现'+p.qv+')')+' ｜ 👼天使形态 '+(angel?'✔已觉醒':'需'+ANGEL_T+'(现'+p.qv+')'),x+w/2,y+40,12,angel?'#fff2b0':'#c9b878','center');
   const md=MAINLIN[p.main]; // v1.5.3需求13/14：顶部主线区（当前章 + 等级门槛 + 剧情）
-  const mnm=md?(md.k==='tower'?'登塔层数':(MT[md.k]?MT[md.k].name:md.k)):'—';
-  txt(md?('📖 主线 '+md.c+'《'+md.t+'》—— 讨伐'+mnm+' '+mainProg()+'/'+md.n+(p.lvl<md.lv?' · ⛔需Lv'+md.lv+'（现Lv'+p.lvl+'）':' · ✔已解锁')):'📖 主线——所有章节已完成，你本身就是传说',x+w/2,y+57,12,md&&p.lvl<md.lv?'#e85a5a':'#ff9ad5','center');
-  const mtxt=md?('💼 '+md.go).slice(0,46)+'…':'💼 「猎人的冒险没有终点」——塔顶的答案已经写完了';
+  const ML=mqLines(); // V1.11.2需求1：面板主线区改为「章节步骤」制——第1行章节/门槛，第2行当前步骤+引导
+  txt(ML?(ML.chap+' '+ML.stp+'　'+ML.gateTxt):'📖 主线——所有章节已完成，你本身就是传说',x+w/2,y+57,12,md&&p.lvl<md.lv?'#e85a5a':'#ff9ad5','center');
+  const mtxt=ML?((ML.prog||'（本章已完成）')+(ML.hint?'　'+ML.hint:'')):'💼 「猎人的冒险没有终点」——塔顶的答案已经写完了';
   txt(mtxt,x+w/2,y+72,11,'#c9b878','center');
+  if(p.dig)txt(digTrackerTxt(),x+w/2,y+101,11.5,'#ffd700','center'); // V1.11.2需求2：面板同步藏宝图进度
   txt(p.qs.length?'持有支线 '+p.qs.length+'/'+QMAX+'：'+p.qs.slice(0,2).map(function(q){return STORY[q.qi].name+'（'+qProg(q.qi)+'/'+STORY[q.qi].st[q.sj].t+'）'}).join('　')+(p.qs.length>2?' …':''):'当前无进行中支线——到营地天使处按 E 接取',x+w/2,y+87,12,p.qs.length?'#e8cf4a':'#8ab8d8','center'); // 需求75；v1.5.3需求13： STORY 线转为支线
   /* 需求75：当前持有任务的目标坐标一览（多任务时循环展示） */
   if(p.qs.length){const q0=p.qs[(t>>4)%p.qs.length],zc=zoneCoord(STORY[q0.qi].zone);txt('🧭 下一目标 '+STORY[q0.qi].name+' → 坐标 ('+zc.x+','+zc.y+')'+(STORY[q0.qi].zone==='town'?'［营地天使广场］':''),x+w/2,y+101,12,'#8fd08f','center');}
@@ -3726,6 +4165,7 @@ function castSkill(si){
     p.skcd[si]=Math.round(s.cd*SKCD*skCdMul(idx)*(pass(22)?Math.max(.6,1-.12*pv(22)):1)); // 新36：CD×0.5（V1.11.0需求3：时光余裕 -20%/档→-12%/档，下限 50%→60%）
     if(pass(22))bumpPass(22); // 需求23：时光余裕被动按施法次数熟练升级
   }
+  if(p.morph)mqEv('msk',null); // V1.11.2需求1：主线"变身后释放技能"步骤（技能已确认可释放）
   const A=p.aim;
   p.castAct=ACT_CAST; // V1.9.12需求2：施法起手——升腾蓄势+手前光核
   /* 需求87：技能伤害结合主角属性增幅——伴生技吃力量+敏捷，法术技吃精神+体质（每点+0.5%/+0.2%） */
@@ -4102,9 +4542,10 @@ function updateMobs(){
       p.kills[m.key]=(p.kills[m.key]||0)+1;gainExp(def.exp*(K===2?15:K===1?5:1));sfx(m.key==='slime'||m.key==='fire'?420:260,.12,'square',.05);
       const FKEY=K===2?'kB':K===1?'kE':'kN'; // V1.8需求2：击杀播报按级别开关
       if(p.set[FKEY]){killfeed.push({name:def.name,kind:K,dmg:Math.round(m.dealt||0),t:260});if(killfeed.length>7)killfeed.shift();} // 击杀播报
+      if(K===2)mqEv('bkill',m.key); // V1.11.2需求1：主线 BOSS 讨伐步骤
       blessOnKill(K); // V1.8需求4：击杀即放祝福弹幕
       if(m.box){if(K===2&&p.set.kB)msg('💀 副本BOSS「'+def.name+'」轰然倒下！爆光四溅','#ffd700');else if(K===1&&p.set.kE)msg('💠 副本精英被击破！','#5a9de8');} // v1.5：副本怪不刷新、不召世界BOSS
-      else if(K===1){p.ek[m.key]=(p.ek[m.key]||0)+1;
+      else if(K===1){p.ek[m.key]=(p.ek[m.key]||0)+1;p.ekN[m.key]=(p.ekN[m.key]||0)+1; // V1.11.2：召BOSS计数每 20 归零，主线另读只增不减的 ekN
         if(p.set.kE)msg('💠 精英'+def.name+'被击杀！累计'+p.ek[m.key]+'/20 召出BOSS','#5a9de8');
         if(p.ek[m.key]>=20){p.ek[m.key]=0;spawnBoss(m.key);}
         respawns.push({key:m.key,kind:1,t:900});} // 精英自动刷新：15 秒后回归存量（需求1的 30 秒只约束普通怪）
@@ -4748,6 +5189,7 @@ function draw(){
   drawStalls();drawBreakables(); // v1.5.3需求18/19：商业摊位与建筑损伤态
   drawEscort(); // V1.11.1需求2/3：四门守军 + 近畿四支巡逻卫队
   for(let i=0;i<NPCS.length;i++)drawVillager(NPCS[i],i); // 需求59：营地村民
+  drawDigSpots();drawDigNPC(); // V1.11.2需求2：藏宝宝位与藏宝NPC
   drawPet(); // bug1-新41：拾取小精灵
   drawBossPet(); // v1.4需求6：四神兽宝宝宠物
   drawBaseArrays();drawBima(); // V1.6需求1/3：基地两座传送阵；V1.7需求1：弼马温
@@ -5889,7 +6331,12 @@ function drawMinimap(){
   for(const m of mobs){const en=m.kind===2;C.fillStyle=(MCOL[m.key]||ZONES[MT[m.key].zone]&&ZONES[MT[m.key].zone].col||'#c9a2ff');if(m.kind)C.fillStyle=m.kind===2?'#ff3a2a':'#4aa8ff';const r=en?4.4:m.kind?2.8:(m.key==='turtle'||m.key==='knight'||m.key==='miner'||m.key==='bandit'?2.6:1.6);C.fillRect(x+m.x*sx-r,y+m.y*sy-r,r*2,r*2);}
   if((t>>4)%2){C.fillStyle='#fff';C.beginPath();C.arc(x+p.x*sx,y+p.y*sy,2.5,0,7);C.fill();}
   /* V1.6需求1/3 + V1.7需求1：基地地标针——乘骑系统 Lv5 亮弼马温，传送阵 Lv10 亮两座（提醒主角去哪儿） */
-  const POI=[[MNT_NPC.x,MNT_NPC.y,'#e8c86a',0],[MAZE_PT.x,MAZE_PT.y,'#c07ae8',1],[PETDUN_PT.x,PETDUN_PT.y,'#ffd700',1]];
+  const POI=[[MNT_NPC.x,MNT_NPC.y,'#e8c86a',0],[MAZE_PT.x,MAZE_PT.y,'#c07ae8',1],[PETDUN_PT.x,PETDUN_PT.y,'#ffd700',1],[DIG_NPC.x,DIG_NPC.y,'#ffe14a',0]]; // V1.11.2需求2：藏宝NPC 入地标针
+  /* V1.11.2需求2：藏宝点——未挖为亮金跳点、已挖为暗点，接单即全图可见 */
+  if(p.dig&&p.dig.pts)for(const q of p.dig.pts){
+    const k2=q.got?.5:1;C.fillStyle=q.got?'#6a5a2e':'#ffd700';
+    if(!q.got)C.globalAlpha=.55+.45*Math.sin(t*.14);
+    C.beginPath();C.arc(x+q.x*sx,y+q.y*sy,3.1*k2+1,0,7);C.fill();C.globalAlpha=1;}
   for(let pi=0;pi<POI.length;pi++){if(p.lvl<(POI[pi][3]?10:5))continue;
     C.fillStyle=POI[pi][2];C.globalAlpha=.55+.45*Math.sin(t*.1+pi*2);C.beginPath();C.arc(x+POI[pi][0]*sx,y+POI[pi][1]*sy,2.8,0,7);C.fill();C.globalAlpha=1;}
   C.restore();
@@ -6008,14 +6455,20 @@ function drawQuestTracker(){
     C.restore();
     hot.push({x:x,y:y,w:w,h:26,fn:function(){qTrackOpen=true;sfx(760,.06,'triangle',.03);}});
     return;}
-  const rows=Math.min(p.qs.length,8),mt=p.lvl>=5?22:0,RH=23,h=36+rows*RH+(md?36:0)+mt; // V1.10.1需求6：字号行高整体放大；V1.10.2需求6：再放大一档
+  /* V1.11.2需求1/2：主线占 3 行(+52)、藏宝图占 1 行(+18)——追踪器最高仍须收在 540 逻辑高内，
+     因此有藏宝图时支线整列少显一行（8→7），实测最底 519px 不越屏。 */
+  const rows=Math.min(p.qs.length,p.dig?7:8),mt=p.lvl>=5?22:0,RH=23,h=36+rows*RH+(md?52:0)+(p.dig?18:0)+mt;
   C.save();C.globalAlpha=.94;
   rr(x,y,w,h,7);C.fillStyle='rgba(8,10,6,.74)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.2;C.stroke();
   hot.push({x:x,y:y,w:w,h:24,fn:function(){qTrackOpen=false;sfx(420,.06,'square',.03);}}); // 点标题行收起
   let oy=0;
-  if(md){const mnm=md.k==='tower'?'登塔':(MT[md.k]?MT[md.k].name:'');
-    txt('📖 主线 '+md.c+'《'+md.t+'》',x+w/2,y+12,14,'#ff9ad5','center',null,true);
-    txt((p.lvl<md.lv?'⛔ 解锁需 Lv'+md.lv:'🎯 '+mnm+' '+mainProg()+'/'+md.n),x+w/2,y+28,13,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);oy=36;}
+  if(md){const ML=mqLines(); // V1.11.2需求1：追踪器改为「章节 → 当前步骤 → 引导坐标」三行式
+    txt((ML?ML.chap+' '+ML.stp:'📖 主线 '+md.c+'《'+md.t+'》'),x+w/2,y+12,14,'#ff9ad5','center',null,true);
+    txt(ML?(ML.prog||'（本章已完成）'):'',x+w/2,y+28,13,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);
+    txt(ML&&ML.step?(ML.hint+(ML.gate?' · ⛔Lv'+ML.lv:'')).slice(0,26):(ML?ML.gateTxt:''),x+w/2,y+44,12,'#8fd08f','center',null,true);
+    oy=52;}
+  if(p.dig){const dg=digTrackerTxt(); // V1.11.2需求2：藏宝图常驻追踪
+    txt(dg.slice(0,30),x+w/2,y+12+oy,13,'#ffd700','center',null,true);oy+=18;}
   txt('📜 支线 '+p.qs.length+'/'+QMAX+' · ▾ 收起',x+w/2,y+13+oy,14,'#ffd700','center',null,true);
   for(let s=0;s<rows;s++){const q=p.qs[s],st=STORY[q.qi].st[q.sj],prog=qProg(q.qi),ok=prog>=st.t;
     const zc=zoneCoord(STORY[q.qi].zone); // 需求75：目标坐标
@@ -6444,7 +6897,7 @@ function doSave(quiet){
     const b=[];let n=0;
     for(let i=0;i<bagMax();i++){const c=stripItem(bag[i]);b.push(c);if(c)n++;}
     const ch=chest.map(stripItem);let cn=0;for(const c of ch)if(c)cn++; // 需求14：仓库数据存入缓存
-    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,set:p.set,bless:p.bless,equip:eq},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
+    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,set:p.set,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
     localStorage.setItem(slotKey(curSlot),JSON.stringify(d));
     lastSave=Date.now();
     if(!quiet)msg('💾 '+p.name+'（档'+(curSlot+1)+'）已保存：Lv'+p.lvl+' · 背包 '+n+' 件 · 仓库 '+cn+' 件','#8fd08f');
@@ -6462,7 +6915,7 @@ function doLoad(quiet,slot){
   p.lvl=Math.max(1,q.lvl|0);p.exp=q.exp|0;p.gold=Math.max(0,q.gold|0);p.ap=q.ap|0;
   if(q.x)p.x=q.x;if(q.y)p.y=q.y;p.aim=q.aim||0;
   STKEYS.forEach(function(k){p.st[k]=(q.st&&q.st[k]|0)||0;});
-  p.books=q.books||{};p.skLvl=q.skLvl||{};p.skUse=q.skUse||{};p.store=q.store||{};p.ek=q.ek||{};p.bagRows=q.bagRows||10;
+  p.books=q.books||{};p.skLvl=q.skLvl||{};p.skUse=q.skUse||{};p.store=q.store||{};p.ek=q.ek||{};p.bagRows=q.bagRows||10;p.ekN=q.ekN||q.ek||{}; // V1.11.2：旧档无 ekN 时用精英召BOSS计数兜底（只影响进度起算，不丢步骤）
   p.qs=Array.isArray(q.qs)?q.qs.slice(0,10):(q.q?[q.q]:[]);p.qa=q.qa||{};p.qv=q.qv|0;p.main=q.main|0;p.encN=q.encN|0;p.npcT=q.npcT||{}; // 需求50/70：读档还原任务列表（兼容旧单任务档）
   p.autoSell=q.autoSell||{eq:false,wp:false,pot:false,book:false,mat:false};p.colEq=q.colEq|0;p.colMat=q.colMat||{}; // 需求76/77
   p.face=q.face||null; // 需求80：读档还原捏脸造型
@@ -6478,6 +6931,9 @@ function doLoad(quiet,slot){
   p.mounts=q.mounts&&q.mounts.un?q.mounts:{un:{},sel:''}; // 旧档无坐骑字段：从首匹开始重新讨伐
   if(!p.mounts.un[p.mounts.sel])p.mounts.sel=Object.keys(p.mounts.un)[0]||'';
   p.mr=false;
+  p.dig=q.dig&&typeof q.dig==='object'&&Array.isArray(q.dig.pts)?{got:q.dig.got|0,tot:q.dig.tot|0,fee:q.dig.fee|0,t:q.dig.t|0,pts:q.dig.pts.filter(function(o){return o&&o.x!=null;}).map(function(o){return {x:o.x,y:o.y,z:o.z||'town',got:o.got|0};})}:null; // V1.11.2需求2：藏宝图入档
+  p.dbuff=q.dbuff&&q.dbuff.t>0?{atk:q.dbuff.atk|0,t:q.dbuff.t|0}:null;
+  p.mq=q.mq&&typeof q.mq==='object'?{ch:q.mq.ch|0,st:q.mq.st|0,c:q.mq.c||{},base:q.mq.base||{},sv:q.mq.sv|0}:null; // V1.11.2需求1：旧档无此字段→由 mqSync 自动新建
   if(q.slots&&q.slots.length===4)p.slots=q.slots.slice(0);
   if(q.kills)for(const k in p.kills)if(q.kills[k]!=null)p.kills[k]=q.kills[k]|0;
   EQSLOTS.forEach(function(s){const e=q.equip&&q.equip[s];if(e){e.slot=s;p.equip[s]=e;}else p.equip[s]=null;});
@@ -6497,10 +6953,12 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   p.dashT=0;p.dashCd=0;p.dvx=0;p.dvy=0;p.dir=1;p.walk=0;p.dead=0;p.books={};p.ap=10;p.face=null;
   STKEYS.forEach(function(k){p.st[k]=0;});
   for(const s in p.equip)p.equip[s]=null;
-  p.slots=[0,8,4,11];p.skcd=[0,0,0,0];p.skLvl={};p.skUse={};p.store={};p.ek={};p.bagRows=10;p.qs=[];p.qa={};p.qv=0;p.main=0;p.encN=0;p.npcT={};p.runT=0;p.morph=null;p.autoSell={eq:false,wp:false,pot:false,book:false,mat:false};p.colEq=0;p.colMat={};p.kills={slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0,wind:0,elite:0,boss:0};
+  p.slots=[0,8,4,11];p.skcd=[0,0,0,0];p.skLvl={};p.skUse={};p.store={};p.ek={};p.ekN={};p.bagRows=10;p.qs=[];p.qa={};p.qv=0;p.main=0;p.encN=0;p.npcT={};p.runT=0;p.morph=null;p.autoSell={eq:false,wp:false,pot:false,book:false,mat:false};p.colEq=0;p.colMat={};p.kills={slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0,wind:0,elite:0,boss:0};
   p.equip.mweap={slot:'mweap',w:'bow',el:'wood',q:0,name:'旧猎弓',atk:4,def:0,hp:0,gold:0,enh:0,holes:0,ilvl:1,tier:0,aff:[],power:8.8};
   p.pets=[null,null,null,null]; // v1.4需求21：4个宠物槽初始空
   p.mounts={un:{},sel:''};p.mr=false; // V1.7：新角无任何坐骑
+  p.mq=null; // V1.11.2需求1：新角主线进度由 mqSync 按 p.main 建立
+  p.dig=null;p.dbuff=null; // V1.11.2需求2：新角无藏宝图、无宝气加成
   for(const mk2 of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[mk2]=0;
   p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库
   for(let i=0;i<BAGCAP;i++)bag[i]=null;
@@ -6656,7 +7114,7 @@ function loopBody(){
     LOAD.t--;if(LOAD.t<=0){LOAD.txt='';if(INST.on)msg('🗺 '+(INST.name||'副本')+' 展开完毕——开战！','#8affff');else msg('🗺 回到落鸦村——地图加载完毕','#8affff');}
     updateFx();draw();return;} // V1.11.1需求7：rAF 统一由 loop() 驱动，loopBody 只负责本帧逻辑与绘制
   if(started&&t%20===0)manageMobs(); // bug1-新43：持续按主角位置懒加载/卸载怪物
-  if(started&&!paused){updateRide();checkMain();updatePlayer();updateChatter();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
+  if(started&&!paused){updateRide();checkMain();updateDig();updatePlayer();updateChatter();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
   else updateFx();
   if(started)updateBless(); // V1.8需求3/5：祝福弹幕与屏幕粒子（面板开启也照常飞）
     if(started&&p.dead===0&&t%600===0)setTimeout(function(){doSave(true);},0); // bug1-新23：每 10 秒异步自动存档
