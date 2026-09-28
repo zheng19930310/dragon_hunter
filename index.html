@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.11.3</title>
+<title>降龙猎手 · 五行觉醒 V1.11.4</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -2165,7 +2165,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.11.3';
+const GLOG_MAX=600,GLOG_VER='1.11.4';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -2286,6 +2286,58 @@ function matOf(sys,lvl){const ti=matTierIdx(lvl),s=MAT_SYS[sys],t=MAT_TIERS[ti];
 function countMat(name){let n=0;const lim=bagMax();for(let i=0;i<lim;i++){const it=bag[i];if(it&&it.slot==='mat'&&it.name===name&&!it.book&&!it.relic)n+=(it.count||1);}return n;}
 function takeMats(name,c){let left=c;const lim=bagMax();for(let i=0;i<lim&&left>0;i++){const it=bag[i];if(it&&it.slot==='mat'&&it.name===name&&!it.book&&!it.relic){const mv=Math.min(left,(it.count||1));it.count=(it.count||1)-mv;left-=mv;if((it.count||1)<=0)bag[i]=null;}}return left===0;}
 function matDropName(sys,lvl){return matOf(sys,lvl).name;}
+/* ============ V1.11.4需求1：主线耗材「在哪里获得」真值引擎 ============
+   用户原话：「还有一个比较影响体验的，主线任务里面提到的耗材材料也要标识出在哪里获得」。
+   做法不是另写一张"素材产地表"（那必然和实际掉落脱节），而是把上面那段掉落逻辑
+   （index.html:4849 起：专属材料 + matOf(sys,def.lvl) 阶位材料 + 精英高一阶磨石 + 星辉石）
+   原样跑一遍建立反向索引：材料名 → 会掉它的怪清单。掉落代码改了，来源标识自动跟着改。
+   注意：本函数只读，不消耗随机数，可每帧调用。 */
+const MAT_SYSK=['enh','drill','skill','morph','pet'];   // 与掉落循环共用同一份清单
+let _matSrc=null;
+function matSrcIdx(){
+  if(_matSrc)return _matSrc;
+  const I={};
+  function add(nm,k){const a=I[nm]=I[nm]||[];if(a.indexOf(k)<0)a.push(k);}
+  for(const k in MT){const d=MT[k];
+    if(k==='slime')add('粘质液',k);
+    if(k==='fire')add('烈焰精华',k);
+    if(k==='miner')add('金矿石',k);
+    if(d.sym)add('星辉石·'+d.sym,k);
+    for(let si=0;si<MAT_SYSK.length;si++)add(matOf(MAT_SYSK[si],d.lvl).name,k);
+    if(d.lvl>=10){const hi=matOf('enh',d.lvl+15);if(hi.tier>matOf('enh',d.lvl).tier)add(hi.name,k);}}
+  _matSrc=I;return I;}
+function matSrcMobs(name){ /* 精确名命中不了就按前缀收（星辉石 → 星辉石·♈…♈12 只） */
+  const I=matSrcIdx();if(I[name])return I[name];
+  const out=[];for(const k in I){if(k.indexOf(name)===0)out.push.apply(out,I[k]);}
+  return out.filter(function(x,i){return out.indexOf(x)===i;});}
+/* 归并成「区域」清单并按离玩家远近排序：同区多怪只占一个产地 */
+function matSrcZones(name){
+  const Z={};matSrcMobs(name).forEach(function(k){const d=MT[k];if(!d||!d.zone)return;
+    const a=Z[d.zone]=Z[d.zone]||[];if(a.indexOf(d.name)<0)a.push(d.name);});
+  const L=Object.keys(Z).map(function(z){const c=zoneCW(z),q=ptOf(c.x,c.y);
+    return{z:z,nm:zoneName(z),pt:'('+q.x+','+q.y+')',mobs:Z[z],d:dist(p.x,p.y,c.x,c.y)};});
+  L.sort(function(a,b){return a.d-b.d;});return L;}
+/* 追踪器用（短）：优先最近的产地，多的用「等 N 区」省略 */
+function matSrcShort(name){
+  const L=matSrcZones(name);if(!L.length)return '🧺 '+name+'：暂无怪物掉落（试试藏宝图油布包）';
+  return '🧺 '+name+' ← '+L[0].nm+L[0].pt+(L.length>1?' 等'+L.length+'区':'');}
+/* 按像素宽度收敛：放不下才截字（旧版直接拼长句，89 字在 16px 播报行里远超 960 逻辑宽） */
+function fitW(s,size,maxW){
+  C.font='700 '+size+'px "Microsoft YaHei",sans-serif';
+  if(C.measureText(s).width<=maxW)return s;
+  let a=String(s);while(a.length>1&&C.measureText(a+'…').width>maxW)a=a.slice(0,-1);
+  return a+'…';}
+/* 产地一行：先尝试列 lim 个产地，逐个降级直到放得下（信息量最大且永不溢出）。
+   pre/suf 一并计入宽度预算，避免调用方拼接后缀后再次溢出。 */
+function matSrcLine(name,size,maxW,pre,suf){
+  const P=pre||'',S=suf||'';
+  const L=matSrcZones(name);
+  if(!L.length)return fitW(P+'暂无怪物掉落——可挖藏宝图油布包碰运气'+S,size,maxW);
+  const mk=function(lim){return P+L.slice(0,lim).map(function(o){
+      return o.nm+o.pt+'·'+o.mobs.slice(0,2).join('/')+(o.mobs.length>2?'等'+o.mobs.length+'怪':'');})
+      .join('　')+(L.length>lim?'　…共'+L.length+'区':'')+S;};
+  for(let lim=Math.min(4,L.length);lim>=1;lim--){const s=mk(lim);if(fitW(s,size,maxW)===s)return s;}
+  return fitW(mk(1),size,maxW);}
 
 /* ============ 需求50/51/52：怪物故事线任务 + 成就勋章 + 天使交接 ============ */
 const QTGT=[10,50,150]; // 每怪3档成就：击杀10/50/150
@@ -2528,7 +2580,12 @@ function mqDeliver(n){
   const st=mqCur();if(!st||st.npc!==n.key)return false;
   if(st.t==='talk'){mqEv('talk',n.key);return false;} // 对话照常播放台词，只累加计数
   if(st.t==='give'){
-    if(mqMat(st.m)<st.n){msg('📦 交付【'+st.d+'】还差材料：'+st.m+' '+mqMat(st.m)+'/'+st.n,'#e8b33a');return true;}
+    if(mqMat(st.m)<st.n){ /* V11.4需求1：缺料时直接给出产地（区名+小地图坐标+怪名），并挂上引导线入口 */
+      msg('📦 交付【'+st.d+'】还差材料：'+st.m+' '+mqMat(st.m)+'/'+st.n,'#e8b33a');
+      msg(matSrcLine(st.m,16,LW-40,'🧺 '+st.m+' 掉落：'),'#8fd08f');
+
+      msg('💡 按 G 打开快速查找 → 🧺 材料 分类，选中后可「去这里」跟着引导线走','#8ab8d8');return true;}
+
     mqMatTake(st.m,st.n);mqEv('give',n.key);
     msg('📦 已交付 '+n.name+'：'+st.m+' ×'+st.n,'#8fd08f');sfx(1040,.12,'triangle',.04);
     fxRing(n.x,n.y,6,44,'#8fd08f',3);return true;}
@@ -2738,7 +2795,8 @@ function digTrackerTxt(){ /* 追踪器/面板共用的藏宝图一行 */
    · 引导线只有一条：换目标即整体替换（nav 单对象，天然满足"只显示最新的引导线"）；
    · 关闭时机三种——抵达（进入 arr 半径）、点✕/按 Esc 取消、进入副本或回城（世界系变化）。
    nav 为瞬态：不入存档，resetPlayer/换档清零即可，避免旧档读到失效目标。 */
-const FCATS=['👤 NPC','🐗 怪物','☠ 神兽·BOSS','🏛 设施','⛩ 副本门','💰 藏宝点'];
+const FCATS=['👤 NPC','🐗 怪物','☠ 神兽·BOSS','🏛 设施','⛩ 副本门','💰 藏宝点','🧺 材料'];
+
 const FROWS=9;                        // 每页 9 行
 const NAV_ARRIVE=60;                  // 抵达判定（世界像素）≈1.2 个坐标点
 const NAV_PTS=PT_UNIT;                // 纯坐标输入用 1 个坐标点作抵达半径
@@ -2759,7 +2817,23 @@ function findEntries(){
   DUNGEONS.forEach(function(dr){L.push({c:4,nm:(MT[dr.key]?MT[dr.key].name:'幻境')+'幻境',tag:'副本入口',x:dr.x,y:dr.y});});
   if(p.dig&&p.dig.pts)for(let i=0;i<p.dig.pts.length;i++){const q=p.dig.pts[i];
     if(!q.got)L.push({c:5,nm:'藏宝点 第'+(i+1)+'处',tag:zoneName(q.z),x:q.x,y:q.y});}
+  L.push.apply(L,matFindEntries()); // V1.11.4需求1：🧺 材料分类——每种耗材一行，落点＝最近产地中心
   return L;}
+/* V1.11.4需求1：材料页条目。名称清单直接取自掉落真值（matSrcIdx），
+   所以"列表里能查到的材料"＝"确实有怪会掉的材料"，不会出现查得到却刷不到的假目标。 */
+function matFindEntries(){
+  const NM=['粘质液','烈焰精华','金矿石','星辉石'];
+  for(let si=0;si<MAT_SYSK.length;si++)for(let ti=0;ti<MAT_TIERS.length;ti++)
+    NM.push(MAT_TIERS[ti].n+'·'+MAT_SYS[MAT_SYSK[si]].cn);
+  const st=p.mq?mqCur():null,need=(st&&(st.t==='mat'||st.t==='give')&&st.m)?st.m:'';
+  const L=[];
+  NM.forEach(function(n){
+    const Z=matSrcZones(n);if(!Z.length)return;const z0=Z[0],c=zoneCW(z0.z);
+    L.push({c:6,nm:n,
+      tag:(need&&n.indexOf(need)===0?'【主线正缺】':'')+'最近 '+z0.nm+z0.pt+'（'+z0.mobs.slice(0,3).join('/')+(z0.mobs.length>3?'…':'')+'）· 共'+Z.length+'区',
+      x:c.x,y:c.y});});
+  return L;}
+
 function findParse(s){ /* 「24,79」「24 79」「24，79」→ 坐标点目标 */
   const m=String(s||'').match(/(\d{1,4})[\s,，、;；\-\/]+(\d{1,4})/);
   if(!m)return null;
@@ -2913,7 +2987,8 @@ function drawFind(){
     C.strokeStyle=selq?'#e8cf4a':nv?'#8affff':'rgba(255,255,255,.1)';C.lineWidth=selq||nv?1.8:1;C.stroke();
     const q=ptOf(e.x,e.y),dd=Math.round(dist(p.x,p.y,e.x,e.y)/PT_UNIT);
     txt((nv?'🧭 ':selq?'▶ ':'· ')+e.nm,px2+10,py2+10,12.5,selq||nv?'#fff2b0':'#dfe4da',null,'700',true);
-    txt(e.tag,px2+10,py2+23,10,'#8a9a7a',null,'400',true);
+    txt(String(e.tag||'').length>27?String(e.tag).slice(0,27)+'…':(e.tag||''),px2+10,py2+23,10,'#8a9a7a',null,'400',true);
+
     txt('坐标 ('+q.x+','+q.y+')',px2+300,py2+10,11.5,'#8ab8d8',null,'700',true);
     txt('⛃ 距离 '+dd+' 点',px2+300,py2+23,10,'#c9b878',null,'400',true);
     txt(dd<=2?'🟢 就在附近':dd<=20?'🟡 近在咫尺':'🔵 需要赶路',px2+pw2-12,py2+ph2/2,11,'#9ab08a','right',null,true);
@@ -3159,7 +3234,8 @@ const MQT=[
   {t:'gweap',npc:'npc_smith',q:2,n:1,d:'熔炼一件兵器',tip:'打造或拾取 1 件品质≥蓝（q2）的武器，交给铁匠托洛熔炼'}],
  /* 第7章 年终奖抢劫案 Lv30 */[
   {t:'kill',k:'bandit',n:25,d:'追回年终奖',tip:'法外荒原讨伐法外狂徒 ×25'},
-  {t:'mat',m:'粗糙·灵能尘',n:4,z:'badlands',d:'拾取灵能尘',tip:'狂徒与精英会掉「粗糙·灵能尘」——攒 4 个'},
+  {t:'mat',m:'精铁·灵能尘',n:4,z:'badlands',d:'拾取灵能尘',tip:'荒原狂徒与风之谷精英会掉「精铁·灵能尘」——攒 4 个（按 G→🧺材料 看全部产地）'},
+
   {t:'talk',npc:'npc_sage',n:2,d:'请教线索',tip:'找西侧贤者玄尘谈两次话（按 E 重复交谈）'}],
  /* 第8章 风投失败 Lv35 */[
   {t:'morph',k:'slime',n:1,z:'slime',d:'学会变身术',tip:'史莱姆成就满 10 杀解锁变身——按 V 打开变身面板化作史莱姆'},
@@ -3301,6 +3377,7 @@ function mqLines(){
   return {step:st,n:S.length,si:si,gate:p.lvl<df.lv,lv:df.lv,
     prog:st?mqTxt(st):'',
     hint:st?(mqHint(st)||st.tip||''):'',
+    src:(st&&(st.t==='mat'||st.t==='give')&&st.m)?matSrcShort(st.m):'', // V1.11.4需求1：耗材产地一行
     sub:st?(st.tip||''):(df.ok||''),
     chap:chap,stp:stp,gateTxt:gate,
     head:chap+(stp?' '+stp:'')+'　'+(p.lvl<df.lv?gate:gate)};}
@@ -3328,7 +3405,11 @@ function mainStepWin(st){
   if(p.mq.st<S.length-1){p.mq.st++;
     const ns=MQT[p.main][p.mq.st];
     msg('📋 下一步：'+ns.d+'——'+ns.tip,'#c9e8ff');
-    if(ns.t==='pet'&&!bagHasEgg())msg('🥚 提示：宝宝蛋出自产蛋秘境/四神兽——进秘境斩杀神兽必爆蛋','#e8c86a');}
+    if(ns.t==='pet'&&!bagHasEgg())msg('🥚 提示：宝宝蛋出自产蛋秘境/四神兽——进秘境斩杀神兽必爆蛋','#e8c86a');
+    if((ns.t==='mat'||ns.t==='give')&&ns.m) /* V1.11.4需求1：交接耗材步骤时直接报产地 */
+      msg(matSrcLine(ns.m,16,LW-40,'🧺 「'+ns.m+'」掉落：','　（按 G → 🧺材料 可一键「去这里」）'),'#8fd08f');
+
+}
   else msg('📜 '+df.c+'《'+df.t+'》所有步骤已跑完——回去找天使交章','#ffd700');}
 function bagHasEgg(){for(let i=0;i<bagMax();i++)if(bag[i]&&bag[i].slot==='egg')return true;return false;}
 function checkMain(){ /* V1.11.2需求1：等级门槛 + 步骤链双轨——
@@ -3626,9 +3707,10 @@ function drawMorphPanel(){ // v1.4需求9：变身面板——列出全部怪物
 }
 function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方式+自动激活效果+外观进度
   /* V1.10.2需求6：手机字太小——任务/成就面板整体改大字号，并按字号计算列宽，避免溢出 */
-  const SC=1.02,FH=11.5,FS=10,FN=9,FD=14.5,FROW=13*1.3; // 标题/进度行/主线行/支线徽章/支线行/行高
+  const SC=1.02,FH=11.5,FS=10,FN=9,FD=14.5;let FROW=13*1.3; // 标题/进度行/主线行/支线徽章/支线行/行高
   const COLW=Math.floor((560-28)/2); // 单列可用宽
   const w=560,h=470,x=(LW-w)/2,y=34;
+
   panelRect={x:x,y:y,w:w,h:h}; // V1.9.1需求3：任务/成就面板补齐 panelRect，点面板外才能正确判定
   rr(x,y,w,h,10);C.fillStyle='rgba(8,10,6,.95)';C.fill();C.strokeStyle='#8a7a3a';C.lineWidth=2;C.stroke();
   closeBtn(x+w-42,y+8,32,26,function(){questOpen=false;sfx(420,.06,'square',.03);}); // V1.10.2需求7：成就页 ✕ 走 top 热区 + 外扩命中区 // V1.9.1需求3：成就页无关闭按钮→补上
@@ -3644,7 +3726,13 @@ function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方
   txt(p.qs.length?'持有支线 '+p.qs.length+'/'+QMAX+'：'+p.qs.slice(0,2).map(function(q){return STORY[q.qi].name+'（'+qProg(q.qi)+'/'+STORY[q.qi].st[q.sj].t+'）'}).join('　')+(p.qs.length>2?' …':''):'当前无进行中支线——到营地天使处按 E 接取',x+w/2,y+87,12,p.qs.length?'#e8cf4a':'#8ab8d8','center'); // 需求75；v1.5.3需求13： STORY 线转为支线
   /* 需求75：当前持有任务的目标坐标一览（多任务时循环展示） */
   if(p.qs.length){const q0=p.qs[(t>>4)%p.qs.length],zc=zoneCoord(STORY[q0.qi].zone);txt('🧭 下一目标 '+STORY[q0.qi].name+' → 坐标 ('+zc.x+','+zc.y+')'+(STORY[q0.qi].zone==='town'?'［营地天使广场］':''),x+w/2,y+101,12,'#8fd08f','center');}
-  const per=17;for(let col=0;col<2;col++){const cx0=x+14+col*COLW,cy0=y+116; // 修复：第二列需右移 276px；v1.5.3主线区挤占后列表下移
+  /* V1.11.4需求1：主线耗材产地整行（mat/give 步骤）——有产地行时列表下压 14px 并把行距
+     收到 16.2（末行基线 423 < 收藏成就标题 432），既塞进新信息又不减少成就显示行数（仍 17×2） */
+  const srcSt=(ML&&ML.step&&(ML.step.t==='mat'||ML.step.t==='give')&&ML.step.m)?ML.step.m:'';
+  if(srcSt)txt(matSrcLine(srcSt,11,w-28,'🧺 '+srcSt+' 在哪掉：'),x+w/2,y+116,11,'#c9b878','center');
+
+  if(srcSt)FROW=16.2; // 有产地行时压缩行距，末行基线 423 < 收藏成就标题 432
+  const per=17;for(let col=0;col<2;col++){const cx0=x+14+col*COLW,cy0=y+(srcSt?130:116); // 修复：第二列需右移 276px；v1.5.3主线区挤占后列表下移
     for(let r=0;r<per;r++){const i=col*per+r;if(i>=STORY.length)break;const s=STORY[i];
       let stt,dc;if(qDone(i,2)){stt='✔✔✔';dc='#8fd08f';}else if(!qDone(i,1)&&qProg(i)>=s.st[1].t){stt='✔✔·待交';dc='#e8cf4a';}else if(!qDone(i,0)&&qProg(i)>=s.st[0].t){stt='✔·待交';dc='#e8cf4a';}else{const cq=p.qs.filter(function(q){return q.qi===i;})[0];if(cq){stt='▶ '+qProg(i)+'/'+s.st[cq.sj].t;dc='#b06ae8';}else{stt='· '+qProg(i)+'/'+s.st[qDone(i,0)?qDone(i,1)?2:0:0].t;dc='#77807a';}} // 目标数按档取（兼容村民线10/30/80）
       const zc88=zoneCoord(s.zone); // 需求88：成就列表标注怪物坐标
@@ -4111,7 +4199,7 @@ function openOnly(k){closeAllPanels(); // 互斥开启：一次只允许一个�
   if(k==='set'){setOpen=true;msg('⚙ 设置：击杀播报分级 / 拾取物品播报 / 祝福弹幕开关与密度（再按 O 关闭）','#e8c86a');}}
 function openFind(){ /* V1.11.3需求2：G=快速查找——openOnly 已负责关掉其它面板 */
   openOnly('find');
-  msg('🔍 快速查找：上方六个分类挑目标，或在输入框写名字过滤／写坐标（如 24,79）；选中后点「去这里」出引导线','#8affff');
+  msg('🔍 快速查找：上方七个分类挑目标，或在输入框写名字过滤／写坐标（如 24,79）；选中后点「去这里」出引导线','#8affff');
   glog('flow','find open',{cat:findCat});}
 function hotAt(l,skipCell){
   const lock=panelOn();
@@ -4845,10 +4933,12 @@ function killDrop(m,def){
   if(m.key==='slime'&&Math.random()<dr(.5)*(K?2:1))items.push(matItem('m_goo','粘质液',10,m.x+rnd(-12,12),m.y+rnd(-10,10)));
   if(m.key==='fire'&&Math.random()<dr(.6)*(K?2:1))items.push(matItem('m_fire','烈焰精华',50,m.x+rnd(-12,12),m.y+rnd(-10,10)));
   if(m.key==='miner'&&Math.random()<dr(.55)*(K?2:1))items.push(matItem('coin','金矿石',30,m.x+rnd(-12,12),m.y+rnd(-10,10)));
-  /* v1.4需求27：按怪物等级段掉落五大系统专属材料（精英/BOSS 多包） */
+  /* v1.4需求27：按怪物等级段掉落五大系统专属材料（精英/BOSS 多包）
+     V1.11.4：循环上限原为硬编码 4，第 5 项 pet（兽粮）永远取不到——爆率表里的 .36 是死代码，
+     导致主线「玄金·兽粮 ×6」只能靠藏宝图碰运气。改为跟随 MAT_SYSK 全长，五系齐掉。 */
   (function(){
-    const SYS=['enh','drill','skill','morph','pet'];
-    for(let si=0;si<4;si++){const sys=SYS[si];const mm=matOf(sys,def.lvl);
+    const SYS=MAT_SYSK;
+    for(let si=0;si<SYS.length;si++){const sys=SYS[si];const mm=matOf(sys,def.lvl);
       const p=(sys==='enh'?.5:sys==='drill'?.42:sys==='skill'?.32:sys==='morph'?.24:.36)*(K?2:1);
       const n=K===2?ri(2,4):K===1?ri(1,2):(Math.random()<(p+(IB?.25:0))?1:0); // v1.5：副本材料爆率+25%
       for(let i=0;i<n;i++)items.push(matItem(mm.ic,mm.name,mm.price,m.x+rnd(-16,16),m.y+rnd(-12,12)));}
@@ -6719,17 +6809,24 @@ function drawQuestTracker(){
     hot.push({x:x,y:y,w:w,h:26,fn:function(){qTrackOpen=true;sfx(760,.06,'triangle',.03);}});
     return;}
   /* V1.11.2需求1/2：主线占 3 行(+52)、藏宝图占 1 行(+18)——追踪器最高仍须收在 540 逻辑高内，
-     因此有藏宝图时支线整列少显一行（8→7），实测最底 519px 不越屏。 */
-  const rows=Math.min(p.qs.length,p.dig?7:8),mt=p.lvl>=5?22:0,RH=23,h=36+rows*RH+(md?52:0)+(p.dig?18:0)+mt;
+     因此有藏宝图时支线整列少显一行（8→7），实测最底 519px 不越屏。
+     V1.11.4需求1：当前步骤是耗材类（mat/give）时再加一行「产地」(+15)，同时支线少显一行。 */
+  const ML0=(md?mqLines():null),msrc=ML0?ML0.src:'';
+  const rows=Math.min(p.qs.length,(p.dig?7:8)-(msrc?1:0)),mt=p.lvl>=5?22:0,RH=23,
+        h=36+rows*RH+(md?52:0)+(msrc?15:0)+(p.dig?18:0)+mt;
+
   C.save();C.globalAlpha=.94;
   rr(x,y,w,h,7);C.fillStyle='rgba(8,10,6,.74)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.2;C.stroke();
   hot.push({x:x,y:y,w:w,h:24,fn:function(){qTrackOpen=false;sfx(420,.06,'square',.03);}}); // 点标题行收起
   let oy=0;
-  if(md){const ML=mqLines(); // V1.11.2需求1：追踪器改为「章节 → 当前步骤 → 引导坐标」三行式
+  if(md){const ML=ML0; // V1.11.2需求1：追踪器改为「章节 → 当前步骤 → 引导坐标」三行式
     txt((ML?ML.chap+' '+ML.stp:'📖 主线 '+md.c+'《'+md.t+'》'),x+w/2,y+12,14,'#ff9ad5','center',null,true);
     txt(ML?(ML.prog||'（本章已完成）'):'',x+w/2,y+28,13,p.lvl<md.lv?'#e85a5a':'#e8cf4a','center',null,true);
     txt(ML&&ML.step?(ML.hint+(ML.gate?' · ⛔Lv'+ML.lv:'')).slice(0,26):(ML?ML.gateTxt:''),x+w/2,y+44,12,'#8fd08f','center',null,true);
-    oy=52;}
+    oy=52;
+    if(msrc){txt(fitW(msrc,11.5,w-20),x+w/2,y+59,11.5,'#c9b878','center',null,true);oy=67;}} // V1.11.4需求1：耗材产地常驻一行
+
+
   if(p.dig){const dg=digTrackerTxt(); // V1.11.2需求2：藏宝图常驻追踪
     txt(dg.slice(0,30),x+w/2,y+12+oy,13,'#ffd700','center',null,true);oy+=18;}
   txt('📜 支线 '+p.qs.length+'/'+QMAX+' · ▾ 收起',x+w/2,y+13+oy,14,'#ffd700','center',null,true);
