@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.11.2</title>
+<title>降龙猎手 · 五行觉醒 V1.11.3</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -20,11 +20,19 @@ body.force-landscape canvas{position:fixed !important;transform-origin:center ce
 #nameInput.on{display:block}
 #nameInput::placeholder{color:#5f6a58}
 body.force-landscape #nameInput{transform:rotate(-90deg)}
+/* V1.11.3需求2：快速查找的过滤/坐标输入同样必须是真实 input（Canvas 画的框在手机上调不起键盘） */
+#findInput{position:fixed;z-index:20;display:none;border:0;outline:0;background:rgba(16,22,14,.98);box-sizing:border-box;
+  color:#eaffea;font:500 20px/1.2 "Microsoft YaHei",sans-serif;padding:0 10px;border-radius:7px;
+  caret-color:#ffd700;touch-action:auto;-webkit-user-select:text;user-select:text;border:1px solid #8a7a3a}
+#findInput.on{display:block}
+#findInput::placeholder{color:#5f6a58}
+body.force-landscape #findInput{transform:rotate(-90deg)}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
 <input id="nameInput" type="text" maxlength="10" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="点这里输入姓名（最多 10 字）">
+<input id="findInput" type="text" maxlength="14" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入名字过滤，或坐标如 24,79">
 <script>
 "use strict";
 /* ============ 高清单Canvas：逻辑960x540 + 高DPR清晰文字 ============ */
@@ -271,13 +279,13 @@ function weaponTierSvg(n,k){
 /* ============ 世界数据 ============ */
 const ZONES={
   town:  {x:540,y:330,w:330,h:240},
-  slime: {x:60, y:560,w:360,h:300,label:'史莱姆草原 Lv1-3 (24,27)',col:'#59c13f'},
-  goblin:{x:1020,y:216,w:320,h:200,label:'哥布林营地 Lv4-6 (113,43)',col:'#c9c25a'},
-  firecamp:{x:100,y:100,w:300,h:180,label:'史莱姆营地 Lv10 (7,25)',col:'#e8713a'},
-  arena: {x:790,y:100,w:140,h:100,label:'暗影骑士 (94,94)',col:'#b8a8d8'},
-  creek: {x:1230,y:700,w:150,h:170,label:'龙溪龟 (174,15)',col:'#7ee0ff'},
-  mine:  {x:1120,y:40,w:250,h:150,label:'黄金矿洞 Lv15 (163,69)',col:'#e8c86a'},
-  badlands:{x:520,y:760,w:300,h:120,label:'法外荒原 Lv20 (147,154)',col:'#d86a5a'},
+  slime: {x:60, y:560,w:360,h:300,label:'史莱姆草原 Lv1-3',col:'#59c13f'},
+  goblin:{x:1020,y:216,w:320,h:200,label:'哥布林营地 Lv4-6',col:'#c9c25a'},
+  firecamp:{x:100,y:100,w:300,h:180,label:'史莱姆营地 Lv10',col:'#e8713a'},
+  arena: {x:790,y:100,w:140,h:100,label:'暗影骑士',col:'#b8a8d8'},
+  creek: {x:1230,y:700,w:150,h:170,label:'龙溪龟',col:'#7ee0ff'},
+  mine:  {x:1120,y:40,w:250,h:150,label:'黄金矿洞 Lv15',col:'#e8c86a'},
+  badlands:{x:520,y:760,w:300,h:120,label:'法外荒原 Lv20',col:'#d86a5a'},
   /* v2.0 新增：怪物开放至 Lv50 的六片进阶大陆区域 */
   wind:  {x:430,y:55,w:320,h:150,label:'风之谷 Lv25',col:'#a8e8d8'},
   scorp: {x:1420,y:640,w:170,h:280,label:'毒蝎荒漠 Lv30',col:'#d8b86a'}, // v1.5.2需求10：东移，等级梯度外扩
@@ -392,6 +400,35 @@ const ZOD=(function(){
   return L;})();
 /* V1.10.2需求2：按 RATK 白名单统一回填 ranged 标记（含 12 星灵兽），使 AI 行为与图鉴标注完全一致 */
 for(const _k in MT)MT[_k].ranged=RATK.has(_k)?1:0;
+/* ============ V1.11.3需求1：坐标统一口径 ============
+   用户原话：「将主线任务、成就、支线任务中的npc、怪物等位置进行校正，要和右上角的小地图的坐标要
+   对应起来，现在差距太大了，根据坐标点都找不到人」。
+   根因（实测）：小地图读数是「基准格中心 + Y 轴向上」＝ x/WS/10、(H−y)/WS/10，即 1 坐标点 = 50 世界像素；
+   而旧的任务引导/图鉴/藏宝文案一律打印 Math.round(世界像素/WS)——比小地图大 10 倍且上下不翻转，
+   zoneCoord() 更直接把基准格的矩形左上角当成中心。三套口径并存，照坐标走当然找不到人。
+   本节把全站读数收敛为唯一一对互逆换算（ptOf / ptWorld），其余显示一律走它们；
+   任何新增的坐标显示都禁止再手写 Math.round(x/WS)。 */
+const PT_UNIT=WS*10;                 // 1 个坐标点 = 50 世界像素（与小地图读数严格一致）
+function ptOf(wx,wy){return{x:Math.round(wx/PT_UNIT),y:Math.round((H-wy)/PT_UNIT)};} // 世界像素 → 坐标点
+function ptStr(wx,wy){const q=ptOf(wx,wy);return '('+q.x+','+q.y+')';}
+function ptWorld(px,py){return{x:px*PT_UNIT,y:H-py*PT_UNIT};} // 坐标点 → 世界像素（反解：按坐标定位/引导线）
+function zoneCW(zk){const r=ZR(zk);return{x:r.x+r.w/2,y:r.y+r.h/2};} // 区域中心的世界像素
+/* 区域坐标点表：含 ZOD 生成的 12 星座（本块必须排在 ZOD 之后、任何 label 消费之前） */
+const ZPT=(function(){const T={};for(const k in ZONES){if(k==='town')continue;const c=zoneCW(k);T[k]=ptOf(c.x,c.y);}return T;})();
+function zonePt(zk){if(zk==='town')return ptOf(ANGEL.x,ANGEL.y); // 营地以任务天使（交章处）为锚点
+  return ZPT[zk]||{x:0,y:0};}
+function zonePtStr(zk){const q=zonePt(zk);return '('+q.x+','+q.y+')';}
+function zoneOfPt(px,py){const w=ptWorld(px,py); // 坐标点 → 所在区域（输入坐标时用来认领怪物）
+  for(const k in ZONES){const r=ZR(k);if(w.x>=r.x&&w.x<=r.x+r.w&&w.y>=r.y&&w.y<=r.y+r.h)return k;}return null;}
+function zoneName(zk){const r=ZONES[zk];if(!r)return zk||'旷野';
+  return String(r.label||zk).replace(/ ?\([\d, ]*\)/g,'').trim();} // 干净区名（剥掉坐标尾巴）
+/* 大地图烘底用的「区名 · 坐标点」；其余场合一律用 zoneName + zonePtStr 分别取 */
+function zl(zk){const r=ZONES[zk];if(!r)return zk;const q=ZPT[zk];
+  return String(r.label||zk).replace(/ ?\([\d, ]*\)/g,'')+(q?' ('+q.x+','+q.y+')':'');}
+/* 怪物"据点"的世界像素：定点刷新怪用 fixed 点，普通怪取所在区中心（与 populateZone 的精英簇锚点一致） */
+function mobHomeW(k){const d=MT[k];if(!d)return null;
+  if(d.fixed)return{x:d.fixed[0],y:d.fixed[1]};
+  return zoneCW(d.zone);}
 /* v1.4需求33：每个怪物一个副本——每怪常驻区域内立一座副本入口；需求34：副本本体为独立页面，暂未实现，走近仅提示 */
 const DUNGEONS=(function(){const L=[],DEFCOL=['#b06ae8','#59c959','#7ecfff','#ff9a3a','#e8cf4a','#d86a5a'];
   for(const k in MT){const def=MT[k],r=ZR(def.zone),h=Math.abs(hashStr(k));
@@ -2128,12 +2165,12 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.11.2';
+const GLOG_MAX=600,GLOG_VER='1.11.3';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
   try{return{t:t,scene:INST.on?('INST:'+INST.type+':'+(INST.name||'')):gzone(),
-    x:Math.round(p.x/WS),y:Math.round(p.y/WS),lvl:p.lvl,hp:p.hp+'/'+maxHp(),mp:Math.round(p.mp),
+    x:ptOf(p.x,p.y).x,y:ptOf(p.x,p.y).y,lvl:p.lvl,hp:p.hp+'/'+maxHp(),mp:Math.round(p.mp),
     mobs:mobs.length,items:items.length,projs:projs.length,fx:fx.length,parts:parts.length,obst:OBST.length,
     iwall:INSTWALLS.length,bag:bag.filter(function(b){return b;}).length,
     shichen:(typeof SHICHEN!=='undefined'?SHICHEN[schI].n:''),wx:(typeof wxNow==='function'?wxNow().k:''),
@@ -2197,7 +2234,7 @@ function glogExport(){
         uptimeSec:+(((performance.now?performance.now():0)-GLOG.t0)/1000).toFixed(1),
         fps:+(GFPS||0).toFixed(1),frame:t,shichen:(typeof SHICHEN!=='undefined'?SHICHEN[schI].n:''),weather:(typeof wxNow==='function'?wxNow().k:'')},
       player:{name:p.name,lvl:p.lvl,gold:p.gold,hp:p.hp+'/'+maxHp(),mp:Math.round(p.mp)+'/'+maxMp(),
-        x:Math.round(p.x),y:Math.round(p.y),grid:[Math.round(p.x/WS),Math.round(p.y/WS)],
+        x:Math.round(p.x),y:Math.round(p.y),grid:[ptOf(p.x,p.y).x,ptOf(p.x,p.y).y],ptStr:ptStr(p.x,p.y),
         inst:INST.on?{type:INST.type,floor:INST.floor,name:INST.name}:null,equip:EQSLOTS.map(function(k){return p.equip[k]?p.equip[k].name:null;}),
         skLvl:p.skLvl,ach2:p.ach2,set:p.set},
       counters:{mobs:mobs.length,items:items.length,coins:coins.length,projs:projs.length,fx:fx.length,parts:parts.length,
@@ -2256,7 +2293,7 @@ const QEFF={atk:'攻击+2%',hp:'生命+3%',def:'防御+3',gold:'金币+6%',crit:
 const QEFFK=Object.keys(QEFF);
 const STORY=(function(){const L=[];for(const k in MT){if(MT[k].onlyBoss)continue; // 需求50：全怪物故事线（含12星座/Lv55-75），神兽不入线
   L.push({key:k,name:MT[k].name,zone:MT[k].zone,
-    st:[0,1,2].map(function(j){const e=QEFFK[(hashStr(k)+j)%8];const nm=['初窥门径','渐入佳境','登堂入室'][j];return{t:QTGT[j],e:e,v:j===0?1:j===1?2:4,txt:'讨伐 '+MT[k].name+' ×'+QTGT[j],d:'【'+ZONES[MT[k].zone].label+'】'+nm+'：'+QEFF[e]}})});}
+    st:[0,1,2].map(function(j){const e=QEFFK[(hashStr(k)+j)%8];const nm=['初窥门径','渐入佳境','登堂入室'][j];return{t:QTGT[j],e:e,v:j===0?1:j===1?2:4,txt:'讨伐 '+MT[k].name+' ×'+QTGT[j],d:'【'+zl(MT[k].zone)+'】'+nm+'：'+QEFF[e]}})});}
   return L;})();
 function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return Math.abs(h);}
 /* 需求59/68：营地村民——集中部署在落鸦村中央广场（天使周围），简单对话 + 纳入成就任务线（对话次数即进度） */
@@ -2578,7 +2615,7 @@ function digTake(){ /* 接取一单藏宝图 */
     let zt=zk;for(const k in ZONES){const r=ZR(k);if(e.x>=r.x&&e.x<=r.x+r.w&&e.y>=r.y&&e.y<=r.y+r.h){zt=k;break;}}
     p.dig.pts.push({x:e.x,y:e.y,z:zt,got:0});}
   msg('🗺 藏宝图到手！十处宝地已标注在小地图与左侧追踪器——挖满回来交图','#ffd700');
-  msg('🧭 第一处：'+(ZONES[p.dig.pts[0].z].label||p.dig.pts[0].z).replace(/ ?\([\d, ]*\)/,'')+' → ('+Math.round(p.dig.pts[0].x/WS)+','+Math.round(p.dig.pts[0].y/WS)+')','#8fd08f');
+  msg('🧭 第一处：'+zoneName(p.dig.pts[0].z)+' 内 → '+ptStr(p.dig.pts[0].x,p.dig.pts[0].y),'#8fd08f');
   sfx(760,.14,'triangle',.05);fxRing(DIG_NPC.x,DIG_NPC.y,6,52,'#ffd700',3);
   glog('biz','dig take',{fee:DIG_NPC.fee,gold:p.gold,lvl:p.lvl},null);}
 function digReport(){ /* 十点挖完回NPC交图 */
@@ -2643,7 +2680,7 @@ function digSpot(q){ /* 就地开挖 */
     items.push(bookItem(bk,x,y+rnd(-4,4)));
     msg('📕 泥块里剔出一页【'+SKB[bk]+'】','#b06ae8');}
   glog('biz','dig spot',{loot:L.k,got:p.dig?p.dig.got:0,tot:p.dig?p.dig.tot:DIG_TOT,x:Math.round(x),y:Math.round(y)},null);
-  if(!digLeft())msg('🗺 十处已挖完——回 ('+Math.round(DIG_NPC.x/WS)+','+Math.round(DIG_NPC.y/WS)+') 找'+DIG_NPC.name+'交图领赏','#ffd700');}
+  if(!digLeft())msg('🗺 十处已挖完——回 '+ptStr(DIG_NPC.x,DIG_NPC.y)+' 找'+DIG_NPC.name+'交图领赏','#ffd700');}
 function updateDig(){ /* 临时攻值倒计时 */
   if(p.dbuff&&p.dbuff.t>0){p.dbuff.t--;if(p.dbuff.t<=0){p.dbuff=null;msg('🔥 宝气散尽，攻击加成结束','#ff9a5a');}}}
 function digAtkPct(){return (p.dbuff&&p.dbuff.t>0)?p.dbuff.atk/100:0;}
@@ -2686,9 +2723,215 @@ function drawDigSpots(){ /* 世界层：未挖点画十字宝记 + 光圈；已�
 function digTrackerTxt(){ /* 追踪器/面板共用的藏宝图一行 */
   if(!p.dig)return '';
   if(digAct()){const nx=digNext();
-    return '🗺 藏宝图 '+(p.dig.got||0)+'/'+DIG_TOT+(nx?'　下一处 → ('+Math.round(nx.x/WS)+','+Math.round(nx.y/WS)+')':'');}
-  return '🗺 藏宝图已挖满 '+DIG_TOT+'/'+DIG_TOT+'　→ ('+Math.round(DIG_NPC.x/WS)+','+Math.round(DIG_NPC.y/WS)+') 交图';}
+    return '🗺 藏宝图 '+(p.dig.got||0)+'/'+DIG_TOT+(nx?'　下一处 → '+ptStr(nx.x,nx.y):'');}
+  return '🗺 藏宝图已挖满 '+DIG_TOT+'/'+DIG_TOT+'　→ '+ptStr(DIG_NPC.x,DIG_NPC.y)+' 交图';}
 /* ============ /V1.11.2需求2 ============ */
+/* ============ V1.11.3需求2/3：快速查找（分类 + 坐标输入）与「去这里」引导线 ============
+   用户原话：「增加一个快速查找NPC、怪物的列表和输入指定地点坐标，需要分类」
+             「点击了快速查找NPC、怪物的列表和输入指定地点坐标，弹出"去这里"的按钮，点击后自动出现引导线，
+              用户按着引导线去找；如果用户取消了查找和到达了目的地，则关闭引导线；
+              用户切换了查找的对象，则只显示最新的引导线」
+   实现口径：
+   · 一张全量目标表（营地NPC/怪物/神兽·BOSS/设施/副本门/藏宝点），按分类分页，行内显示坐标点与实时距离；
+   · 同一个输入框双用途——普通文字=按名字过滤；写成「24,79」=直接锁定该坐标点（口径同需求1）；
+   · 选中任意一项（列表行或坐标输入）→ 面板底部浮出「去这里」按钮；点击即建立唯一引导线；
+   · 引导线只有一条：换目标即整体替换（nav 单对象，天然满足"只显示最新的引导线"）；
+   · 关闭时机三种——抵达（进入 arr 半径）、点✕/按 Esc 取消、进入副本或回城（世界系变化）。
+   nav 为瞬态：不入存档，resetPlayer/换档清零即可，避免旧档读到失效目标。 */
+const FCATS=['👤 NPC','🐗 怪物','☠ 神兽·BOSS','🏛 设施','⛩ 副本门','💰 藏宝点'];
+const FROWS=9;                        // 每页 9 行
+const NAV_ARRIVE=60;                  // 抵达判定（世界像素）≈1.2 个坐标点
+const NAV_PTS=PT_UNIT;                // 纯坐标输入用 1 个坐标点作抵达半径
+let findOpen=false,findCat=0,findPage=0,findSel=null,findQ='',findFocus=false,findRect=null;
+let nav=null;                         // {nm,x,y,arr,tag,cat}
+function findEntries(){
+  const L=[];
+  NPCS.forEach(function(n){L.push({c:0,nm:n.name,tag:'营地村民',x:n.x,y:n.y});});
+  L.push({c:0,nm:'任务天使',tag:'接章·交任务',x:ANGEL.x,y:ANGEL.y});
+  L.push({c:0,nm:'探宝人金算盘',tag:'藏宝图',x:DIG_NPC.x,y:DIG_NPC.y});
+  L.push({c:0,nm:'弼马温',tag:'坐骑总管',x:MNT_NPC.x,y:MNT_NPC.y});
+  for(const k in MT){const d=MT[k],h=mobHomeW(k);if(!h)continue;
+    L.push({c:d.onlyBoss?2:1,nm:d.name,tag:'Lv'+d.lvl+' · '+zoneName(d.zone),x:h.x,y:h.y,key:k});}
+  L.push({c:3,nm:'通天塔',tag:'爬塔 100 层',x:TOWER_PT.x,y:TOWER_PT.y});
+  L.push({c:3,nm:'万妖迷宫阵',tag:'全BOSS长廊',x:MAZE_PT.x,y:MAZE_PT.y});
+  L.push({c:3,nm:'产蛋秘境阵',tag:'宝宝蛋',x:PETDUN_PT.x,y:PETDUN_PT.y});
+  L.push({c:3,nm:'营地马桩',tag:'上马远行',x:HORSE.x,y:HORSE.y});
+  DUNGEONS.forEach(function(dr){L.push({c:4,nm:(MT[dr.key]?MT[dr.key].name:'幻境')+'幻境',tag:'副本入口',x:dr.x,y:dr.y});});
+  if(p.dig&&p.dig.pts)for(let i=0;i<p.dig.pts.length;i++){const q=p.dig.pts[i];
+    if(!q.got)L.push({c:5,nm:'藏宝点 第'+(i+1)+'处',tag:zoneName(q.z),x:q.x,y:q.y});}
+  return L;}
+function findParse(s){ /* 「24,79」「24 79」「24，79」→ 坐标点目标 */
+  const m=String(s||'').match(/(\d{1,4})[\s,，、;；\-\/]+(\d{1,4})/);
+  if(!m)return null;
+  const px=+m[1],py=+m[2];
+  if(px<0||py<0||px>BGW/10||py>BGH/10)return null;
+  const w=ptWorld(px,py),zk=zoneOfPt(px,py); // 认领落点所在区域，让行副标题说清"这是谁的场子"
+  return{nm:'坐标 ('+px+','+py+')',tag:'手动输入'+(zk?' · '+zoneName(zk):' · 旷野'),cat:-1,
+    x:clamp(w.x,20,W-20),y:clamp(w.y,20,H-20),arr:NAV_PTS};}
+function findRows(){
+  const q=String(findQ||'').trim();
+  const pc=findParse(q);
+  if(pc)return[pc]; // 输入的是坐标：只列这一个落点
+  let L=findEntries();
+  // 分类页只管"浏览"；一旦输入了文字，就跨全部分类检索（写白虎就不用先切到怪物页）
+  if(!q&&findCat>=0)L=L.filter(function(e){return e.c===findCat;});
+  if(q)L=L.filter(function(e){return e.nm.indexOf(q)>=0||e.tag.indexOf(q)>=0;});
+  L.sort(function(a,b){return dist(p.x,p.y,a.x,a.y)-dist(p.x,p.y,b.x,b.y);});
+  return L;}
+function navSet(t){ /* 唯一引导线：换目标即替换 */
+  if(!t)return;
+  nav={nm:t.nm,x:t.x,y:t.y,arr:t.arr||(t.cat===-1?NAV_PTS:NAV_ARRIVE),tag:t.tag||'',cat:t.cat};
+  const q=ptOf(t.x,t.y);
+  msg('🧭 引导线已开启 → '+t.nm+' 坐标('+q.x+','+q.y+')　按 G 查看／按 Esc 取消','#8affff');
+  sfx(880,.1,'triangle',.05);fxRing(t.x,t.y,6,52,'#8affff',3);
+  glog('flow','nav set',{to:t.nm,pt:q.x+','+q.y,d:Math.round(dist(p.x,p.y,t.x,t.y))});}
+function navCancel(reason){
+  if(!nav)return false;const nm=nav.nm;nav=null;
+  msg('🚫 引导线已关闭（'+reason+'）：'+nm,'#8a9a7a');sfx(420,.06,'square',.03);
+  glog('flow','nav off',{from:nm,reason:reason});return true;}
+function updateNav(){ /* 每帧：进副本/阵亡/抵达即收线 */
+  if(!nav)return;
+  if(INST.on||p.dead>0){navCancel(INST.on?'进入副本':'阵亡');return;}
+  if(dist(p.x,p.y,nav.x,nav.y)<=nav.arr){
+    const q=ptOf(nav.x,nav.y),nm=nav.nm;nav=null;
+    msg('📍 已抵达 '+nm+'　坐标('+q.x+','+q.y+')','#8fd08f');
+    floatTxt(p.x,p.y-52,'🧭 到了','#8fd08f');sfx(1046,.12,'triangle',.05);fxRing(p.x,p.y,4,44,'#8fd08f',3);
+    glog('flow','nav arrive',{to:nm,pt:q.x+','+q.y});}}
+function navDist(){return nav?Math.round(dist(p.x,p.y,nav.x,nav.y)/PT_UNIT*10)/10:0;} // 剩余坐标点（1 位小数）
+function drawNavLine(){ /* UI 层：世界→屏幕＝减去相机；只画当前这一条 */
+  if(!nav||INST.on)return;
+  const sx=nav.x-camX,sy=nav.y-camY,px=p.x-camX,py=p.y-camY;
+  const M=22,inS=sx>M&&sx<LW-M&&sy>M&&sy<LH-M;
+  /* 屏外时把终点收在视口边内，保证"往哪走"永远看得见 */
+  let ex=sx,ey=sy;
+  if(!inS){const dx=sx-px,dy=sy-py;let k=1e9;
+    if(dx>0)k=Math.min(k,(LW-M-px)/dx);else if(dx<0)k=Math.min(k,(M-px)/dx);
+    if(dy>0)k=Math.min(k,(LH-M-py)/dy);else if(dy<0)k=Math.min(k,(M-py)/dy);
+    if(!isFinite(k)||k<=0){ex=LW/2;ey=LH/2;}else{ex=px+dx*k;ey=py+dy*k;}}
+  const pul=.6+.4*Math.sin(t*.12);
+  C.save();
+  C.strokeStyle='rgba(138,255,255,'+(.5+.3*pul)+')';C.lineWidth=3;C.setLineDash([16,11]);C.lineDashOffset=-t*.9;
+  C.beginPath();C.moveTo(px,py);C.lineTo(ex,ey);C.stroke();C.setLineDash([]);
+  /* 起点环（主角脚下） */
+  C.strokeStyle='rgba(138,255,255,.5)';C.lineWidth=2;C.beginPath();C.arc(px,py,15+pul*3,0,7);C.stroke();
+  /* 箭头：指向终点 */
+  const A=Math.atan2(ey-py,ex-px),L2=Math.hypot(ex-px,ey-py);
+  if(L2>40){C.save();C.translate(ex,ey);C.rotate(A);C.fillStyle='#8affff';
+    C.beginPath();C.moveTo(16,0);C.lineTo(-6,-9);C.lineTo(-2,0);C.lineTo(-6,9);C.closePath();C.fill();C.restore();}
+  /* 目的地标记 */
+  if(inS){C.strokeStyle='rgba(255,225,120,'+(.55+.4*pul)+')';C.lineWidth=2.6;
+    C.beginPath();C.arc(sx,sy,17+pul*5,0,7);C.stroke();
+    C.beginPath();C.moveTo(sx-9,sy);C.lineTo(sx+9,sy);C.moveTo(sx,sy-9);C.lineTo(sx,sy+9);C.stroke();}
+  const lab='🧭 '+nav.nm+' · '+navDist()+'点'+(inS?'':' · 屏外');
+  C.font='700 12px "Microsoft YaHei",sans-serif';
+  const tw=C.measureText(lab).width+16;
+  let bx=clamp(ex-tw/2,M,LW-M-tw),by=clamp(ey-(inS?34:-8),M,LH-M-18);
+  rr(bx,by,tw,18,6);C.fillStyle='rgba(8,12,10,.82)';C.fill();C.strokeStyle='rgba(138,255,255,.55)';C.lineWidth=1.2;C.stroke();
+  txt(lab,bx+tw/2,by+9,12,'#c8f6ff','center',null,true);
+  C.restore();}
+function drawNavChip(){ /* 顶栏引导胶囊：随时取消 */
+  if(!nav)return;
+  const w=252,h=22,x=286,y=34,q=ptOf(nav.x,nav.y);
+  C.save();rr(x,y,w,h,7);C.fillStyle='rgba(8,14,12,.78)';C.fill();
+  C.strokeStyle='rgba(138,255,255,.6)';C.lineWidth=1.3;C.stroke();
+  txt('🧭 '+nav.nm.slice(0,10)+' ('+q.x+','+q.y+')',x+8,y+11,11,'#c8f6ff',null,'700',true);
+  txt(navDist()+'点',x+w-52,y+11,11,'#ffd78a','right','700',true);
+  C.restore();
+  const bxp=x+w-40,tx='✕';
+  rr(bxp,y+3,32,16,5);C.fillStyle='rgba(120,30,26,.9)';C.fill();C.strokeStyle='#e07a6a';C.lineWidth=1.2;C.stroke();
+  txt(tx,bxp+16,y+11,11,'#ffe9e4','center','700',true);
+  hot.push({x:bxp-6,y:y,w:44,h:h,fn:function(){navCancel('手动取消');},top:0});}
+/* --- 叠层输入框（手机键盘唯一可用路径，做法同 nameInput） --- */
+const FIND_IN=document.getElementById('findInput');
+function syncFindInput(){
+  if(!FIND_IN)return;
+  if(!findOpen||!findFocus){if(findFocus){findFocus=false;FIND_IN.classList.remove('on');try{FIND_IN.blur();}catch(_){}}return;}
+  const r=findRect;if(!r)return;
+  FIND_IN.style.width=(r.w*Z)+'px';FIND_IN.style.height=(r.h*Z)+'px';
+  FIND_IN.style.fontSize=Math.max(16,16*Z)+'px';
+  if(forceRot){const cx=innerWidth/2+((r.y+r.h/2)*Z-LH*Z/2),cy=innerHeight/2-((r.x+r.w/2)*Z-LW*Z/2);
+    FIND_IN.style.left=(cx-r.w*Z/2)+'px';FIND_IN.style.top=(cy-r.h*Z/2)+'px';}
+  else{const b=VIEW.getBoundingClientRect();
+    FIND_IN.style.left=(b.left+r.x*Z)+'px';FIND_IN.style.top=(b.top+r.y*Z)+'px';}
+  FIND_IN.classList.add('on');}
+function findInOpen(){
+  if(!findOpen)return;findFocus=true;syncFindInput();FIND_IN.value=findQ;
+  try{FIND_IN.focus();}catch(_){}try{FIND_IN.select();}catch(_){}}
+function findClose(){findOpen=false;if(FIND_IN){findFocus=false;FIND_IN.classList.remove('on');try{FIND_IN.blur();}catch(_){}}}
+if(FIND_IN){
+  FIND_IN.addEventListener('input',function(){findQ=FIND_IN.value.slice(0,14);findPage=0;});
+  FIND_IN.addEventListener('blur',function(){findFocus=false;FIND_IN.classList.remove('on');});
+  FIND_IN.addEventListener('keydown',function(e){e.stopPropagation();
+    if(e.key==='Enter'){e.preventDefault();
+      const pc=findParse(FIND_IN.value);
+      if(pc){findSel=pc;findQ='';FIND_IN.value='';findPage=0;
+        const qq=ptOf(pc.x,pc.y);msg('🎯 已锁定坐标 ('+qq.x+','+qq.y+')——点下方「去这里」开启引导线','#8affff');sfx(760,.06,'triangle',.03);}
+      else{findSel=null;sfx(420,.05,'square',.03);msg('⌨ 文字检索中（跨全部分类）：'+(findQ||'（空）'),'#8a9a7a');}
+      findFocus=false;FIND_IN.classList.remove('on');try{FIND_IN.blur();}catch(_){}}
+    else if(e.key==='Escape'){e.preventDefault();findFocus=false;FIND_IN.classList.remove('on');try{FIND_IN.blur();}catch(_){}}});
+}
+function drawFind(){
+  const w=760,h=470,x=(LW-w)/2,y=26;
+  panel(x,y,w,h);
+  txt('🔍 快速查找 · NPC／怪物／设施／坐标（口径＝右上角小地图坐标点）',x+16,y+15,13.5,'#e8cf4a');
+  closeBtn(x+w-42,y+7,32,27,function(){findClose();sfx(420,.06,'square',.03);});
+  /* 分类页签 */
+  const tw2=(w-24)/FCATS.length;
+  for(let i=0;i<FCATS.length;i++){const tx2=x+12+i*tw2,on=i===findCat;
+    rr(tx2,y+30,tw2-4,24,6);C.fillStyle=on?'rgba(232,207,74,.22)':'rgba(255,255,255,.05)';C.fill();
+    C.strokeStyle=on?'#e8cf4a':'rgba(255,255,255,.16)';C.lineWidth=on?1.8:1;C.stroke();
+    txt(FCATS[i],tx2+(tw2-4)/2,y+42,11.5,on?'#fff2b0':'#9ab08a','center',null,true);
+    (function(ii){hot.push({x:tx2,y:y+30,w:tw2-4,h:24,fn:function(){findCat=ii;findPage=0;findSel=null;sfx(660,.05,'triangle',.03);}});})(i);}
+  /* 输入行：文字=过滤，"x,y"=坐标落点 */
+  const iy=y+60,ih=28;
+  findRect={x:x+12,y:iy,w:w-240,h:ih};
+  rr(findRect.x,iy,findRect.w,ih,7);C.fillStyle='rgba(16,22,14,.95)';C.fill();
+  C.strokeStyle=findFocus?'#ffd700':'#8a7a3a';C.lineWidth=findFocus?2:1.4;C.stroke();
+  if(findQ)txt(findQ,findRect.x+10,iy+ih/2,13,'#eaffea',null,'500',true);
+  else txt('点这里输入：名字（跨分类找，如 白虎）或坐标（如 24,79）',findRect.x+10,iy+ih/2,12,'#6f7d68',null,'400',true);
+  hot.push({x:findRect.x,y:iy,w:findRect.w,h:ih,fn:findInOpen});
+  btn(x+w-216,iy,96,ih,'⌫ 清空',function(){findQ='';findSel=null;findPage=0;if(FIND_IN)FIND_IN.value='';sfx(420,.05,'square',.03);},'#3a3226');
+  btn(x+w-112,iy,96,ih,'📍 去坐标',function(){
+    const pc=findParse(findQ);
+    if(pc){findSel=pc;navSet(pc);findClose();}
+    else msg('⌨ 请输入两个数字，例如 24,79（小地图同款坐标点）','#e85a5a');},'#2a4a5a');
+  /* 列表 */
+  const fqv=String(findQ||'').trim();
+  const L=findRows(),pages=Math.max(1,Math.ceil(L.length/FROWS));
+  findPage=clamp(findPage,0,pages-1);
+  txt('共 '+L.length+' 项 · 按距离排序'+(fqv?'（文字检索＝跨全部分类）':'（当前分类）'),x+14,iy+ih+13,11,'#8a9a7a');
+  txt((findPage+1)+' / '+pages,x+w/2,iy+ih+13,11,'#8a9a7a','center');
+  if(findPage>0)btn(x+w-232,iy+ih+2,70,22,'◀ 上页',function(){findPage--;});
+  if(findPage<pages-1)btn(x+w-156,iy+ih+2,70,22,'下页 ▶',function(){findPage++;});
+  const ry=iy+ih+30;
+  for(let r=0;r<FROWS;r++){const idx=findPage*FROWS+r;if(idx>=L.length)break;const e=L[idx];
+    const px2=x+12,py2=ry+r*32,pw2=w-24,ph2=30;
+    const selq=findSel&&findSel.x===e.x&&findSel.y===e.y&&findSel.nm===e.nm;
+    const nv=nav&&nav.x===e.x&&nav.y===e.y;
+    const hov=mouse.x>=px2&&mouse.x<=px2+pw2&&mouse.y>=py2&&mouse.y<=py2+ph2;
+    rr(px2,py2,pw2,ph2,6);C.fillStyle=selq?'rgba(232,207,74,.16)':nv?'rgba(138,255,255,.12)':hov?'rgba(255,255,255,.07)':'rgba(255,255,255,.03)';C.fill();
+    C.strokeStyle=selq?'#e8cf4a':nv?'#8affff':'rgba(255,255,255,.1)';C.lineWidth=selq||nv?1.8:1;C.stroke();
+    const q=ptOf(e.x,e.y),dd=Math.round(dist(p.x,p.y,e.x,e.y)/PT_UNIT);
+    txt((nv?'🧭 ':selq?'▶ ':'· ')+e.nm,px2+10,py2+10,12.5,selq||nv?'#fff2b0':'#dfe4da',null,'700',true);
+    txt(e.tag,px2+10,py2+23,10,'#8a9a7a',null,'400',true);
+    txt('坐标 ('+q.x+','+q.y+')',px2+300,py2+10,11.5,'#8ab8d8',null,'700',true);
+    txt('⛃ 距离 '+dd+' 点',px2+300,py2+23,10,'#c9b878',null,'400',true);
+    txt(dd<=2?'🟢 就在附近':dd<=20?'🟡 近在咫尺':'🔵 需要赶路',px2+pw2-12,py2+ph2/2,11,'#9ab08a','right',null,true);
+    (function(en){hot.push({x:px2,y:py2,w:pw2,h:ph2,fn:function(){findSel=en;findQ='';if(FIND_IN)FIND_IN.value='';
+      const qq=ptOf(en.x,en.y);msg('🎯 已选中 '+en.nm+' 坐标('+qq.x+','+qq.y+')　点下方「去这里」开启引导线','#8affff');
+      sfx(760,.06,'triangle',.03);}});})(e);}
+  /* 底部：去这里 */
+  const fy=y+h-46;
+  C.strokeStyle='rgba(232,207,74,.25)';C.lineWidth=1;C.beginPath();C.moveTo(x+14,fy-10);C.lineTo(x+w-14,fy-10);C.stroke();
+  if(findSel){const q=ptOf(findSel.x,findSel.y),dd=Math.round(dist(p.x,p.y,findSel.x,findSel.y)/PT_UNIT);
+    txt('目标：'+findSel.nm+'　坐标('+q.x+','+q.y+')　距离 '+dd+' 点',x+16,fy+6,12.5,'#fff2b0');
+    btn(x+16,fy+20,190,26,'🧭 去这里（出引导线）',function(){navSet(findSel);findClose();},'#2a5a3a');
+    btn(x+214,fy+20,110,26,'✕ 取消选择',function(){findSel=null;sfx(420,.05,'square',.03);},'#3a3226');
+    if(nav&&!(nav.x===findSel.x&&nav.y===findSel.y))txt('⚠ 已有引导线：'+nav.nm+'——点「去这里」将替换为最新目标',x+336,fy+33,11,'#e8c86a');}
+  else txt('◦ 先在上方列表选一项，或输入坐标（如 24,79），再点「去这里」',x+16,fy+22,12.5,'#8a9a7a');
+  if(nav)btn(x+w-150,fy+20,134,26,'🚫 关闭引导线',function(){navCancel('手动取消');},'#4a2a2a');
+  syncFindInput();
+}
 function drawVillager(n,i){ // v1.4需求29：村民立绘真实华丽化——四 NPC 各具体型/服饰/道具 + 体积光影 + 待机呼吸
   const x=n.x,y=n.y+Math.sin(t*.06+i)*2,hue=n.hue;
   const sw=Math.sin(t*.05+i)*1.6; // 衣摆/道具轻摆
@@ -2889,85 +3132,85 @@ const MAINLIN=[
    npc=NPC key it=副本类型 mk=变身怪 key idx=技能槽 r=判定半径 q=武器品质下限 */
 const MQT=[
  /* 第1章 草原失业危机 Lv1 */[
-  {t:'kill',k:'slime',n:8,d:'草原清剿',tip:'史莱姆草原（坐标 24,27 一带）猎杀史莱姆 ×8'},
+  {t:'kill',k:'slime',n:8,d:'草原清剿',tip:'史莱姆草原猎杀史莱姆 ×8'},
   {t:'mat',m:'粘质液',n:3,z:'slime',d:'采集样本',tip:'史莱姆必掉「粘质液」——捡满 3 份（走过即可拾取）'},
   {t:'talk',npc:'npc_smith',n:1,d:'交验样本',tip:'把样本拿给北墙内的铁匠托洛看看（走近按 E）'}],
  /* 第2章 哥布林拖欠工资 Lv5 */[
-  {t:'kill',k:'goblin',n:12,d:'结清工资',tip:'哥布林营地（113,43）讨伐哥布林 ×12'},
+  {t:'kill',k:'goblin',n:12,d:'结清工资',tip:'哥布林营地讨伐哥布林 ×12'},
   {t:'give',npc:'npc_smith',m:'粗糙·磨石',n:3,d:'交付磨石',tip:'背包攒够 3 个「粗糙·磨石」后，找铁匠托洛交付'},
-  {t:'mount',it:'mount',n:1,d:'领一匹脚力',tip:'Lv5 起：去基地东北角找弼马温（4250,2500）接坐骑任务并讨伐御骑境BOSS'}],
+  {t:'mount',it:'mount',n:1,d:'领一匹脚力',tip:'Lv5 起：去基地东北角找弼马温接坐骑任务并讨伐御骑境BOSS'}],
  /* 第3章 消防员不入火场 Lv10 */[
-  {t:'kill',k:'fire',n:15,d:'后山消防',tip:'史莱姆营地（7,25）讨伐烈焰史莱姆 ×15'},
-  {t:'inst',it:'petdun',n:1,d:'踏入产蛋秘境',tip:'Lv10 解锁：踩基地南侧金阵（3180,2770）进入产蛋秘境'},
+  {t:'kill',k:'fire',n:15,d:'后山消防',tip:'史莱姆营地讨伐烈焰史莱姆 ×15'},
+  {t:'inst',it:'petdun',n:1,d:'踏入产蛋秘境',tip:'Lv10 解锁：踩基地南侧金阵进入产蛋秘境'},
   {t:'pet',it:'petdun',n:1,d:'孵一只伙伴',tip:'秘境四神兽必爆宝宝蛋——回背包点蛋上阵（任一宠物槽）'}],
  /* 第4章 铠甲回收计划 Lv15 */[
-  {t:'kill',k:'knight',n:12,d:'拆解报废铠甲',tip:'暗影骑士竞技场（94,94）讨伐暗影骑士 ×12'},
+  {t:'kill',k:'knight',n:12,d:'拆解报废铠甲',tip:'暗影骑士竞技场讨伐暗影骑士 ×12'},
   {t:'ekill',k:'knight',n:3,d:'专挑硬骨头',tip:'同一区里等蓝光精英·暗影骑士，讨伐精英 ×3（精英 5 倍血、爆 5 件）'},
   {t:'inst',it:'dun',z:'arena',n:1,d:'进入幻境副本',tip:'走到暗影骑士区的⛩副本入口按 E——幻境里精英与BOSS成堆'},
   {t:'bkill',k:'knight',n:1,d:'斩骑士长',tip:'在暗影骑士幻境副本里斩杀 1 只 BOSS 即算达成'}],
  /* 第5章 龟速职场生存 Lv20 */[
-  {t:'kill',k:'turtle',n:15,d:'收复快递柜',tip:'龙溪龟区（174,15）讨伐龙溪龟 ×15'},
-  {t:'surv',z:'badlands',sec:60,d:'荒原历练',tip:'在法外荒原（147,154）连续生存 60 秒（离开或阵亡则重计）'},
-  {t:'talk',npc:'npc_hunter',n:1,d:'汇报历练',tip:'回基地南广场找猎人阿达（3900,2620）说说荒原见闻'}],
+  {t:'kill',k:'turtle',n:15,d:'收复快递柜',tip:'龙溪龟区讨伐龙溪龟 ×15'},
+  {t:'surv',z:'badlands',sec:60,d:'荒原历练',tip:'在法外荒原连续生存 60 秒（离开或阵亡则重计）'},
+  {t:'talk',npc:'npc_hunter',n:1,d:'汇报历练',tip:'回基地南广场找猎人阿达说说荒原见闻'}],
  /* 第6章 矿区股权纠纷 Lv25 */[
-  {t:'kill',k:'miner',n:20,d:'清收矿区',tip:'黄金矿洞（163,69）讨伐黄金矿工 ×20'},
+  {t:'kill',k:'miner',n:20,d:'清收矿区',tip:'黄金矿洞讨伐黄金矿工 ×20'},
   {t:'ekill',k:'miner',n:4,d:'矿霸执法',tip:'矿洞里蹲蓝光精英·黄金矿工，讨伐精英 ×4'},
   {t:'mat',m:'金矿石',n:5,z:'mine',d:'收缴金矿石',tip:'矿工掉落「金矿石」——捡满 5 块'},
   {t:'gweap',npc:'npc_smith',q:2,n:1,d:'熔炼一件兵器',tip:'打造或拾取 1 件品质≥蓝（q2）的武器，交给铁匠托洛熔炼'}],
  /* 第7章 年终奖抢劫案 Lv30 */[
   {t:'kill',k:'bandit',n:25,d:'追回年终奖',tip:'法外荒原讨伐法外狂徒 ×25'},
   {t:'mat',m:'粗糙·灵能尘',n:4,z:'badlands',d:'拾取灵能尘',tip:'狂徒与精英会掉「粗糙·灵能尘」——攒 4 个'},
-  {t:'talk',npc:'npc_sage',n:2,d:'请教线索',tip:'找西侧贤者玄尘（2810,2150）谈两次话（按 E 重复交谈）'}],
+  {t:'talk',npc:'npc_sage',n:2,d:'请教线索',tip:'找西侧贤者玄尘谈两次话（按 E 重复交谈）'}],
  /* 第8章 风投失败 Lv35 */[
   {t:'morph',k:'slime',n:1,z:'slime',d:'学会变身术',tip:'史莱姆成就满 10 杀解锁变身——按 V 打开变身面板化作史莱姆'},
   {t:'msk',npc:'npc_sage',n:1,d:'变身演武',tip:'保持变身状态，按下 1~4 号技能槽释放一次任意主动技能'},
-  {t:'kill',k:'wind',n:30,d:'风投尽调',tip:'风之谷（25 段）讨伐被污染的风精灵 ×30'}],
+  {t:'kill',k:'wind',n:30,d:'风投尽调',tip:'风之谷（Lv25 区）讨伐被污染的风精灵 ×30'}],
  /* 第9章 沙漠亮剑行动 Lv40 */[
-  {t:'kill',k:'scorp',n:35,d:'回寄恐吓信',tip:'毒蝎荒漠（30 段）讨伐沙漠毒蝎 ×35'},
+  {t:'kill',k:'scorp',n:35,d:'回寄恐吓信',tip:'毒蝎荒漠（Lv30 区）讨伐沙漠毒蝎 ×35'},
   {t:'ekill',k:'scorp',n:6,d:'掐掉带头的',tip:'荒漠里讨伐蓝光精英·沙漠毒蝎 ×6（精英击杀累计 20 只可召本区 BOSS）'},
   {t:'matk',mk:'scorp',z:'scorp',r:150,d:'潜行侦察',tip:'变身为沙漠毒蝎，走进荒漠区域中心 150 像素内（骗过哨卡）'},
-  {t:'give',npc:'npc_taoist',m:'精铁·磨石',n:3,d:'换取卦金',tip:'交 3 个「精铁·磨石」给西北道士紫云（3008,1884）'}],
+  {t:'give',npc:'npc_taoist',m:'精铁·磨石',n:3,d:'换取卦金',tip:'交 3 个「精铁·磨石」给西北道士紫云'}],
  /* 第10章 强拆巨人 Lv45 */[
-  {t:'kill',k:'rock',n:40,d:'依法拆除',tip:'巨人之丘（35 段）讨伐岩石巨人 ×40'},
+  {t:'kill',k:'rock',n:40,d:'依法拆除',tip:'巨人之丘（Lv35 区）讨伐岩石巨人 ×40'},
   {t:'bkill',k:'rock',n:1,d:'拔掉石心',tip:'在岩石巨人幻境副本中斩杀 1 只 BOSS'},
   {t:'surv',z:'rock',sec:90,d:'钉子户反扑',tip:'在巨人之丘连续生存 90 秒（离开或阵亡则重计）'}],
  /* 第11章 塔里的高材生 Lv50 */[
-  {t:'kill',k:'mage',n:45,d:'学术打假',tip:'暗影法塔（40 段）讨伐暗影法师 ×45'},
+  {t:'kill',k:'mage',n:45,d:'学术打假',tip:'暗影法塔（Lv40 区）讨伐暗影法师 ×45'},
   {t:'inst',it:'maze',n:1,d:'闯万妖迷宫',tip:'踩基地南侧紫阵（迷宫阵）进入全BOSS长廊'},
-  {t:'talk',npc:'npc_storyteller',n:2,d:'说书润色',tip:'找东侧说书人老周（4140,2318）聊两次，把你的战绩编进书里'}],
+  {t:'talk',npc:'npc_storyteller',n:2,d:'说书润色',tip:'找东侧说书人老周聊两次，把你的战绩编进书里'}],
  /* 第12章 熔岩团建 Lv55 */[
-  {t:'kill',k:'lava',n:50,d:'温泉水复温',tip:'熔岩领域（45 段）讨伐熔岩领主 ×50'},
+  {t:'kill',k:'lava',n:50,d:'温泉水复温',tip:'熔岩领域（Lv45 区）讨伐熔岩领主 ×50'},
   {t:'mat',m:'玄金·兽粮',n:6,z:'lava',d:'备足兽粮',tip:'收集 6 个「玄金·兽粮」喂饱你的宝宝'},
   {t:'give',npc:'npc_smith',m:'玄金·磨石',n:4,d:'委托锻造',tip:'交 4 个「玄金·磨石」给铁匠托洛，换一件趁手兵器'}],
  /* 第13章 飞升插队者 Lv60 */[
-  {t:'kill',k:'ascend',n:12,d:'恢复排队',tip:'飞升仙池（50 段）讨伐飞升神龟 ×12'},
+  {t:'kill',k:'ascend',n:12,d:'恢复排队',tip:'飞升仙池（Lv50 区）讨伐飞升神龟 ×12'},
   {t:'msk',npc:'npc_sage',n:2,d:'化形连击',tip:'变身后释放 2 次主动技能（变身中按 1~4）'},
   {t:'matk',mk:'ascend',z:'ascend',r:150,d:'混进VIP通道',tip:'变身为飞升神龟，走到仙池中心 150 像素内'}],
  /* 第14章 沼泽环评风暴 Lv65 */[
-  {t:'kill',k:'marsh',n:50,d:'环境执法',tip:'瘴幽沼泽（55 段）讨伐瘴幽沼泽蛙 ×50'},
+  {t:'kill',k:'marsh',n:50,d:'环境执法',tip:'瘴幽沼泽（Lv55 区）讨伐瘴幽沼泽蛙 ×50'},
   {t:'surv',z:'marsh',sec:120,d:'毒雾取证',tip:'在瘴幽沼泽连续生存 120 秒取证（离开或阵亡则重计）'},
-  {t:'talk',npc:'npc_herbman',n:2,d:'求解药',tip:'找西南采药女阿萝（2932,2548）谈两次讨止血散'}],
+  {t:'talk',npc:'npc_herbman',n:2,d:'求解药',tip:'找西南采药女阿萝谈两次讨止血散'}],
  /* 第15章 雷崖限电事故 Lv70 */[
-  {t:'kill',k:'cliff',n:50,d:'抓赔电费的鸟',tip:'雷霆悬崖（60 段）讨伐雷霆崖鹰 ×50'},
+  {t:'kill',k:'cliff',n:50,d:'抓赔电费的鸟',tip:'雷霆悬崖（Lv60 区）讨伐雷霆崖鹰 ×50'},
   {t:'bkill',k:'cliff',n:1,d:'鹰王伏法',tip:'在雷霆崖鹰幻境副本中斩杀 1 只 BOSS'},
   {t:'give',npc:'npc_hunter',m:'星神·凿子',n:3,d:'采雷针',tip:'交 3 个「星神·凿子」给猎人阿达换证据清单'}],
  /* 第16章 冰川冻结的年报 Lv75 */[
-  {t:'kill',k:'icef',n:55,d:'解冻年报',tip:'秘蓝冰原（65 段）讨伐秘蓝冰帝 ×55'},
+  {t:'kill',k:'icef',n:55,d:'解冻年报',tip:'秘蓝冰原（Lv65 区）讨伐秘蓝冰帝 ×55'},
   {t:'mat',m:'星辉石',n:3,z:'zod1',d:'收集星辉',tip:'星座区星灵兽掉落「星辉石」——捡 3 颗'},
-  {t:'inst',it:'tower',n:1,d:'登塔查证',tip:'踩基地西南通天塔基座（2820,2710）按 E 入塔'}],
+  {t:'inst',it:'tower',n:1,d:'登塔查证',tip:'踩基地西南通天塔基座按 E 入塔'}],
  /* 第17章 血月强制加班 Lv80 */[
-  {t:'kill',k:'altar',n:60,d:'砸场子',tip:'血月祭坛（70 段）讨伐血月祭祭司 ×60'},
+  {t:'kill',k:'altar',n:60,d:'砸场子',tip:'血月祭坛（Lv70 区）讨伐血月祭祭司 ×60'},
   {t:'ekill',k:'altar',n:10,d:'砸掉领班的',tip:'祭坛里讨伐蓝光精英·血月祭祭司 ×10，加班文化的直接负责人'},
   {t:'msk',npc:'npc_sage',n:3,d:'反996演武',tip:'变身后释放 3 次主动技能'},
   {t:'matk',mk:'altar',z:'altar',r:150,d:'混进晨会',tip:'变身为血月祭祭司，走进祭坛中心 150 像素内'}],
  /* 第18章 神陨之巅查岗 Lv85 */[
-  {t:'kill',k:'god',n:65,d:'点名册',tip:'神陨之巅（75 段）讨伐神陨石巨人 ×65'},
+  {t:'kill',k:'god',n:65,d:'点名册',tip:'神陨之巅（Lv75 区）讨伐神陨石巨人 ×65'},
   {t:'ekill',k:'god',n:12,d:'叫醒装睡的',tip:'神陨之巅讨伐蓝光精英·神陨石巨人 ×12'},
   {t:'bkill',k:'god',n:1,d:'叫醒旷工的',tip:'在神陨石巨人幻境副本中斩杀 1 只 BOSS'},
   {t:'surv',z:'god',sec:150,d:'山顶守夜',tip:'在神陨之巅连续生存 150 秒（离开或阵亡则重计）'}],
  /* 第19章 白虎下山签合同 Lv90 */[
-  {t:'kill',k:'baihu',n:1,d:'最后一单',tip:'白虎谷·西（170,1400）讨伐白虎·西方神武'},
-  {t:'give',npc:'npc_girl',m:'星神·灵能尘',n:5,d:'兑现承诺',tip:'把 5 个「星神·灵能尘」交给北门内的村口小蜜（3520,1820）'},
+  {t:'kill',k:'baihu',n:1,d:'最后一单',tip:'白虎谷·西讨伐白虎·西方神武'},
+  {t:'give',npc:'npc_girl',m:'星神·灵能尘',n:5,d:'兑现承诺',tip:'把 5 个「星神·灵能尘」交给北门内的村口小蜜'},
   {t:'talk',npc:'npc_sage',n:1,d:'论功',tip:'回西侧找贤者玄尘收尾这趟传说'}],
  /* 番外 通天塔的答案 Lv95 */[
   {t:'twr',it:'tower',n:100,d:'登上塔顶',tip:'通天塔第 100 层——答案在塔顶，不在等级里'},
@@ -2986,17 +3229,18 @@ function mqZoneOf(st){
   if(st.it==='petdun'||st.it==='maze')return 'town';
   if(st.it==='tower')return 'town';
   return null;}
-function mqHint(st){ /* 需求75 口径：给一句"去哪儿干什么"，附坐标 */
+function mqHint(st){ /* V1.11.3需求1：一律输出小地图同款坐标点；定点刷新怪改用它的真实落点 */
   if(!st)return '';
   const z=mqZoneOf(st);
   if(st.npc){const n=NPCS.find(function(x){return x.key===st.npc;});
-    if(n)return '🧭 '+n.name+' → ('+Math.round(n.x/WS)+','+Math.round(n.y/WS)+')';}
-  if(st.it==='petdun')return '🧭 产蛋秘境阵 → ('+Math.round(PETDUN_PT.x/WS)+','+Math.round(PETDUN_PT.y/WS)+')';
-  if(st.it==='maze')return '🧭 万妖迷宫阵 → ('+Math.round(MAZE_PT.x/WS)+','+Math.round(MAZE_PT.y/WS)+')';
-  if(st.it==='tower')return '🧭 通天塔 → ('+Math.round(TOWER_PT.x/WS)+','+Math.round(TOWER_PT.y/WS)+')';
-  if(st.it==='mount')return '🧭 弼马温 → ('+Math.round(MNT_NPC.x/WS)+','+Math.round(MNT_NPC.y/WS)+')';
-  if(z&&ZONES[z]){const c=zoneCoord(z);return '🧭 '+ZONES[z].label+' → ('+c.x+','+c.y+')';}
-  return '';}
+    if(n)return '🧭 '+n.name+' → '+ptStr(n.x,n.y);}
+  if(st.it==='petdun')return '🧭 产蛋秘境阵 → '+ptStr(PETDUN_PT.x,PETDUN_PT.y);
+  if(st.it==='maze')return '🧭 万妖迷宫阵 → '+ptStr(MAZE_PT.x,MAZE_PT.y);
+  if(st.it==='tower')return '🧭 通天塔 → '+ptStr(TOWER_PT.x,TOWER_PT.y);
+  if(st.it==='mount')return '🧭 弼马温 → '+ptStr(MNT_NPC.x,MNT_NPC.y);
+  if(st.k&&MT[st.k]&&MT[st.k].fixed){const h=mobHomeW(st.k);return '🧭 '+MT[st.k].name+'（定点刷新）→ '+ptStr(h.x,h.y);}
+  if(z&&ZONES[z])return '🧭 '+zoneName(z)+' → '+zonePtStr(z);
+  return ''}
 /* ---- 主线进度容器：p.mq={ch,st,c:{},base:{},sv:{}} ---- */
 function mqNew(ch){return {ch:ch,st:0,c:{},base:{},sv:0};}
 function mqSync(){ /* 章节变化/旧档首次进入：复位步骤与基线（c/base 是对象，勿用 Array 判空） */
@@ -3119,7 +3363,9 @@ function mqAllDone(){ /* 末步达标即视为整章完成（前序步在达成�
 /* 需求78：里程碑提前——圣辉头环 15 个成就即得，天使形态 30 个成就即觉醒（不再绑全部 QALL） */
 const WING_T=10,RING_T=15,ANGEL_T=30;
 /* 需求75：接取任务时自动提示目标怪物/NPC 所在的营地世界坐标（小地图/任务面板/常驻追踪器均可见） */
-function zoneCoord(zk){if(zk==='town')return{x:Math.round(ANGEL.x/WS),y:Math.round(ANGEL.y/WS)};const r=ZONES[zk];return r?{x:Math.round(r.x+r.w/2),y:Math.round(r.y+r.h/2)}:{x:0,y:0};}
+/* V1.11.3需求1：本函数是「区域坐标点」的唯一出口——旧实现直接返回基准格矩形左上角（既没除 10 也没翻 Y），
+   小地图却按基准格中心 + Y 向上读数，所以按任务坐标走永远找不到人。现统一委托 zonePt()。 */
+function zoneCoord(zk){return zonePt(zk);}
 function qIdx(k){for(let i=0;i<STORY.length;i++)if(STORY[i].key===k)return i;return -1;}
 function qProg(i){const s=STORY[i];/* v1.4需求28：五大系统联动成就——特殊键从 p.ach2 读进度 */
   if(s.custom==='enh')return (p.ach2&&p.ach2.enhOk)||0;
@@ -3335,16 +3581,16 @@ function drawDex(){
     (function(kk){hot.push({x:px,y:py,w:pw,h:ph,fn:function(){dexSel=kk;}});})(k);
   }}
   /* 详情卡 */
-  const d=MT[dexSel],killed=(p.kills[dexSel]||0)>0,zd=ZONES[d.zone],zc=zoneCoord(d.zone),dy=y+246,dh=y+h-14;
+  const d=MT[dexSel],killed=(p.kills[dexSel]||0)>0,zc=zoneCoord(d.zone),dy=y+246,dh=y+h-14; // V1.11.3需求1：坐标一律走小地图口径（不再直接取 .label）
   C.strokeStyle='rgba(232,207,74,.25)';C.lineWidth=1;C.beginPath();C.moveTo(x+14,dy-8);C.lineTo(x+w-14,dy-8);C.stroke();
-  if(!killed){txt('❓ 尚未发现该怪物 —— 图鉴方式：'+(d.onlyBoss?'击杀 '+zd.label+' 的唯一BOSS':d.fixed||d.n===0?'区域稀有怪，定点刷新（击败后约 '+Math.round((d.resp||900)/60)+' 分钟再刷）':d._elite?'该区域精英 2 只常驻，击杀有概率掉落':'在 '+zd.label+' 猎杀该区域怪物'),x+w/2,dy+16,12,'#8a9a7a','center');txt('多在这片大陆走动、击杀怪物，图鉴自会点亮','#5a6a4a',x+w/2,dy+40,10.5,'center');return;}
+  if(!killed){txt('❓ 尚未发现该怪物 —— 图鉴方式：'+(d.onlyBoss?'击杀 '+zoneName(d.zone)+' 的唯一BOSS '+zonePtStr(d.zone):d.fixed||d.n===0?'区域稀有怪，定点刷新（'+zonePtStr(d.zone)+'，击败后约 '+Math.round((d.resp||900)/60)+' 分钟再刷）':d._elite?'该区域精英 2 只常驻，击杀有概率掉落':'在 '+zoneName(d.zone)+' '+zonePtStr(d.zone)+' 猎杀该区域怪物'),x+w/2,dy+16,12,'#8a9a7a','center');txt('多在这片大陆走动、击杀怪物，图鉴自会点亮','#5a6a4a',x+w/2,dy+40,10.5,'center');return;}
   const pmob2={x:x+64,y:dy+76,r:d.r,id:9999,t:0,hopT:0,ang:0,flash:0,frost:0,phase:0,walk:0,step:0,homeX:0,homeY:0,kind:0,hp:d.hp,maxhp:d.hp,key:dexSel};
   C.save();const gw=C.createRadialGradient(x+64,dy+64,4,x+64,dy+64,58);gw.addColorStop(0,(d.col||'#8fd08f')+'33');gw.addColorStop(1,'rgba(0,0,0,0)');C.fillStyle=gw;C.beginPath();C.arc(x+64,dy+64,58,0,7);C.fill();C.restore();
   const lW=C.lineWidth;C.lineWidth=1;drawMobArt(pmob2);C.lineWidth=lW;
   txt(d.name+(d.sym?' '+d.sym:''),x+124,dy+14,15,d.col||'#e8cf4a');
   txt('Lv'+d.lvl+' · 生命'+d.hp+' · 攻击'+d.dmg+' · 经验'+d.exp+' · 五行['+EL[d.el].n+']'+(d.shield?' · 护盾'+d.shield:'')+(d.ranged?' · 远程':''),x+124,dy+34,10.5,'#b8c8a0');
-  txt('🗺 出没：'+(d.zone==='town'?'落鸦村（安全区）':zd.label)+'　坐标('+zc.x+','+zc.y+')'+(d.fixed?'　［定点刷新，约'+Math.round((d.resp||900)/60)+'分钟］':d.n?('　［同屏'+d.n+'只'+(d._elite?'，含精英'+d._elite:'')+'］'):''),x+124,dy+52,10.5,'#8ab8d8');
-  txt('🔓 解锁：'+(d.onlyBoss?'击杀 '+zd.label+' 的唯一BOSS':d.fixed||d.n===0?'区域稀有怪，击败后定时再刷':d._elite?'常驻精英2只+小怪4只；精英刷够20只出BOSS':'在 '+zd.label+' 猎杀即可点亮'),x+124,dy+70,10.5,'#c9b878');
+  txt('🗺 出没：'+(d.zone==='town'?'落鸦村（安全区）':zl(d.zone))+'　'+(d.fixed?'定点 ':'')+'坐标('+zc.x+','+zc.y+')'+(d.fixed?'　［定点刷新，约'+Math.round((d.resp||900)/60)+'分钟］':d.n?('　［同屏'+d.n+'只'+(d._elite?'，含精英'+d._elite:'')+'］'):''),x+124,dy+52,10.5,'#8ab8d8');
+  txt('🔓 解锁：'+(d.onlyBoss?'击杀 '+zoneName(d.zone)+' 的唯一BOSS':d.fixed||d.n===0?'区域稀有怪，击败后定时再刷':d._elite?'常驻精英2只+小怪4只；精英刷够20只出BOSS':'在 '+zoneName(d.zone)+' 猎杀即可点亮'),x+124,dy+70,10.5,'#c9b878');
   txt('💎 掉落概率列表：',x+16,dy+94,11.5,'#e8cf4a');
   const rows=dexDropTable(dexSel),colw=(w-36)/3;
   txt('累计击杀 '+(p.kills[dexSel]||0)+' 次',x+w-16,dy+94,10.5,'#8a9a7a','right');
@@ -3717,25 +3963,25 @@ function buildBG(){
   for(let y=24;y<BGH-24;y+=30){tree(10,y*WS);tree(W-40,(y+10)*WS);}
   G.font='bold 20px "Microsoft YaHei",sans-serif';G.textAlign='center';G.textBaseline='middle';
   function label(s,col,x,y){G.strokeStyle='rgba(0,0,0,.7)';G.lineWidth=4;G.strokeText(s,x*WS,y*WS);G.fillStyle=col;G.fillText(s,x*WS,y*WS);}
-  label(ZONES.slime.label,ZONES.slime.col,ZONES.slime.x+ZONES.slime.w/2,ZONES.slime.y+26);
-  label(ZONES.goblin.label,ZONES.goblin.col,ZONES.goblin.x+ZONES.goblin.w/2,ZONES.goblin.y+22);
+  label(zl('slime'),ZONES.slime.col,ZONES.slime.x+ZONES.slime.w/2,ZONES.slime.y+26);
+  label(zl('goblin'),ZONES.goblin.col,ZONES.goblin.x+ZONES.goblin.w/2,ZONES.goblin.y+22);
   label('落鸦村','#e8d8b0',tz.x+tz.w/2,tz.y+tz.h-24);
-  label(ZONES.firecamp.label,ZONES.firecamp.col,ZONES.firecamp.x+ZONES.firecamp.w/2,ZONES.firecamp.y+22);
-  label(ZONES.arena.label,ZONES.arena.col,ZONES.arena.x+ZONES.arena.w/2,ZONES.arena.y+16);
-  label(ZONES.creek.label,ZONES.creek.col,ZONES.creek.x+ZONES.creek.w/2,ZONES.creek.y+16);
-  label(ZONES.mine.label,ZONES.mine.col,ZONES.mine.x+ZONES.mine.w/2,ZONES.mine.y+ZONES.mine.h-18);
-  label(ZONES.badlands.label,ZONES.badlands.col,ZONES.badlands.x+ZONES.badlands.w/2,ZONES.badlands.y+16);
+  label(zl('firecamp'),ZONES.firecamp.col,ZONES.firecamp.x+ZONES.firecamp.w/2,ZONES.firecamp.y+22);
+  label(zl('arena'),ZONES.arena.col,ZONES.arena.x+ZONES.arena.w/2,ZONES.arena.y+16);
+  label(zl('creek'),ZONES.creek.col,ZONES.creek.x+ZONES.creek.w/2,ZONES.creek.y+16);
+  label(zl('mine'),ZONES.mine.col,ZONES.mine.x+ZONES.mine.w/2,ZONES.mine.y+ZONES.mine.h-18);
+  label(zl('badlands'),ZONES.badlands.col,ZONES.badlands.x+ZONES.badlands.w/2,ZONES.badlands.y+16);
   // v2.0 新大陆区域标题（需求：Lv25-50）
-  label(ZONES.wind.label,ZONES.wind.col,ZONES.wind.x+ZONES.wind.w/2,ZONES.wind.y+16);
-  label(ZONES.scorp.label,ZONES.scorp.col,ZONES.scorp.x+ZONES.scorp.w/2,ZONES.scorp.y+16);
-  label(ZONES.rock.label,ZONES.rock.col,ZONES.rock.x+ZONES.rock.w/2,ZONES.rock.y+16);
-  label(ZONES.mage.label,ZONES.mage.col,ZONES.mage.x+ZONES.mage.w/2,ZONES.mage.y+16);
-  label(ZONES.lava.label,ZONES.lava.col,ZONES.lava.x+ZONES.lava.w/2,ZONES.lava.y+16);
-  label(ZONES.ascend.label,ZONES.ascend.col,ZONES.ascend.x+ZONES.ascend.w/2,ZONES.ascend.y+ZONES.ascend.h/2);
-  label('飞升龟・远在大陆北方 (985,985)','#8ab8d8',700,26);
+  label(zl('wind'),ZONES.wind.col,ZONES.wind.x+ZONES.wind.w/2,ZONES.wind.y+16);
+  label(zl('scorp'),ZONES.scorp.col,ZONES.scorp.x+ZONES.scorp.w/2,ZONES.scorp.y+16);
+  label(zl('rock'),ZONES.rock.col,ZONES.rock.x+ZONES.rock.w/2,ZONES.rock.y+16);
+  label(zl('mage'),ZONES.mage.col,ZONES.mage.x+ZONES.mage.w/2,ZONES.mage.y+16);
+  label(zl('lava'),ZONES.lava.col,ZONES.lava.x+ZONES.lava.w/2,ZONES.lava.y+16);
+  label(zl('ascend'),ZONES.ascend.col,ZONES.ascend.x+ZONES.ascend.w/2,ZONES.ascend.y+ZONES.ascend.h/2);
+  label('飞升龟・定点刷新 '+zonePtStr('ascend'),'#8ab8d8',700,26); // V1.11.3需求1：旧标注写死 (985,985)，与小地图差 10 倍
   /* 需求44/45/48/49：新区域标题（Lv55-75 + 四方 + 12星座） */
-  ['marsh','cliff','icef','altar','god','east','west','south','north'].forEach(function(z){const r=ZONES[z];label(r.label,r.col,r.x+r.w/2,r.y+14);});
-  for(let zi=0;zi<ZOD.length;zi++){const r=ZONES[ZOD[zi]];label(MT[ZOD[zi]].name+' '+MT[ZOD[zi]].sym,MT[ZOD[zi]].col,r.x+r.w/2,r.y+12);}
+  ['marsh','cliff','icef','altar','god','east','west','south','north'].forEach(function(z){const r=ZONES[z];label(zl(z),r.col,r.x+r.w/2,r.y+14);});
+  for(let zi=0;zi<ZOD.length;zi++){const r=ZONES[ZOD[zi]];label(MT[ZOD[zi]].name+' '+MT[ZOD[zi]].sym+' '+zonePtStr(ZOD[zi]),MT[ZOD[zi]].col,r.x+r.w/2,r.y+12);}
 }
 
 /* ============ 输入 ============ */
@@ -3755,7 +4001,9 @@ addEventListener('keydown',function(e){const k=e.key.toLowerCase();if(creUI){ //
   else if(k==='escape')creUI=null;
   else if(e.key.length===1&&creUI.name.length<10&&!e.ctrlKey&&!e.metaKey&&/[\w·\u4e00-\u9fa5]/.test(e.key))creUI.name+=e.key;
   return;}
-    if(k===' '||['q','b','c','h','t','j','escape','1','2','3','4'].includes(k))e.preventDefault();if(!keys[k]&&!loading())onKey(k);keys[k]=true;}); // V1.10.0需求3：加载遮罩期间屏蔽游戏键位
+    if(k===' '||['q','b','c','h','t','j','g','escape','1','2','3','4'].includes(k))e.preventDefault();
+if(nameFocus||findFocus){keys[k]=true;return;} // V1.11.3需求2：叠层输入框正在吃键盘，别再往游戏键位送一份
+if(!keys[k]&&!loading())onKey(k);keys[k]=true;}); // V1.10.0需求3：加载遮罩期间屏蔽游戏键位
 addEventListener('compositionend',function(e){if(creUI&&!nameFocus){creUI.name=(creUI.name+(e.data||'')).slice(0,10);}}); // 中文输入法上屏（聚焦真实输入框时由 input 事件负责）
 addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
 /* --- bug1-新18：手机触控（虚拟方向杆 + 攻击/滚轮/技能/背包/人物按钮）--- */
@@ -3763,7 +4011,8 @@ let touchMode=false,atkHold=0;const ptr={};
 const vj={id:-1,px:0,py:0,kx:0,ky:0,x:0,y:0};
 const JOY={x:92,y:LH-96,r:52},ATKB={x:890,y:462,r:44},DASHB={x:812,y:488,r:22};
 const SKBS=[0,1,2,3].map(function(i){return{x:786+i*44,y:368,r:20};});
-const TUTB=[{k:'bag',x:746,y:324,r:19,lab:'包'},{k:'skp',x:786,y:324,r:19,lab:'技'},{k:'cha',x:826,y:324,r:19,lab:'人'},{k:'dex',x:864,y:324,r:17,lab:'鉴'},{k:'pot',x:902,y:324,r:17,lab:'药'},{k:'set',x:938,y:324,r:17,lab:'设'}]; // 需求90：触控图鉴钮；V1.8需求1：触控设置钮
+/* V1.11.3需求2：新增「查」钮。技能钮占 y348~388，故本排工具钮上移到 316、半径收到 16~17，七钮横排不重叠 */
+const TUTB=[{k:'bag',x:712,y:316,r:17,lab:'包'},{k:'skp',x:750,y:316,r:17,lab:'技'},{k:'cha',x:788,y:316,r:17,lab:'人'},{k:'dex',x:826,y:316,r:16,lab:'鉴'},{k:'find',x:862,y:316,r:16,lab:'查'},{k:'pot',x:898,y:316,r:16,lab:'药'},{k:'set',x:934,y:316,r:16,lab:'设'}]; // 需求90：触控图鉴钮；V1.8需求1：触控设置钮
 /* v1.4需求26：触控交互按钮（对齐 E 键） */
 const TALK_B={x:198,y:LH-104,r:24,lab:'谈'};
 /* ===== v1.4需求23：手机端横屏全屏按钮 + 竖屏适配 ===== */
@@ -3835,6 +4084,7 @@ function onTouchDown(k,l,e){
   else if(k==='cha'){charPanel=true;bagOpen=skPanel=questOpen=morphOpen=dexOpen=chestOpen=rideOpen=towerSelOpen=false;mountOpen=false;}
   else if(k==='dex'){dexOpen=!dexOpen;bagOpen=skPanel=charPanel=questOpen=morphOpen=chestOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;} // 需求90：触屏图鉴入口
   else if(k==='set'){if(setOpen){setOpen=false;sfx(420,.06,'square',.03);}else openSet();} // V1.8需求1：触屏设置入口
+  else if(k==='find'){if(findOpen){findClose();sfx(420,.06,'square',.03);}else openFind();return;} // V1.11.3需求2：触屏快速查找
   else if(k==='rot'){rotDrag.on=true;rotDrag.id=e.pointerId;rotDrag.dx=ROT_B.x-l.x;rotDrag.dy=ROT_B.y-l.y;rotDrag.sx=ROT_B.x;rotDrag.sy=ROT_B.y;rotDrag.moved=false;return;} // v1.4需求32：按下开始拖拽，抬手未位移才判定为点击
   else if(k==='talk'){doTalk();return;} // v1.4需求26：触控对话/交接任务
   else if(k.charAt(0)==='s')castSkill(+k.slice(2));
@@ -3848,17 +4098,21 @@ function onPointerMove(e){const l=toLogical(e),r=ptr[e.pointerId];
 VIEW.addEventListener('pointermove',onPointerMove);
 /* V1.9.1需求3/5：面板开启时，底层 HUD 热区（头像/技能栏/回城/小地图下方设置钮）一律不响应——
    hot[] 按绘制顺序先注册先响应，之前“背包页隔空点到回城”“技能面板点学习却触发回城”均因 HUD 热区抢在前面 */
-function panelOn(){return bagOpen||skPanel||charPanel||chestOpen||questOpen||morphOpen||dexOpen||rideOpen||towerSelOpen||mountOpen||setOpen;}
+function panelOn(){return bagOpen||skPanel||charPanel||chestOpen||questOpen||morphOpen||dexOpen||rideOpen||towerSelOpen||mountOpen||setOpen||findOpen;} // V1.11.3需求2：查找面板同样屏蔽底层 HUD 热区
 /* V1.10.2需求8：全平台板统一关闭入口——关闭钮、Esc、点遮罩空白、键盘快捷键全部走这里，
    避免旧代码每处手写一长串 xxxOpen=false 而漏掉某个面板（需求7「成就页关不掉」正是这类遗漏） */
-function closeAllPanels(){bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=mountOpen=setOpen=false;
+function closeAllPanels(){bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=mountOpen=setOpen=false;findClose(); // V1.11.3需求2：查找面板纳入统一关闭入口（✕/Esc/点遮罩/快捷键）
   selEq=-1;skSel=-1;if(press)press.on=false;}
 function openOnly(k){closeAllPanels(); // 互斥开启：一次只允许一个面板
   if(k==='bag'){bagOpen=true;selBag=-1;}else if(k==='skp')skPanel=true;else if(k==='cha')charPanel=true;
   else if(k==='quest')questOpen=true;else if(k==='morph')morphOpen=true;else if(k==='dex')dexOpen=true;
   else if(k==='chest')chestOpen=true;else if(k==='ride')rideOpen=true;else if(k==='mount')mountOpen=true;
-  else if(k==='tower')towerSelOpen=true;else if(k==='set')setOpen=true;
+  else if(k==='tower')towerSelOpen=true;else if(k==='set')setOpen=true;else if(k==='find'){findOpen=true;findPage=0;} // V1.11.3需求2：快速查找
   if(k==='set'){setOpen=true;msg('⚙ 设置：击杀播报分级 / 拾取物品播报 / 祝福弹幕开关与密度（再按 O 关闭）','#e8c86a');}}
+function openFind(){ /* V1.11.3需求2：G=快速查找——openOnly 已负责关掉其它面板 */
+  openOnly('find');
+  msg('🔍 快速查找：上方六个分类挑目标，或在输入框写名字过滤／写坐标（如 24,79）；选中后点「去这里」出引导线','#8affff');
+  glog('flow','find open',{cat:findCat});}
 function hotAt(l,skipCell){
   const lock=panelOn();
   for(let ps=0;ps<2;ps++) // 第一遍只认 top（面板内主操作钮，允许压在网格上），第二遍再认其余
@@ -3888,7 +4142,7 @@ VIEW.addEventListener('pointerdown',function(e){const l=toLogical(e);
   if(touchMode&&!started&&!rotDone()&&dist(l.x,l.y,ROT_B.x,ROT_B.y)<ROT_B.r+10){rotDrag.on=true;rotDrag.id=e.pointerId;rotDrag.dx=ROT_B.x-l.x;rotDrag.dy=ROT_B.y-l.y;rotDrag.sx=ROT_B.x;rotDrag.sy=ROT_B.y;rotDrag.moved=false;try{VIEW.setPointerCapture(e.pointerId);}catch(_){}return;} // v1.4需求23/32：选档页也可转屏，同样支持拖拽
   if(loading())return; // V1.10.0需求3：加载遮罩期间屏蔽一切指针交互（触屏与鼠标同路径）
   if(touchMode&&started){const k=tHit(l),pnl=panelOn(); // V1.9.1：任意面板开启时只允许切换工具钮，不再隔面板移动/攻击/施法
-    if(k&&(!pnl||k==='bag'||k==='skp'||k==='cha'||k==='pot'||k==='dex'||k==='rot'||k==='set')){onTouchDown(k,l,e);return;}}
+    if(k&&(!pnl||k==='bag'||k==='skp'||k==='cha'||k==='pot'||k==='dex'||k==='find'||k==='rot'||k==='set')){onTouchDown(k,l,e);return;}}
   onDownCore(l,e);});
 function endPtr(e){const r=ptr[e.pointerId];if(!r)return false;
   if(r.k==='joy'){vj.id=-1;vj.x=0;vj.y=0;}
@@ -3908,6 +4162,7 @@ VIEW.addEventListener('pointercancel',function(e){endPtr(e);rotDrag.on=false;});
 VIEW.addEventListener('wheel',function(e){ // bug1-Bug8：背包滚轮滚动
   if(rideOpen&&!bagOpen){e.preventDefault();ridePage=clamp(ridePage+(e.deltaY>0?1:-1),0,Math.max(0,Math.ceil(RIDE_DEST.length/16)-1));return;} // v1.5.2需求9：骑乘面板分页
   if(towerSelOpen&&!bagOpen){e.preventDefault();towerSelPage=clamp(towerSelPage+(e.deltaY>0?1:-1),0,Math.max(0,Math.ceil(Math.min(100,p.ach2.towerMax||0)/24)-1));return;} // v1.5.3需求11：选层面板分页
+  if(findOpen&&!bagOpen){e.preventDefault();const _fpg=Math.max(1,Math.ceil(findRows().length/FROWS));findPage=clamp(findPage+(e.deltaY>0?1:-1),0,_fpg-1);return;} // V1.11.3需求2：查找面板滚轮翻页
   if(mountOpen&&!bagOpen){e.preventDefault();mountPage=clamp(mountPage+(e.deltaY>0?1:-1),0,Math.max(0,Math.ceil(MOUNTS.length/8)-1));return;} // V1.7需求5：坐骑面板分页（V1.8需求10：页数随坐骑数变化）
   if(!bagOpen)return;e.preventDefault();
   bagScroll=clamp(bagScroll+(e.deltaY>0?1:-1),0,p.bagRows-BAGROWS);},{passive:false});
@@ -3932,7 +4187,10 @@ VIEW.addEventListener('contextmenu',function(e){e.preventDefault(); // 需求11�
     msg(it.lock?'🔒 已锁定 '+it.name+'（不会被出售/整理移动）':'🔓 已解锁 '+it.name,it.lock?'#e8cf4a':'#8ab8d8');sfx(700,.06,'square',.03);}});
 function onKey(k){
   if(!started)return;
-  if(k==='escape'){bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;return;}
+  if(k==='escape'){ // V1.11.3需求3：Esc 先关查找面板，面板本已关闭时 Esc 收引导线（"用户取消了查找→关闭引导线"）
+    if(findOpen){findClose();return;}
+    if(nav){navCancel('按 Esc 取消');}
+    bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;return;}
   if(k==='o'){if(setOpen){setOpen=false;sfx(420,.06,'square',.03);}else openSet();return;} // V1.8需求1：O=设置面板
   if(k==='b'){bagOpen=!bagOpen;skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;selBag=-1;return;}
   if(k==='c'){skPanel=!skPanel;bagOpen=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;return;}
@@ -3942,7 +4200,9 @@ function onKey(k){
   if(k==='r'){if(p.inT){chestOpen=!chestOpen;bagOpen=skPanel=charPanel=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;setOpen=false;}else msg('只有基地（落鸦村）内才能使仓库（按 R）','#e85a5a');return;}
   if(k==='f'){doRecall();return;} // v1.4需求17：F=回城术（面板开启时也可用，回城会自动关闭面板）
   if(k==='m'){toggleRide();return;} // V1.7需求6：M=上/下坐骑
-  if(p.dead>0||bagOpen||skPanel||charPanel||chestOpen||questOpen||morphOpen||dexOpen||rideOpen||towerSelOpen||mountOpen||setOpen)return;
+  if(k==='g'){if(findOpen){findClose();sfx(420,.06,'square',.03);}else openFind();return;} // V1.11.3需求2：G=快速查找
+  if(k==='n'){if(nav)navCancel('按 N 取消');else msg('🧭 当前没有引导线——按 G 打开快速查找，选目标后点「去这里」','#8a9a7a');return;} // V1.11.3需求3：N=一键收线
+  if(p.dead>0||bagOpen||skPanel||charPanel||chestOpen||questOpen||morphOpen||dexOpen||rideOpen||towerSelOpen||mountOpen||setOpen||findOpen)return;
   if(k===' ')doDash();
   if(k==='q')drinkPotion();
   if(k==='e'){doTalk();return;} // 需求51/59：E=交接任务/村民对话（v1.4需求26：抽出 doTalk，与触控共用）
@@ -5201,11 +5461,13 @@ function draw(){
   drawNightView();drawSky(); // V1.9需求3/4：夜幕视野 + 天气视觉层（在世界层之上、HUD 之下）
   // ===== UI 层（高清清晰） =====
   hot=[];
-  if(setOpen&&(bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen))setOpen=false; // V1.8需求1：与其它面板互斥收起
-  const anyPanel=bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.4需求16；v1.5.3需求11；V1.8：设置面板
+  if(setOpen&&(bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen||findOpen))setOpen=false; // V1.8需求1：与其它面板互斥收起；V1.11.3：查找面板同样挤掉设置
+  if(findOpen&&(bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen||setOpen))findClose(); // V1.11.3需求2：反向互斥——旧面板各自的手写复位串不认识 findOpen，统一在这里收口
+  const anyPanel=bagOpen||skPanel||charPanel||questOpen||morphOpen||dexOpen||chestOpen||rideOpen||towerSelOpen||mountOpen||setOpen||findOpen; // v1.4需求16；v1.5.3需求11；V1.8：设置面板；V1.11.3：查找面板
   if(!anyPanel)bossThreatTop(); // V1.10.2需求9：BOSS 威压层（面板打开时让位）
   drawHUD();drawSkillBar();drawMinimap();drawSetBtn();drawMsgs();drawKillFeed();drawZoneBanner();drawWxBan();drawBlessBand();drawClockChip(anyPanel);hotBase=hot.length; // V1.8需求3：祝福播报区（在面板与暗化遮罩之下）；V1.9需求1：时辰/天气顶栏读数
-  if(!anyPanel)drawQuestTracker(); // 需求67：常驻任务列表（面板开启时不画）
+  if(nav)drawNavLine(); // V1.11.3需求3：引导线画在 HUD 之上、面板遮罩之下——面板开着也看得见方向
+  if(!anyPanel){drawQuestTracker();drawNavChip();} // 需求67：常驻任务列表（面板开启时不画）；V1.11.3需求3：顶栏引导胶囊带 ✕ 随时收线
   if(p.runT>=150&&!anyPanel)drawRunWind(); // 需求62：长距离奔跑风向速度线
   /* v1.4需求16：面板打开时——固定HUD模块全部压到底层（暗化遮罩），面板置于最上层，避免遮挡冲突 */
   if(anyPanel){C.fillStyle='rgba(0,0,0,.55)';C.fillRect(0,0,LW,LH);}
@@ -5220,6 +5482,7 @@ function draw(){
     if(mountOpen)drawMntPanel(); // V1.7：坐骑面板
     if(towerSelOpen)drawTowerSelPanel(); // v1.5.3需求11：塔层传送面板
     if(setOpen)drawSetPanel(); // V1.8需求1：设置面板
+    if(findOpen)drawFind(); // V1.11.3需求2：快速查找面板
   if(touchMode)drawTouch();
   if(flashS){C.fillStyle='rgba(255,255,255,'+flashS+')';C.fillRect(0,0,LW,LH);}
   if(p.dead>0){C.fillStyle='rgba(30,4,4,.55)';C.fillRect(0,0,LW,LH);
@@ -6341,14 +6604,14 @@ function drawMinimap(){
     C.fillStyle=POI[pi][2];C.globalAlpha=.55+.45*Math.sin(t*.1+pi*2);C.beginPath();C.arc(x+POI[pi][0]*sx,y+POI[pi][1]*sy,2.8,0,7);C.fill();C.globalAlpha=1;}
   C.restore();
   txt('小地图',x+4,y-10,10,'#8a9a7a',null,null,true);
-  const gx=Math.round(p.x/WS/10),gy=Math.round((H-p.y)/WS/10); // 坐标换算回基准格（世界=基准×5）
+  const gq=ptOf(p.x,p.y),gx=gq.x,gy=gq.y; // V1.11.3需求1：全站唯一口径实现见 ptOf（1 点 = 50 世界像素，Y 向上）
   txt('📍 坐标 ('+gx+', '+gy+')',x+w/2,y+h+12,12,'#9adcfa','center',null,true);
   if(p.lvl>=5)txt(p.lvl>=10?'🏇 弼马温 · 🌀 迷宫阵 · 🥚 产蛋阵':'🏇 基地东北角：弼马温（坐骑）',x+w/2,y+h+40,9.5,'#e8c86a','center',null,true);
   /* 需求89：实时更新所在怪物区域名字 + 等级范围 */
   let zk=null;for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h){zk=k;break;}}
   let zlab='🗺 所在：旷野（无怪物）';
   if(zk==='town')zlab='🗺 所在：落鸦村（安全区）';
-  else if(zk){let lb=ZONES[zk].label||((MT[zk]?MT[zk].name+' Lv'+MT[zk].lvl:zk));lb=String(lb).replace(/ ?\([\d, ]*\)/,'');
+  else if(zk){let lb=zoneName(zk)||((MT[zk]?MT[zk].name+' Lv'+MT[zk].lvl:zk));
     if(!/Lv/.test(lb)){for(const k2 in MT){if(MT[k2].zone===zk){lb+=' Lv'+MT[k2].lvl;break;}}}
     zlab='🗺 所在：'+lb;}
   txt(zlab,x+w/2,y+h+28,10.5,zk&&zk!=='town'?'#8fd08f':'#c9b96a','center',null,true);
@@ -6503,7 +6766,7 @@ function drawZoneBanner(){
     if(p.x>r.x*WS&&p.x<(r.x+r.w)*WS&&p.y>r.y*WS&&p.y<(r.y+r.h)*WS){cur=k;break;}}
   if(!cur)return;
   const names=[];for(const mk in MT)if(MT[mk].zone===cur)names.push(MT[mk].name+' Lv'+MT[mk].lvl);
-  const line='🗺 '+(ZONES[cur].label||cur)+(names.length?'　⚔ 出没：'+names.join(' / '):'');
+  const line='🗺 '+(zl(cur)||cur)+(names.length?'　⚔ 出没：'+names.join(' / '):'');
   C.globalAlpha=.8;C.fillStyle='rgba(8,10,6,.6)';rr(LW/2-270,8,540,22,6);C.fill();C.globalAlpha=1;
   txt(line,LW/2,19,13,ZONES[cur].col||'#cfe8c0','center');
 }
@@ -6740,7 +7003,7 @@ function drawTouch(){
     tdisc(b.x,b.y,rr2,idx>=0&&!cd?'rgba(70,92,46,.6)':'rgba(30,34,24,.55)','#8a9a7a');
     txt(''+(i+1),b.x,b.y,15*ts,'#e8cf4a','center');}
   C.globalAlpha=.92;
-  TUTB.forEach(function(u){tdisc(u.x,u.y,u.r*ts,(u.k==='cha'&&charPanel)||(u.k==='bag'&&bagOpen)||(u.k==='skp'&&skPanel)||(u.k==='dex'&&dexOpen)||(u.k==='set'&&setOpen)?'rgba(120,110,40,.85)':'rgba(44,48,32,.6)','#8a7a3e');txt(u.lab,u.x,u.y,13*ts,'#f0e8d0','center');});
+  TUTB.forEach(function(u){tdisc(u.x,u.y,u.r*ts,(u.k==='cha'&&charPanel)||(u.k==='bag'&&bagOpen)||(u.k==='skp'&&skPanel)||(u.k==='dex'&&dexOpen)||(u.k==='set'&&setOpen)||(u.k==='find'&&findOpen)?'rgba(120,110,40,.85)':'rgba(44,48,32,.6)','#8a7a3e');txt(u.lab,u.x,u.y,13*ts,'#f0e8d0','center');});
   /* v1.4需求23：右上角常驻横屏按钮（触控设备） */
   if((touchMode||isTouch())&&!rotDone())drawRotBtn(ts);
   /* v1.4需求26：附近 NPC 时，左下自动弹出发光“谈”按钮（与 E 键同效） */
@@ -6959,6 +7222,7 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   p.mounts={un:{},sel:''};p.mr=false; // V1.7：新角无任何坐骑
   p.mq=null; // V1.11.2需求1：新角主线进度由 mqSync 按 p.main 建立
   p.dig=null;p.dbuff=null; // V1.11.2需求2：新角无藏宝图、无宝气加成
+  nav=null;findSel=null;findQ='';findCat=0;findPage=0;findFocus=false; // V1.11.3需求2/3：引导线与查找态是瞬态，不入存档、不跨角色
   for(const mk2 of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[mk2]=0;
   p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库
   for(let i=0;i<BAGCAP;i++)bag[i]=null;
@@ -7053,7 +7317,7 @@ function drawCreate(){ // 需求79/80：页面内创建面板——姓名键入+
 function wipeSlot(i){const m=slotMeta(i);if(!m){msg('档'+(i+1)+' 本来就是空的','#888');return;}try{localStorage.removeItem(slotKey(i));}catch(e){}if(curSlot===i)curSlot=-1;msg('🗑 已清除档'+(i+1)+'：'+m.name,'#e85a5a');}
 function doRestart(){ // 回到选档界面（不重载页面，保留其它档位）
   if(started)doSave(true);
-  started=false;bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;curSlot=-1;reArm=0;wipeArm=0;creUI=null;nameFocus=false;
+  started=false;bagOpen=skPanel=charPanel=chestOpen=questOpen=morphOpen=dexOpen=rideOpen=towerSelOpen=false;mountOpen=false;findClose();nav=null;curSlot=-1;reArm=0;wipeArm=0;creUI=null;nameFocus=false;
 }
 function handleStartClick(l){ // 选档/创建界面点击路由
   if(creUI){clickCreate(l);return;}
@@ -7109,11 +7373,12 @@ function loopBody(){
   updateMusic(); // V1.10.1需求5：背景音乐循环（面板暂停时照常演奏）
   if(press.on&&!drag.on&&bagOpen&&performance.now()-press.t0>=HOLD){ // bug1-新37：长按满2秒进入拖动模式
     if(press.cell>=0&&bag[press.cell]){drag.from=press.cell;drag.on=true;}else press.on=false;}
-  const paused=bagOpen||skPanel||charPanel||rideOpen||towerSelOpen||mountOpen||setOpen; // v1.5.2需求9；v1.5.3需求11：选层面板也暂停；V1.8：设置面板也暂停
+  const paused=bagOpen||skPanel||charPanel||rideOpen||towerSelOpen||mountOpen||setOpen||findOpen; // v1.5.2需求9；v1.5.3需求11；V1.8：设置面板；V1.11.3：查找面板也暂停（翻列表时别被怪打死）
   if(loading()){ // V1.10.0需求3：加载遮罩期间冻结世界更新与输入，仅推进倒计时与特效
     LOAD.t--;if(LOAD.t<=0){LOAD.txt='';if(INST.on)msg('🗺 '+(INST.name||'副本')+' 展开完毕——开战！','#8affff');else msg('🗺 回到落鸦村——地图加载完毕','#8affff');}
     updateFx();draw();return;} // V1.11.1需求7：rAF 统一由 loop() 驱动，loopBody 只负责本帧逻辑与绘制
   if(started&&t%20===0)manageMobs(); // bug1-新43：持续按主角位置懒加载/卸载怪物
+  if(started)updateNav(); // V1.11.3需求3：抵达即收线；放在 paused 之外，面板开着时也算抵达
   if(started&&!paused){updateRide();checkMain();updateDig();updatePlayer();updateChatter();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
   else updateFx();
   if(started)updateBless(); // V1.8需求3/5：祝福弹幕与屏幕粒子（面板开启也照常飞）
