@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.1</title>
+<title>降龙猎手 · 五行觉醒 V1.12.4</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 body{display:flex;align-items:center;justify-content:center}
@@ -1936,7 +1936,7 @@ function applyWfxOnKill(m){
   const mw=p.equip.mweap;if(!mw)return;
   const w=wfxOf(mw);const e1=w?w.e:null,pw1=w?w.pw:0;
   const e2=mw.tfx?mw.tfx.e:null,pw2=mw.tier||0;
-  const tryGold=function(e,pw){if(e==='goldOnKill'&&Math.random()<Math.min(.9,.3+pw*.035)){const g=Math.round((MT[m.key].coin[0]+MT[m.key].coin[1])/2*(.5+pw*.15));p.gold+=g;floatTxt(m.x,m.y-30,'+'+g+' 金币掠夺','#e8b33a');}};
+  const tryGold=function(e,pw){if(e==='goldOnKill'&&Math.random()<Math.min(.9,.3+pw*.035)){const g=Math.round((MT[m.key].coin[0]+MT[m.key].coin[1])/2*(.5+pw*.15));p.gold+=g;floatTxt(m.x,m.y-30,'金币掠夺！','#e8b33a');}}; // V1.12.2需求1：数额由统一的金币账目飘字报，本处只标“是哪只怪落的金”
   tryGold(e1,pw1);if(e2!==e1)tryGold(e2,pw2);
   if(e1==='killBurst'||e2==='killBurst'){const pw=Math.max(pw1,pw2);fxRing(m.x,m.y,6,80+pw*5,'#ff7a3a',3);for(const o of mobs)if(o!==m&&dist(o.x,o.y,m.x,m.y)<80+pw*5)hitMob(o,.4+pw*.05,{col:'#ff7a3a'});}
 }
@@ -1962,7 +1962,7 @@ const SK=[
  {n:'旋风斩',  w:'blade', i:'s_whirl',   lv:6,cd:540,mp:16,p:0,d:'多连360°旋身斩并击退'},
  {n:'爆裂陷阱',w:'blade', i:'s_trap',    lv:9,cd:480,mp:14,p:0,d:'脚下埋设地雷，敌人踩中爆炸'},
  {n:'火墙',    w:'any',   i:'m_fire',    lv:1,cd:600,mp:26,p:0,book:'fire',src:'烈焰技能书：烈焰史莱姆（史莱姆营地 Lv10）掉落',d:'法术：灼烧地面持续伤害（不受武器限制）'},
- {n:'雷霆万钧',w:'any',   i:'s_thor2',   lv:1,cd:720,mp:34,p:0,book:'thunder',src:'雷法秘籍：法外狂徒（法外荒原 Lv20）掉落',d:'法术：以自身为中心降下10波雷环，每波20道落雷逐圈外扩、每道驻留8秒并反复落雷；命中后向 180px 内跳射雷链（最多 2 只、55% 伤害）——V1.12.0需求6 单体伤害上调约一倍'},
+ {n:'雷霆万钧',w:'any',   i:'s_thor2',   lv:1,cd:720,mp:34,p:0,book:'thunder',src:'雷法秘籍：法外狂徒（法外荒原 Lv20）掉落',d:'法术：以自身为中心降下10波雷环，每波20道落雷逐圈外扩、每道驻留4.5秒并反复落雷；命中后向 180px 内跳射雷链（最多 2 只、55% 伤害）——V1.12.2需求3 基础伤害再提升三倍；V1.12.3需求3 伤害再抬高一截、每道驻留缩到 4.5 秒（快起快落、峰值更集中）'},
  {n:'要你命三千',w:'any', i:'s_poison',  lv:1,cd:660,mp:30,p:0,book:'poison',src:'毒功密卷：黄金矿工（黄金矿洞 Lv15）掉落',d:'法术：抛出毒云，剧毒持续侵蚀'},
  {n:'疾风步',  w:'any',   i:'s_swift',   lv:1,cd:0,mp:0,p:1,d:'被动：移动速度+10%/档（V1.11.0增益收敛）'},
  {n:'嗜血本能',w:'any',   i:'s_blood',   lv:1,cd:0,mp:0,p:1,d:'被动：攻击吸血4%'},
@@ -2144,6 +2144,7 @@ p.equip.mweap={slot:'mweap',w:'bow',el:'wood',q:0,name:'旧猎弓',atk:4,def:0,h
 /* ============ 实体 ============ */
 let mobs=[],projs=[],items=[],coins=[],parts=[],floats=[],msgs=[],fx=[],clones=[],sched=[],respawns=[];
 const pet={x:3500,y:2226,t:0}; // bug1-新41：自动拾取小精灵（围着主角环绕，自动飞向掉落物）
+let bagNagT=0,petBubbleT=0,petBlk=0; // V1.12.3需求2/V1.12.4需求2：拾取精灵——背包满计时、头顶气泡计时、捡不动物品的拉黑计时
 let hot=[],hotBase=0,mobId=0,started=false,t=0,shake=0,camX=0,camY=0,flashS=0;
 let killfeed=[]; // v2.0 需求：击杀播报（右侧滚动）
 let bagOpen=false,skPanel=false,charPanel=false,selSlot=0,selBag=-1,selEq=-1;
@@ -2169,6 +2170,17 @@ let chestOpen=false,chestPage=0;
 const CHESTPAGES=5,CHESTMASK=100,chest=new Array(CHESTPAGES*CHESTMASK).fill(null);
 function msg(txt,col){msgs.push({txt:txt,col:col||'#fff',t:240});if(msgs.length>4)msgs.shift();}
 function floatTxt(x,y,txt,col){floats.push({x:x,y:y,txt:txt,col:col||'#fff',t:60,vy:-.9});}
+/* V1.12.2需求1（用户原话：“金币的使用加减值的显示”）：全游戏有二十多处 p.gold±=（购买、强化、打孔、洗练、
+   扩容、洗点、藏宝图手续费、死亡掉落、捡币、掠夺、一键出售……），逐处补飘字一定要漏。
+   故把 p.gold 改装成“带差的读数”：每次写入自动算出本笔 Δ，主角头顶飘一笔带符号的账（进账金、支出红），
+   并在左上金币条留一个会淡出回落的角标。读档/建角这类整体赋值用 goldMute 静音，免得一进游戏就飘巨额账。 */
+let goldD=0,goldDt=0,goldMute=1;
+(function(){let _g=p.gold|0;
+  Object.defineProperty(p,'gold',{configurable:true,enumerable:true,
+    get:function(){return _g;},
+    set:function(v){v=Math.round(v)||0;const d=v-_g;_g=v;
+      if(!goldMute&&d){goldD=d;goldDt=170;
+        if(started&&p.dead===0)floatTxt(p.x,p.y-34,(d>0?'+':'-')+Math.abs(d)+' 金',d>0?'#e8cf4a':'#e87a7a');}}});})();
 function burst(x,y,col,n){for(let i=0;i<(n||8);i++)parts.push({x:x,y:y,vx:rnd(-2,2),vy:rnd(-3,.5),col:col,t:ri(18,34),s:rnd(2,4.5)});}
 function fxSlash(x,y,ang,r,arc,col){fx.push({k:'slash',x:x,y:y,ang:ang,r:r,arc:arc,col:col,t:12,max:12});}
 function fxRing(x,y,r0,r1,col,w){fx.push({k:'ring',x:x,y:y,r0:r0,r1:r1,col:col,w:w||3,t:16,max:16});}
@@ -2190,8 +2202,10 @@ function boltGeo(rng,x0,y0,x1,y1,lev,amp){
 /* V1.11.0需求5：雷霆万钧重建的参数——一次释放 10 波、每波 20 道落雷、逐波向外扩散（逐渐变远）、
    每道落雷在场驻留 8 秒（480 帧）。旧版是"瞬间挑最近的 6 个怪各劈一下"，既没有范围压迫感，
    也不符合用户描述的释放效果。落雷做成常驻弹道实体（k:'thor'），每道对同一目标只击穿一次；
-   密集成群时一道雷周围会覆盖多道，单敌最多被 ~15 道命中，故每道系数定在 0.1×mul（旧版为 2.2×mul 一次性）。 */
-const THOR_WAVES=10,THOR_N=20,THOR_GAP=38,THOR_LIFE=480,THOR_IV=26;
+   密集成群时一道雷周围会覆盖多道，单敌最多被 ~15 道命中，故每道系数定在 0.1×mul（旧版为 2.2×mul 一次性）。
+   V1.12.2需求3（用户原话：“提升三倍的雷霆万钧基础伤害”）：单道基础系数 ×3（0.16→0.48），
+   雷链跳射（×0.55）与逐波铺雷均按同一比例抬升；波数/道数/驻留时长/眩晕一个不动，只改“疼不疼”。 */
+const THOR_WAVES=10,THOR_N=20,THOR_GAP=26,THOR_LIFE=270,THOR_IV=26; // V1.12.3需求3（用户原话：“提升雷霆万钧伤害，减少持续的时间”）：逐波间隔 38→26、单道驻留 480→270（8 秒→4.5 秒）；铺完 10 波从 6.3 秒收到 4.3 秒，整场雷暴收尾从约 14 秒降到约 9 秒
 function thorBolt(x,y,d,r,stun,col){projs.push({k:'thor',x:x,y:y,r:r,d:d,stun:stun,col:col,
   t:THOR_LIFE,max:THOR_LIFE,iv:THOR_IV,tick:ri(0,THOR_IV),hit:new Set(),seed:ri(0,9999)});}
 /* V1.11.0需求7：三档怪物的"攻击手感"必须拉开——旧版普通/精英/BOSS 除数值倍率外是同一套表现，
@@ -2229,7 +2243,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.1';
+const GLOG_MAX=600,GLOG_VER='1.12.4';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -2368,6 +2382,18 @@ function takeMats(name,c){const sys=matSysOf(name),ti=matTierOf(name);
   if(left>0)left-=takeMatsFrom(chest,chest.length,names,left);
   return left<=0;}
 function matDropName(sys,lvl){return matOf(sys,lvl).name;}
+/* V1.12.3需求1（用户原话：“是不是爆出概率太低了”）：原先五个概率硬编码在 killDrop 的循环里，
+   界面无法回答“到底多少爆一个”。现抽成单一真值表：掉落读它，鼠标悬停提示也读它，
+   以后调爆率只改这一行，提示不会跟实际脱节。MAT_EXTRA_RATE 是四样专属料的原值
+  （它们在 killDrop 里再过一道 dr() 爆率加成，与阶位材料口径不同，提示里如实标注）。 */
+const MAT_RATE={enh:.5,drill:.42,skill:.32,morph:.24,pet:.36};
+const MAT_EXTRA_RATE={'粘质液':.5,'烈焰精华':.6,'金矿石':.55,'星辉石':.3};
+function matRate(sys){return MAT_RATE[sys]!=null?MAT_RATE[sys]:.3;}
+function matRateOf(name){ /* 由材料名反查单杀爆率：先认五系耗材，再认专属料（前缀命中星辉石·♈ 等变体） */
+  const sys=matSysOf(name);
+  for(const k in MAT_SYS){if(MAT_SYS[k].cn===sys)return {r:matRate(k),extra:false,sys:k};}
+  for(const k in MAT_EXTRA_RATE){if(name.indexOf(k)===0)return {r:MAT_EXTRA_RATE[k],extra:true,nm:k};}
+  return null;}
 /* ============ V1.11.4需求1：主线耗材「在哪里获得」真值引擎 ============
    用户原话：「还有一个比较影响体验的，主线任务里面提到的耗材材料也要标识出在哪里获得」。
    做法不是另写一张"素材产地表"（那必然和实际掉落脱节），而是把上面那段掉落逻辑
@@ -2420,6 +2446,63 @@ function matSrcLine(name,size,maxW,pre,suf){
       .join('　')+(L.length>lim?'　…共'+L.length+'区':'')+S;};
   for(let lim=Math.min(4,L.length);lim>=1;lim--){const s=mk(lim);if(fitW(s,size,maxW)===s)return s;}
   return fitW(mk(1),size,maxW);}
+/* ============ V1.12.3需求1：鼠标悬停「获取地点 + 获取方式」浮窗 ============
+   用户原话：「主线任务中哥布林拖欠工资任务中的磨刀石怎么获取？鼠标放上去显示获取地点和获取方式，是不是爆出概率太低了」。
+   此前产地只在追踪器/任务面板各占一行短句，鼠标放上去什么都不出；现补一个通用浮窗：
+   悬停 ①任务追踪的主线步骤块 ②任务面板主线区 ③背包里的材料格，都能读出
+   「哪几个区·什么怪·多大概率·怎么捡·交给谁·现有几个还差几个」。数据全部来自掉落真值（matSrcIdx + MAT_RATE）。 */
+function npcTip(k){const n=NPCS.find(function(x){return x.key===k;});
+  return n?(n.name+'（'+ptStr(n.x,n.y)+'，走近按 E）'):'（找不到交付人）';}
+function matTipBody(name){const L=[],Z=matSrcZones(name),st=p.mq?mqCur():null,isNeed=!!(st&&st.m===name);
+  L.push('🧺 '+name+(isNeed?'　【主线正缺】':''));
+  const R=matRateOf(name);
+  L.push(R?('获取方式：击杀怪物掉在地上，走过自动拾取（'+(R.extra?('原值 '+Math.round(R.r*100)+'%，算上爆率加成后约 '+Math.round(Math.min(.95,R.r*20)*100)+'%'):('普通怪约 '+Math.round(R.r*100)+'%'))+'）'):'获取方式：击杀对应怪物掉在地上，走过自动拾取');
+  L.push('　精英必掉 1~2 个、BOSS 必掉 2~4 个；副本内 +25%；主线正缺的这一种再 +50%');
+  if(!Z.length)L.push('获取地点：暂无怪物掉落——可去挖藏宝图碰运气');
+  else{L.push('获取地点（由近到远）：');
+    for(let i=0;i<Math.min(3,Z.length);i++){const o=Z[i];
+      L.push(' '+(i+1)+'. '+o.nm+' '+o.pt+'　掉：'+o.mobs.slice(0,3).join('/')+(o.mobs.length>3?'（共'+o.mobs.length+'怪）':''));}
+    if(Z.length>3)L.push(' …还有 '+(Z.length-3)+' 个区——按 G → 🧺材料 → 去这里 有引导线');}
+  L.push('现有 '+mqMat(name)+' 个（背包+仓库）'+(isNeed&&st?'；本步需 '+st.n+' 个':''));
+  if(isNeed&&st.t==='give')L.push('交付：走到 '+npcTip(st.npc));
+  if(st&&st.t==='give'&&p.autoSell&&p.autoSell.mat)L.push('⚠ 已开材料自动出售：主线所需这一种已自动保留，不会被卖');
+  return L;}
+function stepTipBody(st){const L=[];if(!st)return L;
+  L.push('🎯 '+st.d+'　'+mqProg()+'/'+mqNeed());
+  L.push('说明：'+(st.tip||'（无）'));
+  const h=mqHint(st);if(h)L.push('地点：'+h);
+  if(st.k&&MT[st.k])L.push('目标：'+MT[st.k].name+' Lv'+MT[st.k].lvl+'（'+zoneName(MT[st.k].zone)+'）——击杀即累计');
+  if(st.npc)L.push('对象：'+npcTip(st.npc));
+  if(st.m)L.push.apply(L,matTipBody(st.m));
+  return L;}
+function hovMatTarget(anyPanel){ /* 鼠标落在哪块 UI 上：材料格优先，其次是任务追踪/面板的主线区 */
+  if(bagOpen&&bagGeo.lx){const i=bagCellAt(mouse),it=i>=0&&i<bagMax()?bag[i]:null;
+    if(it&&it.slot==='mat'&&!it.book&&!it.relic)return {name:it.name};}
+  if(!anyPanel&&qTrackOpen&&MAINLIN[p.main]){const ML=mqLines();
+    if(ML&&ML.step&&mouse.x>=10&&mouse.x<=336&&mouse.y>=230&&mouse.y<=230+(ML.src?67:52))return {step:ML.step};}
+  if(questOpen&&MAINLIN[p.main]){const ML=mqLines();
+    if(ML&&ML.step&&mouse.x>=208&&mouse.x<=752&&mouse.y>=84&&mouse.y<=158)return {step:ML.step};}
+  return null;}
+function hovBox(lines,ax,ay){ /* 跟随鼠标的浮窗：自动避让四周边缘，行宽超宽则截字 */
+  if(!lines.length)return;ax=(ax==null?mouse.x:ax);ay=(ay==null?mouse.y:ay);
+  C.font='700 11.5px "Microsoft YaHei",sans-serif';
+  /* V1.12.4 自检发现：行高变量旧名叫 LH，正好把全局逻辑高度 LH=540 遮蔽了，
+     于是下方的“超出屏幕就往上翻”变成了 by+bh>9 ——几乎永远成立，浮窗总是弹到鼠标上方。
+     改名 ROW，判定重新按真实屏幕高度走。 */
+  const MAXB=406,ROW=15;let w=0;for(const s of lines){w=Math.max(w,C.measureText(s).width);}
+  const bw=Math.min(MAXB+18,w+18),bh=lines.length*ROW+12;
+  let bx=ax+14,by=ay+12;
+  if(bx+bw>LW-6)bx=Math.max(6,ax-bw-14);
+  if(by+bh>LH-6)by=Math.max(6,ay-bh-10);
+  C.save();C.globalAlpha=.97;
+  C.fillStyle='rgba(6,8,5,.94)';rr(bx,by,bw,bh,7);C.fill();
+  C.strokeStyle='#8a7a3a';C.lineWidth=1.2;C.stroke();
+  let ly=by+13;for(const s of lines){txt(fitW(s,11.5,MAXB),bx+9,ly,11.5,'#dfe4da','left','700',true);ly+=ROW;}
+  C.restore();C.globalAlpha=1;}
+function drawHovTip(anyPanel){
+  if(!started||p.dead>0||loading())return;
+  const tg=hovMatTarget(anyPanel);if(!tg)return;
+  hovBox(tg.step?stepTipBody(tg.step):matTipBody(tg.name));}
 
 /* ============ 需求50/51/52：怪物故事线任务 + 成就勋章 + 天使交接 ============ */
 const QTGT=[10,50,150]; // 每怪3档成就：击杀10/50/150
@@ -3407,16 +3490,34 @@ function mqSync(){ /* 章节变化/旧档首次进入：复位步骤与基线（
   const S=MQT[p.main];if(!S||!S.length)return;
   if(p.mq.st>=S.length)p.mq.st=S.length-1;}
 function mqCur(){const S=MQT[p.main];return S?S[Math.min(p.mq.st,S.length-1)]:null;}
-function mqMat(m){ /* 材料前缀匹配（星辉石·♈ 等变体名一并计入） */
-  let n=0;const lim=bagMax();
-  for(let i=0;i<lim;i++){const it=bag[i];
-    if(it&&it.slot==='mat'&&!it.book&&!it.relic&&it.name&&it.name.indexOf(m)===0)n+=(it.count==null?1:it.count);} // V1.11.2：count=0 的空堆不能按 1 计
+function matMatch(nm,m){ /* V1.12.3需求1：材料判定的唯一口径（任务计数与扣料共用） */
+  if(!nm||!m)return false;
+  if(nm===m||nm.indexOf(m)===0)return true;                       // 前缀变体：任务写「星辉石」也能命中「星辉石·♈」
+  const sys=matSysOf(m);if(matSysOf(nm)!==sys)return false;        // 同系统（磨石/凿子/灵能尘/精血/兽粮）
+  return matTierOf(nm)>=matTierOf(m);}                             // 高阶顶替低阶——与强化用的 takeMats 同口径
+function mqMat(m){ /* V1.12.3需求1（用户原话：“修复同类材料或者找东西任务的问题”）：
+   旧判定有三处会把玩家卡死：① 材料存进据点仓库就不算任务进度（而 V1.12.0需求4 已允许仓库供料强化）；
+   ② 身上只有高阶同名磨石却判“不够”；③ 变体名只对前缀一致的生效。现全部走 matMatch，背包+仓库一起数。 */
+  let n=0;
+  for(let i=0;i<bagMax();i++){const it=bag[i];
+    if(it&&it.slot==='mat'&&!it.book&&!it.relic&&matMatch(it.name,m))n+=(it.count==null?1:it.count);}
+  for(let i=0;i<chest.length;i++){const it=chest[i];
+    if(it&&it.slot==='mat'&&!it.book&&!it.relic&&matMatch(it.name,m))n+=(it.count==null?1:it.count);}
   return n;}
-function mqMatTake(m,c){let left=c;const lim=bagMax();
-  for(let i=0;i<lim&&left>0;i++){const it=bag[i];
-    if(it&&it.slot==='mat'&&!it.book&&!it.relic&&it.name&&it.name.indexOf(m)===0){
-      const c0=(it.count==null?1:it.count),mv=Math.min(left,c0);it.count=c0-mv;left-=mv;if(it.count<=0)bag[i]=null;}} // V1.11.2：交付后空堆必须清槽
+function mqMatTake(m,c){ /* 先吃同名/前缀变体，不够再拿高阶顶替；背包优先，仓库兜底 */
+  let left=c;
+  const scan=function(arr,lim,up){for(let i=0;i<lim&&left>0;i++){const it=arr[i];
+    if(!it||it.slot!=='mat'||it.book||it.relic||!it.name)continue;
+    const same=(it.name===m||it.name.indexOf(m)===0);
+    if(up?(!same&&matMatch(it.name,m)):same){
+      const c0=(it.count==null?1:it.count),mv=Math.min(left,c0);it.count=c0-mv;left-=mv;if(it.count<=0)arr[i]=null;}}};
+  scan(bag,bagMax(),false);scan(chest,chest.length,false);
+  scan(bag,bagMax(),true);scan(chest,chest.length,true);
   return left===0;}
+/* 当前主线步骤还缺的那种材料名（不缺或非耗材步骤返回 ''）——掉率保底与悬停高亮都用它。 */
+function mqNeedMat(){const st=p.mq?mqCur():null;
+  if(!st||!st.m||(st.t!=='mat'&&st.t!=='give'))return '';
+  return mqMat(st.m)>=(st.n||1)?'':st.m;}
 function mqKillBase(st){ /* 杀怪类：记录步骤起点的全局计数，之后按差值算进度 */
   const id=st.id;if(p.mq.base[id]==null){
     p.mq.base[id]=st.t==='kill'?(p.kills[st.k]||0):st.t==='ekill'?(p.ekN[st.k]||0):0;} // V1.11.2：精英基线读 ekN（ek 每召一只BOSS就归零）
@@ -4651,10 +4752,10 @@ function castSkill(si){
     case 13:{ /* V1.11.0需求5：以施法点为中心，向外铺开 10 波雷环 */
       const tr0=64+big*8+rg*.35,tr1=430+big*62+rg*3;
       projs.push({k:'thorstorm',x:p.x,y:p.y,t:THOR_GAP*THOR_WAVES+10,iv:1,w:0,rot:rnd(0,6.2832),
-        r0:tr0,r1:tr1,d:.16*mul,br:26+big*2,stun:30+ex*10,col:sm.col||'#9adcfa'}); // V1.12.0需求6：单道系数 0.10→0.16（配合书本增幅 3.2→3.9，整体伤害约×2.1）
+        r0:tr0,r1:tr1,d:.82*mul,br:26+big*2,stun:30+ex*10,col:sm.col||'#9adcfa'}); // V1.12.2需求3 ×3→.48；V1.12.3需求3（“提升伤害、减少持续”）：单道系数 .48→.82，用来补偿驻留缩短带来的“重叠道数”下降（雷链 ×0.55 按比例自动跟随）
       fxRing(p.x,p.y,10,150*sm.sz,sm.col||'#9adcfa',4);fxRing(p.x,p.y,10,tr1,sm.col||'#ffe14a',2);
       flashS=.4;shakeN(8);sfx(70,.35,'sawtooth',.09);
-      msg('雷霆万钧！'+THOR_WAVES+'波×'+THOR_N+'道 雷暴降临（每道8秒·雷链跳射）'+tag,sm.col||'#9adcfa');break;}
+      msg('雷霆万钧！'+THOR_WAVES+'波×'+THOR_N+'道 雷暴降临（每道'+(THOR_LIFE/60).toFixed(1)+'秒·雷链跳射）'+tag,sm.col||'#9adcfa');break;}
     case 14:{const bx=p.x+Math.cos(A)*56,by=p.y+Math.sin(A)*56;const clR=(166+big*32)*sm.sz;projs.push({k:'cloud',x:bx,y:by,t:240+ex*60,r:clR,d:.3*mul,iv:24,tick:12,col:sm.col||'#7ee84a'});
       fxRing(bx,by,6,clR,sm.col||'#7ee84a',3);if(sm.col)burst(bx,by,sm.col,5);sfx(240,.3,'sine',.05);msg('要你命三千！毒云弥漫'+tag,sm.col||'#7ee84a');break;}
     case 23:{const n=1+Math.min(2,Math.floor(ex/2));
@@ -4902,7 +5003,7 @@ function eliteSpell(m,def,a){
       if(dist(m.x,m.y,p.x,p.y)<140)hurtPlayer(Math.round(def.dmg*.9*f),m);
     }else if(fam==='贪婪'){ // 贪欲掠夺：掠夺金币 + 金弹
       floatTxt(m.x,m.y-26,'💰 '+nm+'·'+(boss?'点金魔手':'贪欲掠夺'),'#e8c86a');sfx(720,.12,'triangle',.05);
-      const steal=Math.min(p.gold,Math.round((boss?240:90)+def.dmg*f));if(steal>0){p.gold-=steal;floatTxt(p.x,p.y-40,'-'+steal+' 金','#e8c86a');}
+      const steal=Math.min(p.gold,Math.round((boss?240:90)+def.dmg*f));if(steal>0){p.gold-=steal;} // V1.12.2需求1：扣金飘字交统一账目
       const n=boss?5:3;for(let i=0;i<n;i++){const an=a+(i-(n-1)/2)*.26;projs.push({k:'stone',x:m.x,y:m.y-8,vx:Math.cos(an)*4.8,vy:Math.sin(an)*4.8,t:100,r:4,dmg:Math.round(def.dmg*.45*f),col:'#e8c86a'});}
     }else{ // 疾风（默认）：多向风箭连射
       floatTxt(m.x,m.y-26,'🌪 '+nm+'·'+(boss?'暴风绝啸':'疾风连袭'),'#7ee84a');sfx(600,.1,'triangle',.04);
@@ -5041,17 +5142,22 @@ function killDrop(m,def){
     if(it.q>=6){msg('🌈 金色神装「'+(it.setTag||it.name)+'」降世，镭射光柱冲天！！','#ffd700');flashS=.15;}} // v1.5需求2：金色爆装播报
   if(Math.random()<dr(.12)*(K?3:1))items.push({x:m.x+rnd(-10,10),y:m.y+rnd(-8,8),slot:'pot',name:'治疗药水',t:0,bob:rnd(0,6)});
   // 材料（可叠加）
-  if(m.key==='slime'&&Math.random()<dr(.5)*(K?2:1))items.push(matItem('m_goo','粘质液',10,m.x+rnd(-12,12),m.y+rnd(-10,10)));
-  if(m.key==='fire'&&Math.random()<dr(.6)*(K?2:1))items.push(matItem('m_fire','烈焰精华',50,m.x+rnd(-12,12),m.y+rnd(-10,10)));
-  if(m.key==='miner'&&Math.random()<dr(.55)*(K?2:1))items.push(matItem('coin','金矿石',30,m.x+rnd(-12,12),m.y+rnd(-10,10)));
+  if(m.key==='slime'&&Math.random()<dr(MAT_EXTRA_RATE['\u7c98\u8d28\u6db5'])*(K?2:1))items.push(matItem('m_goo','粘质液',10,m.x+rnd(-12,12),m.y+rnd(-10,10)));
+  if(m.key==='fire'&&Math.random()<dr(MAT_EXTRA_RATE['\u70c8\u7130\u7cbe\u534e'])*(K?2:1))items.push(matItem('m_fire','烈焰精华',50,m.x+rnd(-12,12),m.y+rnd(-10,10)));
+  if(m.key==='miner'&&Math.random()<dr(MAT_EXTRA_RATE['\u91d1\u77ff\u77f3'])*(K?2:1))items.push(matItem('coin','金矿石',30,m.x+rnd(-12,12),m.y+rnd(-10,10)));
   /* v1.4需求27：按怪物等级段掉落五大系统专属材料（精英/BOSS 多包）
      V1.11.4：循环上限原为硬编码 4，第 5 项 pet（兽粮）永远取不到——爆率表里的 .36 是死代码，
      导致主线「玄金·兽粮 ×6」只能靠藏宝图碰运气。改为跟随 MAT_SYSK 全长，五系齐掉。 */
   (function(){
     const SYS=MAT_SYSK;
     for(let si=0;si<SYS.length;si++){const sys=SYS[si];const mm=matOf(sys,def.lvl);
-      const p=(sys==='enh'?.5:sys==='drill'?.42:sys==='skill'?.32:sys==='morph'?.24:.36)*(K?2:1);
-      const n=K===2?ri(2,4):K===1?ri(1,2):(Math.random()<(p+(IB?.25:0))?1:0); // v1.5：副本材料爆率+25%
+      /* V1.12.3需求1：概率读 MAT_RATE 单一真值（与悬停提示同一口径）；
+         主线正缺的那一种再加五成保底——用户原话“是不是爆出概率太低了”，
+         体感差的往往不是均值而是“连着十只不掉”的方差，缺料期间把期望抬到 ~75%。 */
+      let pr=matRate(sys)*(K?2:1);
+      const _need=mqNeedMat();
+      if(_need&&mm.name.indexOf(_need)===0)pr=Math.min(.92,pr*1.5);
+      const n=K===2?ri(2,4):K===1?ri(1,2):(Math.random()<(pr+(IB?.25:0))?1:0); // v1.5：副本材料爆率+25%
       for(let i=0;i<n;i++)items.push(matItem(mm.ic,mm.name,mm.price,m.x+rnd(-16,16),m.y+rnd(-12,12)));}
     // 精英/BOSS 额外掉落高一阶材料（鼓励挑战）
     if(K&&def.lvl>=10){const hi=matOf('enh',def.lvl+15);if(hi.tier>matOf('enh',def.lvl).tier)items.push(matItem(hi.ic,hi.name,hi.price,m.x+rnd(-8,8),m.y-14));}
@@ -5168,6 +5274,14 @@ function stackInto(it){ // 需求3-10/11：同类占一格，数量叠加（上�
   const empty=bagFirst();if(empty<0)return false;
   it.count=it.count||1;bag[empty]=it;return true;
 }
+function bagNag(){ /* V1.12.3需求2 + V1.12.4需求2（用户原话：“提醒频率10秒一次”、“捡满了背包后…并提示主角清理背包”）：
+   旧版每 30 帧（半秒）飘一次“背包已满”，又密又没有行动指引。现同一处计时 10 秒一条，
+   并把“去哪儿清”写清楚；同时让拾取精灵顶上一并弹气泡（在主角身边也看得到）。 */
+  if(bagNagT>0)return;bagNagT=600;petBubbleT=300;
+  const used=bag.filter(Boolean).length;
+  floatTxt(p.x,p.y-40,'🎒 背包已满 '+used+'/'+bagMax()+'　按 B 整理','#e8b33a');
+  msg('🎒 背包已满（'+used+'/'+bagMax()+'）：按 B → 🧹 一键整理 / 💰 一键卖装备，在基地可按 R 存进仓库','#e8b33a');
+  sfx(520,.08,'triangle',.03);}
 function collectItem(i){ // bug1-新41/42：单件拾取逻辑，返回 true 表示应移除该掉落
   const it=items[i];
   if(it.relic){p.books[it.bk]=1;sfx(1040,.2,'triangle',.06);arp([660,880,1100,1320],70);
@@ -5175,7 +5289,11 @@ function collectItem(i){ // bug1-新41/42：单件拾取逻辑，返回 true 表
   /* 需求76：背包自动售卖——命中分类且未锁定时直接换金，不占背包格 */
   const as=p.autoSell||{};
   const cat=it.slot==='egg'?null:it.slot==='pot'?'pot':it.book?'book':it.slot==='mat'?'mat':(it.slot==='mweap'||it.slot==='sweap')?'wp':'eq';
-  if(!it.lock&&as[cat]){const c=it.count||1;const price=(it.slot==='mat'?it.price:it.slot==='pot'?30:sellPrice(it))*c;
+  /* V1.12.3需求1（“同类材料或者找东西任务的问题”）：开了“材料自动出售”时，主线正缺的那一种
+     一落地就被换成金币，任务永远差料——玩家只会归因于“爆率太低”。现自动保留。 */
+  const _need=mqNeedMat();
+  const keep=!!(_need&&cat==='mat'&&matMatch(it.name,_need));
+  if(!it.lock&&as[cat]&&!keep){const c=it.count||1;const price=(it.slot==='mat'?it.price:it.slot==='pot'?30:sellPrice(it))*c;
     p.gold+=price;msg('💰 自动出售 '+it.name+(c>1?' x'+c:'')+' +'+price+'金','#e8cf4a');sfx(1250,.06,'square',.03);
     if(it.slot==='mat')p.colMat[it.key||it.name]=(p.colMat[it.key||it.name]||0)+c;
     else if(it.slot!=='pot'&&!it.book)p.colEq++;
@@ -5189,7 +5307,8 @@ function collectItem(i){ // bug1-新41/42：单件拾取逻辑，返回 true 表
       if(it.book)msg('拾取『'+it.name+'』技能书 x'+(it.count||1)+'，按 C 在技能面板学习/升级','#e8b33a');
       else if(it.slot==='mat')msg('拾取 '+it.name+'（'+it.price+'金，可出售）','#b8c8a0');}
       return true;}
-    if(t%30===0)floatTxt(p.x,p.y-40,'背包已满','#e85a5a');return false;}
+    if(t%300===0&&keep&&as.mat)floatTxt(it.x,it.y-16,'主线所需已保留','#8fd08f');
+    bagNag();return false;}
   const empty=bagFirst();
   if(empty>=0){bag[empty]=it;const cur=p.equip[it.slot];const up=!cur||it.power>cur.power;
       if(p.set.drop)msg('拾取 '+it.name+'（'+QN[it.q]+'·'+QNAME[it.q]+'·'+SLOTCN[it.slot]+'）'+(up?' ▲ 更强，B背包查看':''),QC[it.q]); // V1.8需求2
@@ -5208,19 +5327,56 @@ function updatePickups(){
     const c=coins[i];c.t--;
     const d=dist(c.x,c.y,p.x,p.y);
     if(p.dead===0&&d<80){const a=Math.atan2(p.y-c.y,p.x-c.x);c.x+=Math.cos(a)*4;c.y+=Math.sin(a)*4;}
-    if(p.dead===0&&d<20){const v=Math.max(1,Math.round(c.v*(1+goldBonus()/100)));p.gold+=v;floatTxt(p.x,p.y-30,'+'+v+'金','#e8cf4a');sfx(1250,.05,'square',.03);if(pass(20))bumpPass(20);coins.splice(i,1);}
+    if(p.dead===0&&d<20)pickCoin(i); // V1.12.2需求2：取币结算抽成 pickCoin，主角与拾取精灵共用
     else if(c.t<=0)coins.splice(i,1);
   }
 }
-function updatePet(){if(p.dead!==0)return;pet.t++; // bug1-新41：小精灵——默认围着主角半径50环绕，发现掉落物则自动飞过去捡取
+/* V1.12.2需求2：取币结算——主角贴脸与拾取精灵共用一套算法（含金币提升属性、成就【金手指】计数）。
+   飘字不在这里：p.gold 的读数会自动报一笔带符号的账（V1.12.2需求1）。 */
+function pickCoin(i){const c=coins[i];if(!c)return 0;
+  const v=Math.max(1,Math.round(c.v*(1+goldBonus()/100)));p.gold+=v;
+  sfx(1250,.05,'square',.03);if(pass(20))bumpPass(20);coins.splice(i,1);return v;}
+function petCanTake(it){ /* V1.12.4需求2（用户原话：“捡满了背包后，优先捡金币”）：
+   上一版是“飞过去、碰一鼻子灰、再拉黑三秒改捡金币”，满包时精灵会在地上反复撞墙。
+   现先把“确放得下”作为候选条件：能堆叠的（药水/材料/书）看背包里有没有同类未满 99 的格，
+   开了自动出售的分类根本不占格（直接收），其余才要求有空格。筛掉后金币自然成为首选目标。 */
+  if(!it)return false;
+  if(it.relic)return true;
+  const as=p.autoSell||{};
+  const cat=it.slot==='egg'?null:it.slot==='pot'?'pot':it.book?'book':it.slot==='mat'?'mat':(it.slot==='mweap'||it.slot==='sweap')?'wp':'eq';
+  if(!it.lock&&as[cat])return true;
+  if(cat==='mat'){const need=mqNeedMat();if(need&&matMatch(it.name,need)&&bagFirst()<0)return false;} // 主线缺料会被保留、不折金，满包就是真放不下
+  if(it.slot==='pot'||it.slot==='mat'||it.book)for(let i=0;i<bagMax();i++){const b=bag[i]; // 与 stackInto 同口径：同名同槽、未满 99 就能叠
+    if(b&&b.slot===it.slot&&b.name===it.name&&(b.count||1)<99)return true;}
+  return bagFirst()>=0;}
+function updatePet(){if(p.dead!==0)return;pet.t++;
+  if(bagNagT>0)bagNagT--;if(petBubbleT>0)petBubbleT--;if(petBlk>0)petBlk--; // V1.12.3需求2：三个计时器统一在主循环走（每帧一次）
   const ax=p.x+Math.cos(pet.t*.05)*50,ay=p.y+Math.sin(pet.t*.05)*50-34;
-  let ti=-1,bd=300*300; // 索敌半径（世界像素）
-  for(let i=0;i<items.length;i++){const it=items[i],dx=it.x-pet.x,dy=it.y-pet.y,d2=dx*dx+dy*dy;if(d2<bd){bd=d2;ti=i;}}
-  let tx=ax,ty=ay;if(ti>=0){tx=items[ti].x;ty=items[ti].y;}
-  const dx=tx-pet.x,dy=ty-pet.y,L=Math.hypot(dx,dy)||1,sp=ti>=0?5.4:3.2,step=Math.min(L,sp);
+  /* V1.12.4需求2（用户原话：“捡物精灵速度加五倍，距离主角不超过20个单位半径”）：
+     本作 1 个坐标单位 = PT_UNIT = 50 世界像素（与小地图读数同一口径），20 个单位即 1000 像素拴绳。
+     旧版索敌半径只 300 像素（才 6 个单位），提速五倍后若不放宽索敌，会变成“跑得快但没东西捡”。 */
+  const LEASH=20*PT_UNIT,R2=LEASH*LEASH,inRange=(x,y)=>((x-p.x)*(x-p.x)+(y-p.y)*(y-p.y))<=R2;
+  let ti=-1,ci=-1,bd=1e18,petNoSlot=0;
+  /* V1.12.2需求2：金币纳入索敌；V1.12.3需求2 + V1.12.4需求2（“无法继续捡取物品时捡金币／捡满背包后优先捡金币”）：
+     petBlk>0（刚被“背包已满”顶回来）这段时间整类物品不再尝试，直接改捡金币——金币不占格子，永远捡得动。 */
+  if(petBlk<=0)for(let i=0;i<items.length;i++){const it=items[i];if(!inRange(it.x,it.y))continue;
+    if(!petCanTake(it)){petNoSlot=1;continue;} // V1.12.4需求2：放不下的整类直接不参与择目标，于是优往金币去
+    const dx=it.x-pet.x,dy=it.y-pet.y,d2=dx*dx+dy*dy;if(d2<bd){bd=d2;ti=i;ci=-1;}}
+  for(let i=0;i<coins.length;i++){const c=coins[i];if(!inRange(c.x,c.y))continue;
+    const dx=c.x-pet.x,dy=c.y-pet.y,d2=dx*dx+dy*dy;if(d2<bd){bd=d2;ci=i;ti=-1;}}
+  let tx=ax,ty=ay;if(ti>=0){tx=items[ti].x;ty=items[ti].y;}else if(ci>=0){tx=coins[ci].x;ty=coins[ci].y;}
+  /* V1.12.3需求2（用户原话：“拣物精灵的捡取速度提升5倍”）：旧值 5.4 / 无目标回落 3.2，均×5 → 27 / 16。 */
+  const dx=tx-pet.x,dy=ty-pet.y,L=Math.hypot(dx,dy)||1,sp=(ti>=0||ci>=0)?27:16,step=Math.min(L,sp);
   pet.x+=dx/L*step;pet.y+=dy/L*step;
   pet.trail=pet.trail||[];pet.trail.push({x:pet.x,y:pet.y});if(pet.trail.length>10)pet.trail.shift(); // V1.8.1：拖尾轨迹
-  if(ti>=0&&dist(pet.x,pet.y,items[ti].x,items[ti].y)<14){const it=items[ti];if(collectItem(ti)){items.splice(ti,1);burst(it.x,it.y,'#8fd08f',6);}}
+  if(ti>=0&&dist(pet.x,pet.y,items[ti].x,items[ti].y)<16){const it=items[ti];
+    if(collectItem(ti)){items.splice(ti,1);burst(it.x,it.y,'#8fd08f',6);}
+    else{petBlk=180;bagNag();}} // 捡不动（背包满）：拉黑整类物品 3 秒并走 10 秒一条的整理提醒
+  else if(ci>=0&&dist(pet.x,pet.y,coins[ci].x,coins[ci].y)<14){const c=coins[ci];if(pickCoin(ci)){burst(c.x,c.y,'#e8cf4a',6);fxRing(c.x,c.y,3,16,'#e8cf4a',1.6);}}
+  /* V1.12.3需求2（用户原话：“在主角身边时，精灵也会提醒”）：精灵飞回主角身边待命、
+     而地上还摊着捡不动的掉落物时，同样按 10 秒一条的节奏提醒整理背包（气泡就顶在精灵头上）。 */
+  if(petBlk>0&&items.length&&bagNagT<=0&&dist(pet.x,pet.y,p.x,p.y)<90)bagNag();
+  else if(petNoSlot&&bagNagT<=0&&dist(pet.x,pet.y,p.x,p.y)<140)bagNag(); // V1.12.4需求2：满包到“连候选都筛不出”，同样 10 秒一条提醒清理
 }
 /* V1.8.1 宝宝精细化：小精灵重做——拖尾彗尾 + 双层薄翼扇动 + 眼神与眉脉表情 + 环绕星屑 */
 function drawPet(){const x=pet.x,y=pet.y,b=Math.sin(pet.t*.15)*3;
@@ -5250,6 +5406,16 @@ function drawPet(){const x=pet.x,y=pet.y,b=Math.sin(pet.t*.15)*3;
   for(let i=0;i<3;i++){const a=pet.t*.09+i*2.09,rr2=9.5+Math.sin(pet.t*.12+i)*2.2; // 环绕星屑
     C.globalAlpha=.55+.4*Math.sin(pet.t*.2+i);C.fillStyle='#eaffea';
     C.beginPath();C.arc(x+Math.cos(a)*rr2,y-b+Math.sin(a)*rr2*.5,1,0,7);C.fill();}
+  /* V1.12.3需求2：背包满了它就“说话”——气泡顶在精灵头上，带一个指向精灵的小箭头；
+     剩余帧数不足 40 时线性淡出，不会突然消失。 */
+  if(petBubbleT>0){const s='\uD83C\uDF92 \u80CC\u5305\u6EE1\u4E86\uFF0C\u6309 B \u6574\u7406\uFF01';
+    C.font='700 10.5px "Microsoft YaHei",sans-serif';
+    const bw=C.measureText(s).width+14,bx=x-bw/2,by=y-52;
+    C.save();C.globalAlpha=Math.min(1,petBubbleT/40);
+    C.fillStyle='rgba(10,12,8,.9)';rr(bx,by,bw,17,6);C.fill();
+    C.strokeStyle='#e8b33a';C.lineWidth=1;C.stroke();
+    C.beginPath();C.moveTo(x-4,by+17);C.lineTo(x,by+23);C.lineTo(x+4,by+17);C.closePath();C.fillStyle='rgba(10,12,8,.9)';C.fill();
+    txt(s,x,by+8,10.5,'#ffd76a','center','700',true);C.restore();C.globalAlpha=1;}
   C.restore();C.globalAlpha=1;}
 /* v1.4需求6/18/21：四神兽宝宝——最多同时携带 4 个，跟随主角浮动；每5级形态进化；≥5次BOSS形态；≥10次翅膀+发光
    V1.8.1 宝宝精细化：四神兽改做各自独立的物种轮廓——青龙有鹿角长须背鳍鳞纹、白虎有圆耳黑纹獠牙脸毛、
@@ -5583,16 +5749,32 @@ function doReroll(k){ // 需求7：洗练词条，每次随机输出，数量与
   msg('✨ 洗练词条：'+it.name+' 重铸出 '+aff.length+' 条新词条','#c9a2ff');sfx(760,.15,'sine',.05);arp([700,1000],50);
 }
 function skIdxByBook(bk){for(let i=0;i<SK.length;i++)if(SK[i].book===bk)return i;return -1;}
+/* V1.12.4需求1（用户原话：“技能书的升级的判断条件好像错了，有时书本够，却不能升级”）：
+   查因不是“书”判错，而是升级其实有两道门、界面却只报第一道：按钮写着“需 5 本 / 共 7”，
+   点下去却被第二道“灵能尘”拦下——玩家自然理解成“书够了却不能升”。第二道本身确实也写错了：
+   matOf('skill', s.lv+cur*6) 随技能等级线性狂飘——Lv1 的书升到 Lv8 就要星神阶尘（得刷 Lv46+ 的怪），
+   玩家身上那堆低阶尘永远不算数。现把尘的阶位按玩家自身等级就近取档（只降不升，永不比原设计更狠），
+   并把两道门收进 skUpNeed 一个口径：判定与按钮文案共用，缺一律当场说清缺哪样、去哪儿弄。 */
+function skUpNeed(i){const s=SK[i],cur=p.skLvl[i]||0,need=cur+1;
+  const mm=matOf('skill',Math.min(s.lv+cur*6,Math.max(1,p.lvl))),mneed=Math.ceil(need*1.5);
+  const books=s.book?bookCount(s.book):0,bagN=s.book?bookCountBag(s.book):0,dust=countMat(mm.name);
+  const R={s:s,cur:cur,need:need,books:books,bagN:bagN,chestN:books-bagN,mm:mm,mneed:mneed,dust:dust,
+    lvOk:p.lvl>=s.lv,bookOk:!s.book||books>=need,dustOk:dust>=mneed,asBook:!!(p.autoSell&&p.autoSell.book)};
+  R.ok=R.lvOk&&R.bookOk&&R.dustOk;return R;}
 function learnOrUpSkill(i){ // 需求3-8/14：技能书叠加升级，学/升Lv花费书数=目标等级，最高Lv10
   const s=SK[i];if(!s.book)return;
-  if(p.lvl<s.lv){msg(s.n+' 需要 Lv'+s.lv,'#888');return;}
-  const cur=p.skLvl[i]||0; // 需求18：无限等级（取消 Lv10 封顶）
-  const need=cur+1,cnt=bookCount(s.book),bagN=bookCountBag(s.book);
-  /* v1.4需求27：升级还需灵能尘（与目标等级对应阶段）；V1.12.0需求4：背包+仓库、高阶可顶替 */
-  const mm=matOf('skill',s.lv+cur*6),mneed=Math.ceil(need*1.5),have=countMat(mm.name);
-  if(cnt<need){msg('『'+SKB[s.book]+'』不足：'+(cur===0?'学习':'升至Lv'+(cur+1))+'需 '+need+' 本，现有 '+cnt+' 本（背包'+bagN+' + 仓库'+bookCountChest(s.book)+'）','#e8b33a');sfx(160,.08,'square',.03);return;}
-  if(have<mneed){msg('灵能尘不足：需 '+mneed+' 个【'+mm.name+'】（高阶可顶替），现有 '+have+'——击杀 Lv≥'+MAT_TIERS[mm.tier].lvl+' 怪物掉落','#e8b33a');sfx(160,.08,'square',.03);return;}
-  takeBooks(s.book,need);takeMats(mm.name,mneed);
+  const R=skUpNeed(i); // 需求18：无限等级（取消 Lv10 封顶）；两道门已全部算清，此处只负责播报与扣费
+  if(!R.lvOk){msg(s.n+' 需要 Lv'+s.lv+'（你当前 Lv'+p.lvl+'）','#888');return;}
+  if(!R.ok){
+    const lvw=(R.cur===0?'学习':'升至Lv'+(R.cur+1)),miss=[];
+    if(!R.bookOk)miss.push('📕 '+SKB[s.book]+' '+R.books+'/'+R.need+' 本（背包'+R.bagN+' + 仓库'+R.chestN+'）');
+    if(!R.dustOk)miss.push('✨ '+R.mm.name+' '+R.dust+'/'+R.mneed+' 个（高阶可顶替）');
+    msg('『'+s.n+'』'+lvw+'还差：'+miss.join('　｜　'),'#e8b33a');sfx(160,.08,'square',.03);
+    if(!R.dustOk)msg('🧺 材料产地：'+matSrcShort(R.mm.name).replace(/^🧺 /,''),'#9adcfa'); // 与掉落同一张反查表，不报空头地址
+    if(!R.bookOk)msg('📕 技能书获取：'+(s.src||'精英/BOSS 高爆率掉落技能书')+(R.asBook?'　⚠ 但你现在开了「技能书自动出售」，书一落地就折成金币——按 B 先关掉再攒':''),'#e8b33a');
+    return;}
+  const need=R.need,bagN=R.bagN,mm=R.mm,mneed=R.mneed,cur=R.cur;
+  takeBooks(s.book,need);takeMats(mm.name,mneed); // 扣费：先背包后仓库（书与尘同口径）
   const fromChest=Math.max(0,need-bagN); // V1.12.0需求4：让“书从哪扣的”transparent
   p.skLvl[i]=cur+1;p.ach2=(p.ach2||{});p.ach2.skLv=(p.ach2.skLv||0);p.ach2.skLvlMax=Math.max(p.ach2.skLvlMax||0,p.skLvl[i]);
   if(cur===0)msg('✨ 学会法术【'+s.n+'】！已消 '+mneed+'×'+mm.name+(fromChest?'（含仓库书 '+fromChest+' 本）':''),'#ff7a3a');
@@ -5605,6 +5787,7 @@ function updateFx(){
   for(let i=sched.length-1;i>=0;i--){const s=sched[i];if(s.t>0){s.t--;continue;}s.f();sched.splice(i,1);}
   for(let i=parts.length-1;i>=0;i--){const q=parts[i];q.x+=q.vx;q.y+=q.vy;q.vy+=.12;if(--q.t<=0)parts.splice(i,1);}
   for(let i=floats.length-1;i>=0;i--){const f=floats[i];f.y+=f.vy;if(--f.t<=0)floats.splice(i,1);}
+  if(goldDt>0)goldDt--; // V1.12.2需求1：金币角标的存活帧（归零即不再画）
   for(let i=msgs.length-1;i>=0;i--){if(--msgs[i].t<=0)msgs.splice(i,1);}
   for(let i=killfeed.length-1;i>=0;i--){if(--killfeed[i].t<=0)killfeed.splice(i,1);}
   for(let i=fx.length-1;i>=0;i--){if(--fx[i].t<=0)fx.splice(i,1);}
@@ -5742,6 +5925,7 @@ function draw(){
     if(towerSelOpen)drawTowerSelPanel(); // v1.5.3需求11：塔层传送面板
     if(setOpen)drawSetPanel(); // V1.8需求1：设置面板
     if(findOpen)drawFind(); // V1.11.3需求2：快速查找面板
+  drawHovTip(anyPanel); // V1.12.3需求1：悬停浮窗置于所有面板之上、触控层之下
   if(touchMode)drawTouch();
   if(flashS){C.fillStyle='rgba(255,255,255,'+flashS+')';C.fillRect(0,0,LW,LH);}
   if(p.dead>0){C.fillStyle='rgba(30,4,4,.55)';C.fillRect(0,0,LW,LH);
@@ -6742,7 +6926,16 @@ function drawHUD(){
   bar(24,76,240,12,p.hp/maxHp(),'#b83a2a','#3a1414');txt('❤ '+Math.ceil(p.hp)+' / '+maxHp(),144,82,11,'#fff','center');
   bar(24,92,240,10,p.mp/maxMp(),'#2a6ad8','#101c36');txt('◆ MP '+Math.floor(p.mp)+' / '+maxMp(),144,97,10,'#cfe4ff','center');
   bar(24,107,240,9,p.exp/expNeed(),'#d8c34a','#3a3214');txt('EXP '+p.exp+'/'+expNeed(),144,111.5,9,'#fff','center');
-  icon('coin',34,130,18);txt(''+p.gold,48,130,13,'#e8cf4a');
+  icon('coin',34,130,18);txt(''+p.gold,48,130,13,goldDt>0?(goldD<0?'#f0a06a':'#f6e58a'):'#e8cf4a');
+  /* V1.12.2需求1：金币条角标——本笔增减浮在 HUD 面板最底一行（y=209~221，面板底 222）：
+     上面 130/148/161/172/184 五行已被余额、战斗、击杀、套装、武器五行占满，200 行是 BOSS 套装徽章/提示。
+     进账绿、支出红，带“→ 余额”收尾；剩余帧数少于 50 时线性淡出。 */
+  if(goldDt>0){const s=(goldD>0?'+':'-')+Math.abs(goldD)+' 金 → 余额 '+p.gold;
+    C.save();C.globalAlpha=Math.min(1,goldDt/50);
+    C.font='700 11px "Microsoft YaHei",sans-serif';
+    C.fillStyle='rgba(8,10,6,.74)';rr(22,209,Math.min(232,C.measureText(s).width+12),12,5);C.fill();
+    txt(s,28,215,11,goldD>0?'#8fd08f':'#e88a6a','left',null,true);
+    C.restore();C.globalAlpha=1;}
   const pc=bag.reduce(function(a,it){return a+(it&&it.slot==='pot'?(it.count||1):0);},0);
   icon('potion',108,130,18);txt('x'+pc+' [Q]',122,130,12,'#59e85a');
   txt('攻 '+atkTotal()+'  防 '+defTotal(),190,130,12,'#9adcfa');
@@ -6877,7 +7070,56 @@ function skTooltip(i,x,y){
   rr(x,y,w,h,7);C.fillStyle='rgba(8,10,6,.94)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.5;C.stroke();
   lines.forEach(function(L,k){txt(L.t,x+9,y+13+k*14,10.5,L.c);});
 }
+/* V1.12.4需求3（用户原话：“副本里的怪物的地图优化一下，在副本里就别显示主世界地图了，就显示副本的分布图”）：
+   旧版人在副本里，右上角仍画 W×H 的世界全图——副本只占东南角一块（1060×800，全图的 1/88），
+   玩家缩成一个像素点，而图上的弼马温 / 迷宫阵 / 产蛋阵 / 藏宝点 / 区域色块在实例空间里全是无效信息
+   （副本里出不去，主世界怪也已被 enterInstance 清空）。现按 INST 自身平面另算比例，画副本本体的分布图：
+   地面网格（每 5 个坐标单位一道，用来目测距离）、石柱木箱、迷宫内墙、怪点（普通/精英/BOSS 分色）、
+   回程点、出口与上层传送门；底部三行换成副本读数（名称 / 剩余怪与 BOSS 进度 / 图内相对坐标）。 */
+function drawInstMap(){
+  const w=172,h=112,x=LW-w-12,y=10;
+  const sx=w/INST.w,sy=h/INST.h;                       // 副本平面铺满图框（长宽各自归一，与主图同一取舍）
+  const PX=function(wx){return x+(wx-INST.x)*sx;},PY=function(wy){return y+(wy-INST.y)*sy;};
+  rr(x-4,y-4,w+8,h+56,8);C.fillStyle='rgba(10,12,8,.86)';C.fill();
+  C.strokeStyle=INST.col||'#6a5a2e';C.lineWidth=1.5;C.stroke();
+  C.save();rr(x,y,w,h,5);C.clip();
+  C.fillStyle='#141a10';C.fillRect(x,y,w,h);
+  C.fillStyle=INST.col||'#b06ae8';C.globalAlpha=.1;C.fillRect(x,y,w,h);C.globalAlpha=1;
+  C.strokeStyle='rgba(255,255,255,.07)';C.lineWidth=1;  // 每 5 单位（250 世界像素）一格，副本平面大小差异极大（迷宫 88×26 单位 / 幻境 21×16 单位），统一按单位画
+  for(let g=PT_UNIT*5;g<INST.w;g+=PT_UNIT*5){C.beginPath();C.moveTo(PX(INST.x+g),y);C.lineTo(PX(INST.x+g),y+h);C.stroke();}
+  for(let g=PT_UNIT*5;g<INST.h;g+=PT_UNIT*5){C.beginPath();C.moveTo(x,PY(INST.y+g));C.lineTo(x+w,PY(INST.y+g));C.stroke();}
+  if(INST.obs)for(const o of INST.obs){C.fillStyle='rgba(106,96,84,.9)';C.fillRect(PX(o.x),PY(o.y),Math.max(1.4,o.w*sx),Math.max(1.4,o.h*sy));} // 石柱/木箱：挡住走位的实体都标出来
+  if(INST.walls)for(const wv of INST.walls){C.fillStyle='#c07ae8';C.globalAlpha=.8;C.fillRect(PX(wv.x),PY(wv.y),Math.max(1.4,wv.w*sx),Math.max(1.6,wv.h*sy));C.globalAlpha=1;} // 万妖迷宫的交错内墙
+  let nB=0,nE=0;
+  for(const m of mobs){const en=m.kind===2;if(en)nB++;else if(m.kind===1)nE++;
+    C.fillStyle=en?'#ff3a2a':m.kind===1?'#4aa8ff':(MT[m.key]&&ZONES[MT[m.key].zone]&&ZONES[MT[m.key].zone].col)||'#c9a2ff';
+    const r=en?4.2:m.kind===1?2.8:1.7;
+    C.fillRect(PX(m.x)-r,PY(m.y)-r,r*2,r*2);
+    if(en){C.strokeStyle='rgba(255,58,42,.55)';C.lineWidth=1;C.beginPath();C.arc(PX(m.x),PY(m.y),5.2+Math.sin(t*.12)*1.3,0,7);C.stroke();}}
+  if(!INST.exit){ // 出口尚未开启：沿图框画一道淡虚线，免得玩家以为图缺了一块
+    C.strokeStyle='rgba(138,184,216,.35)';C.lineWidth=1;
+    if(C.setLineDash){C.setLineDash([4,3]);C.strokeRect(x+.5,y+.5,w-1,h-1);C.setLineDash([]);}}
+  else{const ex=PX(INST.exit.x),ey=PY(INST.exit.y);                            // 出口通道：青色脉冲环
+    C.strokeStyle='#8affff';C.lineWidth=1.6;C.beginPath();C.arc(ex,ey,3.4+((t%40)/40)*4,0,7);C.stroke();
+    C.fillStyle='#8affff';C.beginPath();C.arc(ex,ey,2.2,0,7);C.fill();}
+  if(INST.next){const nx=PX(INST.next.x),ny=PY(INST.next.y);                   // 通天塔上层传送：金色脉冲方块
+    C.fillStyle='#ffd700';C.globalAlpha=.65+.35*Math.sin(t*.15);C.fillRect(nx-3,ny-3,6,6);C.globalAlpha=1;}
+  if(INST.homeX>INST.x-60&&INST.homeX<INST.x+INST.w+60&&INST.homeY>INST.y-60&&INST.homeY<INST.y+INST.h+60){ // 回程落点（塔内换层时 home 就是本层出生点，主世界回程点则不画）
+    C.strokeStyle='rgba(232,200,106,.55)';C.lineWidth=1;
+    C.strokeRect(PX(INST.homeX)-2.4,PY(INST.homeY)-2.4,4.8,4.8);}
+  if((t>>4)%2){C.fillStyle='#fff';C.beginPath();C.arc(PX(p.x),PY(p.y),2.6,0,7);C.fill();} // 自己：闪点
+  C.restore();
+  txt('🌀 副本分布图',x+4,y-10,10,'#8a9a7a',null,null,true);
+  txt(fitStr(INST.name,w-10,12),x+w/2,y+h+12,12,INST.col||'#e8cf4a','center',null,true);
+  const lab=INST.type==='tower'?('☠ 剩 '+mobs.length+' · 已清 '+INST.killed+(INST.boss?' · BOSS '+INST.bossKilled+'/'+INST.boss:''))
+    :INST.type==='dun'?('☠ 剩 '+mobs.length+' · 精英 '+nE+' · BOSS '+INST.bossKilled+'/'+INST.boss)
+    :('☠ 剩 '+mobs.length+' · 精英 '+nE+' · BOSS '+nB+(INST.pow?' · 叠强 '+INST.pow:'')); // 字量控在 162px 宽以内，不被 fitStr 截尾
+  txt(fitStr(lab,w-10,10.5),x+w/2,y+h+28,10.5,mobs.length?'#8fd08f':'#ffd700','center',null,true);
+  const tw=Math.round(INST.w/PT_UNIT),th=Math.round(INST.h/PT_UNIT),rx=clamp(Math.round((p.x-INST.x)/PT_UNIT),0,tw),ry=clamp(Math.round((INST.y+INST.h-p.y)/PT_UNIT),0,th);
+  txt(fitStr('📍 图内 ('+rx+', '+ry+') / '+tw+'×'+th+' 单位',w-10,9.5),x+w/2,y+h+44,9.5,'#9adcfa','center',null,true);
+}
 function drawMinimap(){
+  if(INST.on){drawInstMap();return;} // V1.12.4需求3：副本里画副本，不再画主世界全图
   const w=172,h=112,x=LW-w-12,y=10,sx=w/W,sy=h/H;
   rr(x-4,y-4,w+8,h+56,8);C.fillStyle='rgba(10,12,8,.8)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.5;C.stroke();
   C.save();rr(x,y,w,h,5);C.clip();
@@ -7248,8 +7490,8 @@ function drawBag(){
           btn(bx,by,76,30,'装副手',function(){doEquip(selBag,'sweap');},'#3d6b2e');bx+=82;}
         else{btn(bx,by,76,30,'装 备',function(){doEquip(selBag);},'#3d6b2e');bx+=82;}
         btn(bx,by,272-bx+ix,30,'出 售 +'+(((it.slot==='mat'||it.slot==='egg')?it.price:it.slot==='pot'?30:sellPrice(it))*(it.count||1)),function(){doSell(selBag);},'#7a5a1e');
-        if(it.book){const si2=skIdxByBook(it.book),cur2=p.skLvl[si2]||0;
-          btn(ix,by+38,272,30,(cur2===0?'📖 学习法术':'⬆ 升级至Lv'+(cur2+1))+'（需'+(cur2+1)+'本/共有'+bookCount(it.book)+'本·含仓库）',function(){learnOrUpSkill(si2);},'#5a3a7a');}
+        if(it.book){const si2=skIdxByBook(it.book),R=skUpNeed(si2); // V1.12.4需求1：按钮同时报书与尘，不足的那一项直接标“缺”
+          btn(ix,by+38,272,30,(R.cur===0?'📖 学习法术':'⬆ 升级至Lv'+(R.cur+1))+'（书'+R.books+'/'+R.need+(R.dustOk?'':' · '+R.mm.name+'缺'+Math.max(0,R.mneed-R.dust))+'）',function(){learnOrUpSkill(si2);},R.ok?'#5a3a7a':'#5a2a3a');}
         if(p.inT)btn(ix,it.book?by+76:by+38,130,30,'📦 存仓库',function(){chestStore(selBag);},'#3a4a6a'); // 需求13：据点内才能存仓库
       }else if(ei){
         const enh=ei.enh||0,cost=(enh+1)*100,ch=enhChance(enh),holes=ei.holes||0,by2=Math.min(Math.max(iy+214,ly+10),y+h-92); // 需求60：按钮钉在面板内，不再被多行词条文本顶出可视区
@@ -7460,11 +7702,12 @@ function drawSkPanel(){
   // 底部：选中技能详情 + 法术学习/升级按钮（bug1-Bug3：选中格即可学/升，不必先上栏）
   const hov=skSel>=0?skSel:(p.slots[selSlot]>=0?p.slots[selSlot]:-1),hs=hov>=0?SK[hov]:null,by=y+h-40;
   if(hs&&hs.book){
-    const cur=p.skLvl[hov]||0,cnt=bookCount(hs.book);
+    const R=skUpNeed(hov),cur=R.cur;
     txt('【'+hs.n+'】'+hs.d,x+16,by+18,11,'#9ab');
     txt('获取途径：'+(hs.src||'精英/BOSS 高爆率掉落技能书'),x+16,by+2,10,'#e8b33a'); // 需求19：介绍获取途径
-    const lab=cur===0?'📖 学习（1本/共'+cnt+'）':'⬆ 升Lv'+(cur+1)+'（需'+(cur+1)+'本/共'+cnt+'）· 现Lv'+cur;
-    btn(x+w-250,by,234,30,lab,function(){learnOrUpSkill(hov);},'#5a3a7a');
+    /* V1.12.4需求1：旧文案只写“需 X 本 / 共 Y”，把第二道门的灵能尘隐掉了——用户因此误判“书够却不能升级” */
+    const lab=(cur===0?'📖 学习':'⬆ 升Lv'+(cur+1))+'（书'+R.books+'/'+R.need+' · '+R.mm.name+' '+R.dust+'/'+R.mneed+'）'+(cur?' · 现Lv'+cur:'');
+    btn(x+w-250,by,234,30,lab,function(){learnOrUpSkill(hov);},R.ok?'#5a3a7a':'#5a2a3a');
     hot[hot.length-1].top=1; // V1.9.1需求4：33 格网格第7行（y 460~512）会压住底部按钮，此钮优先响应
   }else if(hs){
     txt('【'+hs.n+'】'+hs.d+(hs.w!=='any'&&hs.w!==undefined?'（带'+WTGA[hs.w]+'系武器伤害×1.5，伴生使用'+skLvlOf(hov)*5+'次自动升级）':''),x+16,by+18,11,'#9ab');
@@ -7502,6 +7745,7 @@ function doLoad(quiet,slot){
   let d=null;try{d=JSON.parse(localStorage.getItem(slotKey(curSlot)));}catch(e){}
   if(!d||!d.p){if(!quiet)msg('本地存档已损坏','#e85a5a');return false;}
   if(!started)start();
+  goldMute=1; // V1.12.2需求1：读档是整体赋值，不该把“从 0 到存档余额”当成一笔收入飘出来
   const q=d.p;
   p.name=d.name||'无名猎人';p.gender=d.gender||'男'; // 需求33：读档还原姓名/性别
   p.lvl=Math.max(1,q.lvl|0);p.exp=q.exp|0;p.gold=Math.max(0,q.gold|0);p.ap=q.ap|0;
@@ -7536,11 +7780,13 @@ function doLoad(quiet,slot){
   p.dead=0;p.cool=0;p.inv=0;p.dashT=0;p.dashCd=0;p.dvx=0;p.dvy=0;p.fury=0;p.skcd=[0,0,0,0];
   p.hp=maxHp();p.mp=maxMp();
   initWorld();
+  goldMute=0; // V1.12.2需求1：余额已就位，从这里起的每一笔增减都要报账
   msg('📂 【'+p.name+'·'+p.gender+'】读档成功：Lv'+p.lvl+' · 金币 '+p.gold+' · 背包 '+(d.n|0)+' 件','#8fd08f');
   if(p.ap>0)msg('可用属性点 '+p.ap+'：点左上头像（或按 H）分配','#c9a2ff');
   return true;
 }
 function resetPlayer(){ // 创建新角色前重置为初始态
+  goldMute=1; // V1.12.2需求1：建角/换角清零余额不报账（函数末尾恢复）
   p.x=3500;p.y=2260;p.lvl=1;p.exp=0;p.gold=0;p.aim=0;p.cool=0;p.inv=0;p.flash=0;p.iai=0;p.iaiMul=1;p.fury=0;
   p.dashT=0;p.dashCd=0;p.dvx=0;p.dvy=0;p.dir=1;p.walk=0;p.dead=0;p.books={};p.ap=10;p.face=null;
   STKEYS.forEach(function(k){p.st[k]=0;});
@@ -7557,6 +7803,7 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   for(let i=0;i<BAGCAP;i++)bag[i]=null;
   for(let i=0;i<chest.length;i++)chest[i]=null;
   mobs.length=0;items.length=0;coins.length=0;projs.length=0;parts.length=0;floats.length=0;fx.length=0;clones.length=0;respawns.length=0;sched.length=0;
+  goldMute=0; // V1.12.2需求1：初始态已落定，后面都是真账
 }
 let creUI=null; // 需求79：页面内创建角色面板（姓名/性别/捏脸均不弹窗）
 function createCharacter(slot){ // 需求33+79+80：打开页面内创建面板
