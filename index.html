@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.5</title>
+<title>降龙猎手 · 五行觉醒 V1.12.6</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -1848,6 +1848,22 @@ function drawDungeons(){
 const QN=['白','绿','蓝','紫','橙','红','金'],QC=['#cfd2d6','#59c959','#5a9de8','#b06ae8','#ff8a2a','#e85a5a','#ffd700'];
 const QNAME=['普通','优秀','稀有','史诗','传说','神话','顶天了']; // 需求24：品阶名称
 const WTYPE={bow:{n:'弓箭',i:'bow'},sword:{n:'长剑',i:'sword'},blade:{n:'长刀',i:'blade'},gun:{n:'枪械',i:'ak'},ak:{n:'枪械',i:'ak'},staff:{n:'法杖',i:'staff'}}; // v1.4：补 gun 键（修复 makeItem 产出 w:'gun' 查表崩溃）
+/* ============ V1.12.6需求1：手持武器姿态（用户原话「手上的武器位置要摆放正确，有的武器拿反了」） ============
+   病灶：武器图标是按"竖着摆"画的（剑尖朝上、法杖宝珠朝上、刀斜朝右上），而 drawPlayer 只按瞄准角
+   整体旋转——于是剑尖永远指不到准星：瞄右时剑尖朝天，瞄左时（bug1-新17 的沿轴镜像会把"上下"翻成
+   "不动"）干脆反着指向身后。弓箭/枪械恰好是横着画的，所以只有它们看着正常。
+   修法：给每类武器一份「功能轴修正角 r + 握把点 g（图标 64 视框内坐标）」。绘制时先把图标转正
+   （r = 让"刃尖/箭镞/枪口/宝珠"落到 +X），再把握把挪到手心，最后才随瞄准角旋转、按左右镜像。
+   r 由 (tip-grip) 的反正切取负算得；握把取护手/弓臂/弹匣/杖尾这些真实持握处。 */
+const WPOSE={
+  sword:{r:Math.PI/2,gx:32,gy:54},   // 剑尖(32,0)→+X；握点在护手与柄之间
+  blade:{r:0.747,gx:6,gy:57},        // 刀尖(60,7)，柄头(6,57)：原轴 -42.8°
+  staff:{r:1.0015,gx:14,gy:62},      // 宝珠(46,12)，杖尾(14,62)：原轴 -57.4°
+  bow:{r:0,gx:18,gy:32},             // 握在弓把（弦 x14 靠射手侧、弓腹朝目标），箭镞(50)指前、箭尾(6)后抵
+  ak:{r:0,gx:18,gy:38},              // 枪口在 +X(58)，握把是弹匣后方的木握把 x12..24；按中心 18 握才不像"握枪管中段"
+};
+const WPS=26/64; // 图标按 26px 绘制，视框 64 → 换算比例
+function wPose(base){const P=WPOSE[base];return P||{r:0,gx:32,gy:32};}
 /* v1.4需求2：每5级一版持续到100级，每类20个版本名 */
 const WNAMES={
   bow:['旧猎弓','硬木长弓','寒晶连弩','赤角强弓','烈焰龙弩','雷纹天弓','追风逐日弓','北斗连珠弓','幽冥蛇牙弓','圣辉天使弓','破晓曙光弓','万象森罗弓','龙脊盘龙弓','凤鸣九天弓','星辰陨落弓','虚空撕裂弓','时间裁决弓','命运纺线弓','混沌开天弓','洪荒·终极猎手弓'],
@@ -2245,7 +2261,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.5';
+const GLOG_MAX=600,GLOG_VER='1.12.6';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -6254,13 +6270,19 @@ function drawPlayer(){
     C.strokeStyle='rgba(234,246,255,.5)';C.lineWidth=1;C.beginPath();C.arc(x,y-4,r2*.72,0,7);C.stroke();}
   if(p.qv>=Math.ceil(QALL/2))drawAngelLook(x,y-bob,fr,'front'); // V1.9.12需求4：身体后只画头环/光轮，不再重画整翼
   drawCosmetics(x,y-bob); // 需求72：每5成就一件的外显装扮
-  const wi=p.equip.mweap?p.equip.mweap.w&&WTYPE[p.equip.mweap.w].i+'@'+(p.equip.mweap.tier||0):'bow@0';
+  const wBase=(p.equip.mweap&&WTYPE[p.equip.mweap.w])?WTYPE[p.equip.mweap.w].i:'bow';
+  const wi=wBase+'@'+(p.equip.mweap?(p.equip.mweap.tier||0):0);
   // bug1-新17：不再按移动方向翻转旋转角，改为沿瞄准轴镜像，避免弓箭朝向反；新3：黄品以上光效
   const flipL=Math.cos(p.aim)<0,mwq=p.equip.mweap?p.equip.mweap.q:0;
   C.save();C.translate(p.x+Math.cos(p.aim)*17,p.y-6-bob+Math.sin(p.aim)*17);C.rotate(p.aim);if(flipL)C.scale(1,-1);
   if(WROT)C.rotate(WROT*(flipL?-1:1)); // V1.9.12需求2：近战挥砍扫过 / 远程轻微后坐（镜像系取反保证左右一致）
   if(mwq>=3){C.shadowColor=QC[mwq];C.shadowBlur=13;}
-  iconR(wi,0,0,26,0);
+  /* V1.12.6需求1：先把图标"转正"（刃尖/箭镞/枪口/宝珠指向瞄准方向），再把握把挪到手心。
+     这两步都在瞄准旋转与左右镜像之后，所以镜像系里同样成立：武器始终顺着准星、不会倒指身后。 */
+  {const P=wPose(wBase),gp=P.r,c=Math.cos(gp),s=Math.sin(gp);
+   const gX=(P.gx-32)*WPS,gY=(P.gy-32)*WPS;
+   C.save();C.translate(-(gX*c-gY*s),-(gX*s+gY*c));C.rotate(gp);
+   iconR(wi,0,0,26,0);C.restore();}
   if(CASTG>0){ // V1.9.12需求2：施法光核——手前凝聚的五行光球
     const ec=(EL[wEl()||'wood']||{}).col||'#9adcfa';
     C.save();C.globalAlpha=.35+CASTG*.6;C.shadowColor=ec;C.shadowBlur=14*CASTG;C.fillStyle=ec;
