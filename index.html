@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.4</title>
+<title>降龙猎手 · 五行觉醒 V1.12.5</title>
 <style>
-html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
+  overscroll-behavior:none;-webkit-touch-callout:none;position:fixed;inset:0;width:100%}
 body{display:flex;align-items:center;justify-content:center}
 canvas{cursor:crosshair;touch-action:none;display:block}
 /* v1.4需求31：CSS 强制横屏 fallback（iOS Safari / 不支持 orientation.lock 时使用） */
@@ -591,7 +593,7 @@ function enterInstance(type,name,col,keepHome,geo){ // V1.6：geo 可选——�
   if(INST.walls||INST.obs||INSTWALLS.length)dropInstWalls(); // V1.11.1需求6：旧版此处只置空引用、不拆碰撞箱，通天塔/迷宫/副本同平面复用 → 上一层围墙与石柱残留在 OBST/OGRID 里，画面上看不见却拦住玩家（实测每进一层累积 14 个）
   INST.walls=null;INST.obs=null;INST.pow=0;INST.found=false;INST.mazeOut=null;
   INST.exit=null;INST.next=null;INST.bossKilled=0;INST.killed=0;INST.boss=0;INST.floor=0;INST.key=null;
-  mobs.length=0;respawns.length=0;projs.length=0;coins.length=0; // 需求5：主世界怪/弹幕/金币瞬间卸载，防内存溢出
+  clearWorldMobs(); // 需求5：主世界怪/弹幕/金币瞬间卸载，防内存溢出（V1.12.5需求5：连同 _loaded 标记一起复位）
   if(lost)msg('🧹 清理了 '+lost+' 件遗落在副本中的拾取物','#8a9a7a');
   mqEv('inst',type); // V1.11.2需求1：主线"引导参加副本"步骤（tower/dun/maze/petdun/mount）
   glog('biz','enterInstance '+(name||'')+' type='+type,{obst:OBST.length,iwall:INSTWALLS.length,mobs:mobs.length},null); // V1.11.1需求7：里程碑入日志，导出后可对照复现
@@ -653,7 +655,7 @@ function exitInst(died){
   loadStart('🌀 地图加载中'); // V1.10.0需求3：出副本 3 秒加载遮罩
   const hx=INST.homeX,hy=INST.homeY;
   INST.on=false;INST.exit=null;INST.next=null;
-  mobs.length=0;respawns.length=0;projs.length=0;coins.length=0;
+  clearWorldMobs(); // V1.12.5需求5：复位 _loaded，否则下方 manageMobs 不会再填充周边区域
   let lost=0;for(let i=items.length-1;i>=0;i--)if(items[i].x>INST.x&&items[i].x<INST.x+INST.w&&items[i].y>INST.y&&items[i].y<INST.y+INST.h){items.splice(i,1);lost++;}
   p.x=died?3500:hx;p.y=died?2260:hy;
   manageMobs(); // 回主世界立即重新懒加载周边怪物
@@ -2243,7 +2245,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.4';
+const GLOG_MAX=600,GLOG_VER='1.12.5';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -2388,6 +2390,9 @@ function matDropName(sys,lvl){return matOf(sys,lvl).name;}
   （它们在 killDrop 里再过一道 dr() 爆率加成，与阶位材料口径不同，提示里如实标注）。 */
 const MAT_RATE={enh:.5,drill:.42,skill:.32,morph:.24,pet:.36};
 const MAT_EXTRA_RATE={'粘质液':.5,'烈焰精华':.6,'金矿石':.55,'星辉石':.3};
+/* V1.12.5需求2：专属料「哪只怪掉·图标·售价」也并进真值表，掉落端遍历本表取概率，
+   杜绝再出现"手写材料名打错一个字 → 查表 undefined → 永不掉落"这类静默失效。 */
+const MAT_EXTRA_MOB={'粘质液':['slime','m_goo',10],'烈焰精华':['fire','m_fire',50],'金矿石':['miner','coin',30]};
 function matRate(sys){return MAT_RATE[sys]!=null?MAT_RATE[sys]:.3;}
 function matRateOf(name){ /* 由材料名反查单杀爆率：先认五系耗材，再认专属料（前缀命中星辉石·♈ 等变体） */
   const sys=matSysOf(name);
@@ -3534,7 +3539,13 @@ function mqProg(){
     case 'twr':return p.ach2.towerMax||0;
   }
   return 0;}
-function mqNeed(){const st=mqCur();return st?(st.t==='surv'?st.sec:(st.n||1)):1;} // V1.11.2需求1：matk 等"一次性"步骤无 n 字段→默认 1，否则恒判不达标
+function mqNeed(){const st=mqCur();if(!st)return 1;
+  if(st.t==='surv')return st.sec;
+  /* V1.12.5需求2附带修复②：交付类步骤(give)进度按"交付次数"计，need 却误取材料件数 st.n，
+     导致「交付磨石×3」要跑 3 趟、耗 9 块才对上；一次交付即 = 交齐 st.n 件，need 应为 1。
+     gweap 无 n 字段本来就落到 1，行为不变。 */
+  if(st.t==='give')return 1;
+  return st.n||1;} // V1.11.2需求1：matk 等"一次性"步骤无 n 字段→默认 1，否则恒判不达标
 function mqDone(){return mqProg()>=mqNeed();}
 function mqAdd(id,n){p.mq.c[id]=(p.mq.c[id]||0)+(n||1);}
 function mqEv(t,val,amt){ /* 事件驱动：仅当前步骤匹配才计数（val 过滤怪/副本/NPC/变身怪）；
@@ -4151,6 +4162,13 @@ function populateZone(k){const def=MT[k]; // 填充普通怪 + 精英簇（受�
   for(let i=0;i<def._elite;i++){if(mobs.length>=MOBCAP)return;spawnMob(k,1,{x:zc.x+rnd(-90,90),y:zc.y+rnd(-90,90)});}}
 function despawnZone(k){for(let i=mobs.length-1;i>=0;i--)if(mobs[i].key===k)mobs.splice(i,1); // 远离则卸载整区
   for(let i=respawns.length-1;i>=0;i--)if(respawns[i].key===k)respawns.splice(i,1);}
+/* V1.12.5需求5：进出副本时清空主世界怪物，必须连同"该区域已加载"标记一起复位。
+   用户原话：「好像有个bug退出副本后，回到了主世界，人物旁边的怪物没有刷新出来」。
+   根因：manageMobs 靠 MT[key]._loaded 做懒加载去重，enterInstance/exitInst 只清了 mobs 数组、
+   没清 _loaded → 退回主世界后 manageMobs 认为周边区域仍在加载状态，既不会 populateZone，
+   也不会 despawnZone（因为区域确实"近"），于是原地一只怪都没有，只有走得很远再走回来才会重新刷。 */
+function clearWorldMobs(){mobs.length=0;respawns.length=0;projs.length=0;coins.length=0;
+  for(const k in MT)MT[k]._loaded=false;} // 复位懒加载标记，交还给 manageMobs 重新就近填充
 function manageMobs(){if(INST.on)return; // v1.5需求5：副本期间暂停主世界懒加载，防双重占用
   for(const k in MT){const def=MT[k],near=zoneNear(def.zone); // 新43：只有主角附近的区域加载怪，没去的地方不加载
   if(near&&!def._loaded){def._loaded=true;populateZone(k);}else if(!near&&def._loaded){def._loaded=false;despawnZone(k);}}}
@@ -4305,6 +4323,14 @@ const SKBS=[0,1,2,3].map(function(i){return{x:786+i*44,y:368,r:20};});
 const TUTB=[{k:'bag',x:712,y:316,r:17,lab:'包'},{k:'skp',x:750,y:316,r:17,lab:'技'},{k:'cha',x:788,y:316,r:17,lab:'人'},{k:'dex',x:826,y:316,r:16,lab:'鉴'},{k:'find',x:862,y:316,r:16,lab:'查'},{k:'pot',x:898,y:316,r:16,lab:'药'},{k:'set',x:934,y:316,r:16,lab:'设'},{k:'mnt',x:674,y:316,r:16,lab:'骑'}]; // 需求90：触控图鉴钮；V1.8需求1：触控设置钮；V1.12.0需求5：触控坐骑管理钮
 /* v1.4需求26：触控交互按钮（对齐 E 键） */
 const TALK_B={x:198,y:LH-104,r:24,lab:'谈'};
+/* V1.12.5附带修复①（本轮实测新发现，自 master/V1.11.5 移植）：
+   TALK_B 固定 (198,436) 正落在展开态任务追踪器矩形 (10,230)~(336,~456) 内部——
+   手机上「谈」钮压在任务文字上，玩家认不出那是可点的钮（追踪器只有标题行注册了热区，
+   所以并非被拦截，而是视觉上被吞）。追踪器展开时让位到追踪器右侧、技能栏上方空白处。
+   绘制与热区共用本函数，杜绝"钮画在 A、点 B 才有反应"。副本内无追踪器，不需要让位。 */
+function talkBtn(){
+  if(qTrackOpen&&!INST.on)return{x:336+TALK_B.r+8,y:TALK_B.y-44,r:TALK_B.r}; // (368,392)：避开任务文字与底部技能格
+  return{x:TALK_B.x,y:TALK_B.y,r:TALK_B.r};}
 /* ===== v1.4需求23：手机端横屏全屏按钮 + 竖屏适配 ===== */
 function isTouch(){return ('ontouchstart' in window)||navigator.maxTouchPoints>0;}
 function isPortrait(){return innerWidth<innerHeight;}
@@ -4323,6 +4349,7 @@ function goLandscape(){
   };
   if(req){try{const p=req.call(el);if(p&&p.then)p.then(lock).catch(function(){lock();applyCSS();});else lock();}catch(e){lock();applyCSS();}}
   else{lock();applyCSS();}
+  armBackTrap(); // V1.12.5需求6：横屏即布防，侧滑/返回键不再退出游戏
   msg(forceRot?'🔄 已启用内置强制横屏（旋转回竖屏将自动退出）':'🔄 已请求横屏全屏','#8affff');sfx(880,.08,'triangle',.03);
 }
 function exitLandscape(){
@@ -4350,6 +4377,28 @@ const ROT_B={x:916,y:44,r:24,lab:'🔄'}; // 游戏内常驻右上角横屏按�
 const rotDrag={on:false,id:-1,dx:0,dy:0,sx:0,sy:0,moved:false};
 try{const _rb=JSON.parse(localStorage.getItem('dh_rotb')||'null');if(_rb&&isFinite(_rb.x)&&isFinite(_rb.y)){ROT_B.x=clamp(_rb.x,24,LW-24);ROT_B.y=clamp(_rb.y,24,LH-64);}}catch(e){}
 function saveRotB(){try{localStorage.setItem('dh_rotb',JSON.stringify({x:ROT_B.x,y:ROT_B.y}));}catch(e){}}
+/* ============ V1.12.5需求6：手机端横屏防误退出 ============
+   用户原话：「在手机端的横屏打开后，增加限制：防止页面执行范围上一个页面导致页面快速退出了」。
+   横屏全屏时，左右边缘的滑动会被系统/浏览器识别成「返回上一页」，一局游戏说退就退（存档靠 10 秒自存，
+   最后这 10 秒的进度全丢）。三层拦截：
+   ① 历史栈哨兵：进横屏/开局时压一条 pushState，popstate 一到立刻重新压回——侧滑与返回键都退不出去；
+   ② 边缘死区：触摸起点落在屏幕左右 EDGE 逻辑像素内一律不喂给游戏，避免"想侧滑结果角色先冲出去砍人"；
+   ③ CSS overscroll-behavior / touch-callout 断掉下拉刷新与长按菜单的连带手势（见 <style>）。
+   注意：JS 无法禁止系统手势本身，只能保证"手势发生了但页面不退出"，这是浏览器允许的最大限制。 */
+const EDGE=18;
+let backTrapN=0,backTrapArmed=false;
+function armBackTrap(){if(backTrapArmed)return;backTrapArmed=true;
+  try{if(history.scrollRestoration)history.scrollRestoration='manual';history.pushState({dh:1},'');}catch(e){}}
+addEventListener('popstate',function(){backTrapN++;
+  try{history.pushState({dh:1},'');}catch(e){} // 被退掉一条就立刻补回一条，栈深恒定，不会无限增长
+  msg('⚠ 已阻止返回退出（横屏游戏中，侧滑/返回键无效）','#ff8a6a');});
+function edgeTouchPx(cx,cy,l){ // 用原始 clientX/clientY 判定，绕开 force-landscape 的 CSS 旋转换算
+  if(cx>EDGE&&cx<innerWidth-EDGE&&cy>EDGE&&cy<innerHeight-EDGE)return false;
+  /* 摇杆/攻击/翻滚/技能这几颗触控钮本身就贴着屏幕边，是玩家有意按的控制区，不能当误触拦掉 */
+  if(dist(l.x,l.y,JOY.x,JOY.y)<JOY.r+20)return false;
+  if(dist(l.x,l.y,ATKB.x,ATKB.y)<ATKB.r+10)return false;
+  if(dist(l.x,l.y,DASHB.x,DASHB.y)<DASHB.r+8)return false;
+  return true;}
 function setVJ(l){let dx=l.x-vj.px,dy=l.y-vj.py;const L=Math.hypot(dx,dy),mx=JOY.r,k=L>mx?mx/L:1;
   vj.kx=vj.px+dx*k;vj.ky=vj.py+dy*k;vj.x=dx*k/mx;vj.y=dy*k/mx;}
 function tHit(l){
@@ -4358,7 +4407,7 @@ function tHit(l){
   if(dist(l.x,l.y,ATKB.x,ATKB.y)<(ATKB.r+10)*ts)return 'atk';
   if(dist(l.x,l.y,DASHB.x,DASHB.y)<(DASHB.r+8)*ts)return 'dash';
   if(!rotDone()&&dist(l.x,l.y,ROT_B.x,ROT_B.y)<ROT_B.r+10)return 'rot'; // v1.4需求23：横屏按钮
-  if(talkTarget()!=null&&dist(l.x,l.y,TALK_B.x,TALK_B.y)<TALK_B.r+10)return 'talk'; // v1.4需求26
+  {const B=talkBtn();if(talkTarget()!=null&&dist(l.x,l.y,B.x,B.y)<B.r+10)return 'talk';} // v1.4需求26 · V1.12.5附带修复①：与绘制同一坐标
   for(let i=0;i<4;i++)if(dist(l.x,l.y,SKBS[i].x,SKBS[i].y)<(SKBS[i].r+8)*ts)return 'sk'+i;
   for(const u of TUTB)if(dist(l.x,l.y,u.x,u.y)<(u.r+8)*ts)return u.k;
   return null;}
@@ -4430,6 +4479,9 @@ function onDownCore(l,e){
   mouse.x=l.x;mouse.y=l.y;mouse.down=true;}
 VIEW.addEventListener('pointerdown',function(e){const l=toLogical(e);
   if(e.pointerType==='touch')touchMode=true;
+  /* V1.12.5需求6：触摸起点落在屏幕边缘死区（多为侧滑返回手势的起手）时不喂给游戏，
+     避免"想返回结果角色先冲出去砍人/放技能"。摇杆与攻击等控制钮所在区域已在 edgeTouchPx 内豁免。 */
+  if(e.pointerType==='touch'&&touchMode&&started&&rotDone()&&edgeTouchPx(e.clientX,e.clientY,l)){e.preventDefault();return;}
   if(touchMode&&!started&&!rotDone()&&dist(l.x,l.y,ROT_B.x,ROT_B.y)<ROT_B.r+10){rotDrag.on=true;rotDrag.id=e.pointerId;rotDrag.dx=ROT_B.x-l.x;rotDrag.dy=ROT_B.y-l.y;rotDrag.sx=ROT_B.x;rotDrag.sy=ROT_B.y;rotDrag.moved=false;try{VIEW.setPointerCapture(e.pointerId);}catch(_){}return;} // v1.4需求23/32：选档页也可转屏，同样支持拖拽
   if(loading())return; // V1.10.0需求3：加载遮罩期间屏蔽一切指针交互（触屏与鼠标同路径）
   if(touchMode&&started){const k=tHit(l),pnl=panelOn(); // V1.9.1：任意面板开启时只允许切换工具钮，不再隔面板移动/攻击/施法
@@ -5142,9 +5194,14 @@ function killDrop(m,def){
     if(it.q>=6){msg('🌈 金色神装「'+(it.setTag||it.name)+'」降世，镭射光柱冲天！！','#ffd700');flashS=.15;}} // v1.5需求2：金色爆装播报
   if(Math.random()<dr(.12)*(K?3:1))items.push({x:m.x+rnd(-10,10),y:m.y+rnd(-8,8),slot:'pot',name:'治疗药水',t:0,bob:rnd(0,6)});
   // 材料（可叠加）
-  if(m.key==='slime'&&Math.random()<dr(MAT_EXTRA_RATE['\u7c98\u8d28\u6db5'])*(K?2:1))items.push(matItem('m_goo','粘质液',10,m.x+rnd(-12,12),m.y+rnd(-10,10)));
-  if(m.key==='fire'&&Math.random()<dr(MAT_EXTRA_RATE['\u70c8\u7130\u7cbe\u534e'])*(K?2:1))items.push(matItem('m_fire','烈焰精华',50,m.x+rnd(-12,12),m.y+rnd(-10,10)));
-  if(m.key==='miner'&&Math.random()<dr(MAT_EXTRA_RATE['\u91d1\u77ff\u77f3'])*(K?2:1))items.push(matItem('coin','金矿石',30,m.x+rnd(-12,12),m.y+rnd(-10,10)));
+  /* V1.12.5需求2：专属料掉落改为遍历真值表取概率，不再手写材料名。
+     旧代码把键写成 '\u7c98\u8d28\u6db5'（粘质"涵"，正字是 \u6db2「液」），查表得 undefined
+     → dr(undefined)=NaN → Math.random()<NaN 恒为 false → 主线第1章「采集样本 粘质液」永不掉落；
+     而悬停提示读的是字面量「粘质液」，照样显示 50%/95%——提示与实际彻底脱节。
+     实测（各 500 次 killDrop）：修复前 粘质液 0 掉、烈焰精华 481、金矿石 470。 */
+  const EXTRA=MAT_EXTRA_MOB;
+  for(const nm in EXTRA){const e=EXTRA[nm];
+    if(m.key===e[0]&&Math.random()<dr(MAT_EXTRA_RATE[nm])*(K?2:1))items.push(matItem(e[1],nm,e[2],m.x+rnd(-12,12),m.y+rnd(-10,10)));}
   /* v1.4需求27：按怪物等级段掉落五大系统专属材料（精英/BOSS 多包）
      V1.11.4：循环上限原为硬编码 4，第 5 项 pet（兽粮）永远取不到——爆率表里的 .36 是死代码，
      导致主线「玄金·兽粮 ×6」只能靠藏宝图碰运气。改为跟随 MAT_SYSK 全长，五系齐掉。 */
@@ -5948,15 +6005,20 @@ function draw(){
 }
 /* bug1-新28：人物头像（HUD/面板共用），根据已戴帽/衣染色，高品套装发光 */
 function drawAvatar(x,y,r){
-  const hc=p.equip.hat?QC[p.equip.hat.q]:'#8a5a2a',tc=p.equip.top?QC[p.equip.top.q]:'#41662f';
   const aq=EQSLOTS.reduce(function(a,s){const e=p.equip[s];return a+(e?e.q||0:0);},0);
   C.save();C.beginPath();C.arc(x,y,r,0,7);C.fillStyle='#12160e';C.fill();
   if(aq>=3){const ag=C.createRadialGradient(x,y,r*.3,x,y,r);ag.addColorStop(0,'rgba(255,215,80,'+Math.min(.5,aq*.02)+')');ag.addColorStop(1,'rgba(0,0,0,0)');C.fillStyle=ag;C.beginPath();C.arc(x,y,r,0,7);C.fill();}
   C.beginPath();C.arc(x,y,r,0,7);C.clip();
-  C.fillStyle=tc;C.beginPath();C.moveTo(x-r,y+r);C.quadraticCurveTo(x,y+r*.1,x+r,y+r);C.closePath();C.fill();
-  C.fillStyle='#e8bd8e';C.beginPath();C.arc(x,y+r*.08,r*.5,0,7);C.fill();
-  C.fillStyle=hc;C.beginPath();C.ellipse(x,y-r*.34,r*.66,r*.42,0,Math.PI,0);C.fill();C.fillRect(x-r*.66,y-r*.36,r*1.32,r*.15);
-  C.fillStyle='#1a1a1a';C.fillRect(x-r*.26,y-r*.02,r*.14,r*.14);C.fillRect(x+r*.12,y-r*.02,r*.14,r*.14);
+  /* V1.12.5需求3：头像与捏脸关联、区分男女（用户原话「左上角的人物头像要区分男女和捏脸头像关联」）。
+     旧版这里是一套硬编码的通用脸（棕帽+黑方眼），完全没读 p.gender / p.face，
+     所以女号、换发型、换脸形、不戴帽，头像永远是同一张。
+     现直接复用主角渲染 drawHunterLook——按"头部中心对齐圆心"缩放取景：
+     头部（含帽子）在原坐标 y∈[-26.5,-7]、中心约 -16.75，故先 scale 再下移 16.75 单位，
+     使脸落在圆心、肩部自然出镜在下方，随装备/捏脸/眨眼动画同步，与人物面板（H）预览同一张脸。 */
+  const sc=r/14;
+  C.save();C.translate(x,y);C.scale(sc,sc);C.translate(0,16.75);
+  drawHunterLook(0,0,1,0,0,p.gender,p.face);
+  C.restore();
   C.restore();
   C.strokeStyle='#6a5a2e';C.lineWidth=2;C.beginPath();C.arc(x,y,r,0,7);C.stroke();
 }
@@ -6910,22 +6972,39 @@ function drawFx(f){
 }
 
 /* ============ HUD：主副武器+五行属性 ============ */
+/* V1.12.5需求4：头像下方状态栏可展开/收起（用户原话「左上角的任务头像下的状态栏也要可展开和隐藏」）。
+   与左侧任务追踪器（qTrackOpen）同一套交互：点右上角「▾/▸ 状态」角标切换，状态跨局保留在会话内。
+   收起态只留头像 + 等级姓名 + 血/蓝/经验三条 + 一行核心数值，把左上让给战场视野。 */
+let hudOpen=true;
 function drawHUD(){
-  panel(10,10,268,212);
-  drawAvatar(38,42,19); // bug1-新28：左上人物头像
+  const HH=hudOpen?212:138;
+  panel(10,10,268,HH);
+  drawAvatar(38,42,19); // bug1-新28：左上人物头像（V1.12.5需求3：已与捏脸/性别关联）
   /* bug1-新19：点击头像开/关人物面板 */
   if(!bagOpen&&!skPanel&&!charPanel)hot.push({x:16,y:18,w:48,h:46,fn:function(){charPanel=true;bagOpen=skPanel=false;}});
+  /* V1.12.5需求4：展开/收起角标——画在面板右上角，两种状态都要注册热区 */
+  const TB={x:236,y:14,w:38,h:16};
+  rr(TB.x,TB.y,TB.w,TB.h,5);C.fillStyle='rgba(8,10,6,.72)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1;C.stroke();
+  txt((hudOpen?'▾':'▸')+' 状态',TB.x+TB.w/2,TB.y+TB.h/2+1,9.5,'#c9b96a','center',null,true);
+  hot.push({x:TB.x,y:TB.y,w:TB.w,h:TB.h,fn:function(){hudOpen=!hudOpen;sfx(hudOpen?760:420,.06,hudOpen?'triangle':'square',.03);}});
   if(p.ap>0){C.save();C.beginPath();C.arc(58,22,10,0,7);C.fillStyle='#c92a2a';C.fill();C.strokeStyle='#fff';C.lineWidth=1.5;C.stroke();
     txt('+'+p.ap,58,22,11,'#fff','center');C.restore();
     if((t>>5)%2)txt('可加点',38,74,9,'#ffd7d7','center',null,true);}
   txt('Lv'+p.lvl+'  '+(p.gender==='女'?'♀':'♂')+p.name,60,32,15,'#e8cf4a'); // 需求33：HUD 显示玩家姓名+性别（不再是硬编码职业名）
   const mw=p.equip.mweap,sw=p.equip.sweap;
-  txt('主手: '+(mw?mw.name+(mw.el?' ['+EL[mw.el].n+']':''):'空手'),60,48,11,mw?QC[mw.q]:'#888');
-  txt('副手: '+(sw?sw.name+(sw.el?' ['+EL[sw.el].n+']':''):'无'),60,61,10,sw?QC[sw.q]:'#667');
   // HP / MP / EXP
   bar(24,76,240,12,p.hp/maxHp(),'#b83a2a','#3a1414');txt('❤ '+Math.ceil(p.hp)+' / '+maxHp(),144,82,11,'#fff','center');
   bar(24,92,240,10,p.mp/maxMp(),'#2a6ad8','#101c36');txt('◆ MP '+Math.floor(p.mp)+' / '+maxMp(),144,97,10,'#cfe4ff','center');
   bar(24,107,240,9,p.exp/expNeed(),'#d8c34a','#3a3214');txt('EXP '+p.exp+'/'+expNeed(),144,111.5,9,'#fff','center');
+  const pc=bag.reduce(function(a,it){return a+(it&&it.slot==='pot'?(it.count||1):0);},0);
+  if(!hudOpen){ // 收起态：一行核心数值（金币/药水/攻防/击杀），点「▸ 状态」看全部
+    const kills0=Object.keys(p.kills).reduce(function(a,k){return a+(p.kills[k]||0);},0);
+    icon('coin',30,129,14);txt(p.gold,42,129,11,'#e8cf4a');
+    icon('potion',104,129,14);txt('x'+pc,116,129,11,'#59e85a');
+    txt('攻'+atkTotal()+' 防'+defTotal()+' 杀'+kills0,158,129,10,'#9adcfa');
+    return;}
+  txt('主手: '+(mw?mw.name+(mw.el?' ['+EL[mw.el].n+']':''):'空手'),60,48,11,mw?QC[mw.q]:'#888');
+  txt('副手: '+(sw?sw.name+(sw.el?' ['+EL[sw.el].n+']':''):'无'),60,61,10,sw?QC[sw.q]:'#667');
   icon('coin',34,130,18);txt(''+p.gold,48,130,13,goldDt>0?(goldD<0?'#f0a06a':'#f6e58a'):'#e8cf4a');
   /* V1.12.2需求1：金币条角标——本笔增减浮在 HUD 面板最底一行（y=209~221，面板底 222）：
      上面 130/148/161/172/184 五行已被余额、战斗、击杀、套装、武器五行占满，200 行是 BOSS 套装徽章/提示。
@@ -6936,7 +7015,6 @@ function drawHUD(){
     C.fillStyle='rgba(8,10,6,.74)';rr(22,209,Math.min(232,C.measureText(s).width+12),12,5);C.fill();
     txt(s,28,215,11,goldD>0?'#8fd08f':'#e88a6a','left',null,true);
     C.restore();C.globalAlpha=1;}
-  const pc=bag.reduce(function(a,it){return a+(it&&it.slot==='pot'?(it.count||1):0);},0);
   icon('potion',108,130,18);txt('x'+pc+' [Q]',122,130,12,'#59e85a');
   txt('攻 '+atkTotal()+'  防 '+defTotal(),190,130,12,'#9adcfa');
   const kills=Object.keys(p.kills).reduce(function(a,k){return a+(p.kills[k]||0);},0);
@@ -7579,11 +7657,11 @@ function drawTouch(){
   if((touchMode||isTouch())&&!rotDone())drawRotBtn(ts);
   /* v1.4需求26：附近 NPC 时，左下自动弹出发光“谈”按钮（与 E 键同效） */
   if(touchMode&&talkTarget()!=null&&!pnlOn){
-    const pulse=1+Math.sin(t*.2)*.1;
+    const pulse=1+Math.sin(t*.2)*.1,B=talkBtn(); // V1.12.5附带修复①：与热区共用同一坐标
     C.save();C.shadowColor='#ffe14a';C.shadowBlur=16;
-    tdisc(TALK_B.x,TALK_B.y,TALK_B.r*pulse,'rgba(90,72,20,.85)','#ffe14a');C.restore();
-    txt('💬',TALK_B.x,TALK_B.y-2,22,'#fff8c8','center');
-    txt('交谈',TALK_B.x,TALK_B.y+TALK_B.r+9,10.5,'#ffe14a','center');
+    tdisc(B.x,B.y,B.r*pulse,'rgba(90,72,20,.85)','#ffe14a');C.restore();
+    txt('💬',B.x,B.y-2,22,'#fff8c8','center');
+    txt('交谈',B.x,B.y+B.r+9,10.5,'#ffe14a','center');
   }
   C.restore();
   if((touchMode||isTouch())&&rotHintOn())txt('🔄 建议横屏体验更佳，点击右上角按钮一键横屏全屏',LW/2,LH/2-40,17,'#e8cf4a','center');
@@ -7816,6 +7894,7 @@ function confirmCreate(){ // 创建面板确认→真正建角
   resetPlayer();
   p.name=nm;p.gender=gd;p.face={hat:fc.hat,face:fc.face,hair:fc.hair,top:fc.top,pants:fc.pants,shoe:fc.shoe};curSlot=slot;
   started=true;
+  armBackTrap(); // V1.12.5需求6：开局即布防返回手势
   try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
   bag[0]={slot:'pot',name:'治疗药水',t:0,bob:0,count:3};
   initWorld();
@@ -7934,15 +8013,23 @@ function drawStart(){
   if(creUI)drawCreate(); // 需求79：页面内创建面板盖在选档层上
 }
 
+/* ============ V1.12.5需求1：主循环兜底必须"兜得住"（自 master/V1.11.5 移植） ============
+   V1.11.1需求7 写的异常兜底本身有个致命笔误：`loopErrN=(loopErrN||0)+1` 给一个从未声明的
+   变量赋值。文件顶部是 "use strict"，严格模式下这会抛 ReferenceError——异常发生在 catch 块里，
+   于是 catch 自己再抛、函数直接退出，末尾那句 requestAnimationFrame(loop) 永远执行不到：
+   **只要有任何一帧出过一次异常，整个游戏就永久冻结**（实测 t 卡在异常那一帧不再自增）。
+   同理，catch 里的 glog() 若再抛也会冻结，所以日志一律走 safeLog 包一层。 */
+let loopErrN=0;
+function safeLog(cat,text,detail,lvl){try{glog(cat,text,detail,lvl);}catch(_){/* 日志本身绝不能拖垮主循环 */}}
 /* ============ 主循环 ============ */
 function loop(){
   t++;
-  try{gperf(performance.now?performance.now():Date.now());}catch(e){glog('err','gperf threw: '+e.message,null,'error');} // V1.11.1需求7：帧耗时采样
-  try{gselfCheck();}catch(e){glog('err','gselfCheck threw: '+e.message,null,'error');}
+  try{gperf(performance.now?performance.now():Date.now());}catch(e){safeLog('err','gperf threw: '+e.message,null,'error');} // V1.11.1需求7：帧耗时采样
+  try{gselfCheck();}catch(e){safeLog('err','gselfCheck threw: '+e.message,null,'error');}
   try{loopBody();}catch(e){ /* V1.11.1需求7：主循环兜底——异常必须被记录并上报一次，同时不让游戏黑屏冻结 */
-    glog('err','loop threw: '+((e&&e.message)||e),{stack:gstack(e)},'error');
-    loopErrN=(loopErrN||0)+1;if(loopErrN===1||loopErrN%120===0)msg('⚠ 运行异常已记录（第 '+loopErrN+' 次）——按 O 打开设置可导出日志 JSON','#ff8a6a');}
-  requestAnimationFrame(loop);
+    safeLog('err','loop threw: '+((e&&e.message)||e),{stack:gstack(e)},'error');
+    loopErrN++;if(loopErrN===1||loopErrN%120===0)msg('⚠ 运行异常已记录（第 '+loopErrN+' 次）——按 O 打开设置可导出日志 JSON','#ff8a6a');}
+  requestAnimationFrame(loop); // 无论上一帧是否异常，都必须续上下一帧
 }
 function loopBody(){
   updateClock(); // V1.9需求1/4：推十二时辰与天气轮换（面板暂停时时间照流，与祝福弹幕同构）
@@ -7971,6 +8058,7 @@ function greetMsgs(){
 }
 function start(){
   started=true;
+  armBackTrap(); // V1.12.5需求6：读档开局同样布防
   try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
   if(!bag.some(function(x){return x;}))bag[0]={slot:'pot',name:'治疗药水',t:0,bob:0,count:3};
   greetMsgs();
