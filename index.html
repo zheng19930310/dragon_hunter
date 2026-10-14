@@ -99,6 +99,14 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 const ri=(a,b)=>Math.floor(a+Math.random()*(b-a+1));
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const dist=(a,b,c,d)=>Math.hypot(c-a,d-b);
+/* V1.12.9性能2（用户原话“手机浏览器中CPU和内存消耗都挺大的，可以优化性能吗”）：
+   统一视口裁剪判定。旧版各 world 道具的剔除写法五花八门——摊位/民居是写死的整数带
+   （camX>4600||camX+LW<2760…），出生点 x≈3500 正好落在带中间，等于永不生效；
+   天使/村民/宝宝/宠物干脆没有裁剪，站着不动也每帧画满整套部件（实测空场景一帧
+   drawStalls 137 op、drawAngelNPC 93 op，而它们当时都在屏幕外）。
+   pad 是外扩余量：给投影、光晕、气泡、招幌这类超出锚点的部分留量，避免"边缘被切一半"。 */
+function onScreen(x,y,pad){pad=pad||0;return x>camX-pad&&x<camX+LW+pad&&y>camY-pad&&y<camY+LH+pad;}
+function onScreenR(x,y,w,h,pad){pad=pad||0;return x+w>camX-pad&&x<camX+LW+pad&&y+h>camY-pad&&y<camY+LH+pad;}
 const TAU=Math.PI*2;
 function angDiff(a,b){let d=a-b;while(d>Math.PI)d-=TAU;while(d<-Math.PI)d+=TAU;return d;}
 function pickW(w){let s=0;for(const x of w)s+=x;let r=Math.random()*s;for(let i=0;i<w.length;i++){r-=w[i];if(r<0)return i;}return 0;}
@@ -2910,9 +2918,11 @@ function drawEscort(){
   const inView=!(tz.x>camX+LW+800||tz.x+tz.w<camX-800||tz.y>camY+LH+800||tz.y+tz.h<camY-800);
   if(!inView)return;
   for(const g of GUARDS){const sk=g.sk;
+    if(!onScreen(g.x,g.y,80))continue; // V1.12.9性能2：四门守军分散在村镇四周，区域粗筛后还要逐个判
     drawSentinel(g,sk.k==='spear'?36:sk.k==='bolt'?208:sk.k==='smite'?48:24,sk.k==='spear'?0:sk.k==='bolt'?1:2,null);
     txt('🛡'+g.gate+'·'+sk.ic+sk.n,g.x,g.y-46,9.5,'rgba(226,216,180,.9)','center',null,true);}
   for(const e of PATROLS){const S=PSQUAD[e.qi];
+    if(!onScreen(e.x,e.y,80))continue;
     drawSentinel(e,e.mk===0?210:e.mk===1?30:120,e.mk%3,null);} // 同队三人分持枪/弩/盾， hue 与武器错开
   for(let q=0;q<PSQUAD.length;q++){const S=PATROLS.filter(function(e){return e.qi===q;}),c=squadCenter(S);
     const al=.55+.35*Math.sin(t*.05+q);
@@ -3466,8 +3476,12 @@ const STALLS=[
  {t:'wine',x:3438,y:2216,hue:45,flag:'酒'}];
 (function buildStalls(){for(const s of STALLS){const b={x:s.x-30,y:s.y+4,w:60,h:12,STALL:1};OBST.push(b);oadd(b);}})(); // 摊位柜台作为小障碍，队伍得绕——市井气
 function drawStalls(){ // 世界层：木架条纹雨棚+货摊+木箱陶罐+招幌幡旗（部件感）
-  if(camX>4600||camX+LW<2760||camY>3120||camY+LH<1620)return; // V1.11.1需求1：摊位重排后放宽视口剔除边界（仍为纯剔除判定，不参与玩法）
-  for(const s of STALLS){const x=s.x,y=s.y,wv=Math.sin(t*.06+s.x)*2;
+  /* V1.12.9性能2：旧的写死整数带（camX>4600||camX+LW<2760…）在出生点附近恒为"在屏内"，
+     等于没有裁剪——实测空场景每帧 137 个 canvas 操作全花在屏幕外的五个摊位上。
+     改成逐摊位判定，外扩 24；包围盒取部件实测极值：x∈[-44,+45]（木箱/陶罐）、y∈[-54,+18]（招幌顶/柜台底）。 */
+  for(const s of STALLS){
+    if(!onScreenR(s.x-44,s.y-54,89,72,24))continue;
+    const x=s.x,y=s.y,wv=Math.sin(t*.06+s.x)*2;
     C.fillStyle='rgba(0,0,0,.28)';C.beginPath();C.ellipse(x,y+16,40,7,0,0,7);C.fill(); // 地影
     C.fillStyle='#5a4326';C.fillRect(x-34,y-26,4,42);C.fillRect(x+30,y-26,4,42); // 支柱
     for(let i=0;i<6;i++){C.fillStyle=i%2?'hsl('+s.hue+',52%,58%)':'#f2ead8';C.fillRect(x-38+i*13,y-36+wv*(i%2?1:-1)*.4,13,10);} // 条纹雨棚
@@ -3518,8 +3532,10 @@ function updateBreak(){ // 每秒巡检：倒计时修复
     msg('🔨 工程队把落鸦村的房子重新修好了，顺手加了块「请勿捶墙」的牌子','#8fd08f');}
 }
 function drawBreakables(){ // 裂纹叠加层 + 废墟覆盖
-  if(camX>4500||camX+LW<2950||camY>3100||camY+LH<1700)return;
+  if(camX>4500||camX+LW<2950||camY>3100||camY+LH<1700)return; // V1.12.9性能2：整带粗筛先挡掉远处，下面再逐栋精判
   for(const b of DBREAK){
+    if(!b.broken&&!(b.dmg>0))continue; // 无伤无塌 = 什么都不画，先挡掉（省掉下面整段包围盒计算）
+    if(!onScreenR(b.x-10,b.y-30,b.w+20,b.h+70,20))continue; // 废墟向上冒 36px、铭牌再向上 10px
     if(b.broken){ // 废墟：断壁残垣+歪梁+瓦砾
       C.fillStyle='#4a4038';C.fillRect(b.x-5,b.y+b.h-30,b.w+10,34);
       C.fillStyle='#5a4a3a';for(let i=0;i<7;i++){const rx=b.x+6+hashStr('r'+i+b.x)%(Math.max(12,b.w-20)),ry=b.y+b.h-24+(i*13)%24;C.fillRect(rx,ry,9+i%3*5,5);}
@@ -4167,6 +4183,7 @@ function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方
   txt('勋章效果自动激活生效；击杀计数全程统计，无需重复接取已达标怪物',x+w/2,y+h-12,11,'#8a9a7a','center');
 }
 function drawAngelNPC(){ // 需求51/66：驻地任务交接人——具象化天使（光轮+羽冠+长发+宝袍+双层巨翼+星尘环绕）
+  if(!onScreen(ANGEL.x,ANGEL.y,120))return; // V1.12.9性能2：光轮半径 56 + 上下铭牌，外扩 120 足够
   const x=ANGEL.x,y=ANGEL.y+Math.sin(t*.045)*5; // 轻微悬浮呼吸感
   C.fillStyle='rgba(0,0,0,.22)';C.beginPath();C.ellipse(x,ANGEL.y+26,14,4,0,0,7);C.fill(); // 地面投影随悬浮缩小
   /* 背后圣光轮 */
@@ -6342,6 +6359,10 @@ function draw(){
   drawSceneryBack(); // v1.5.2需求6：山脉/河流/城墙本体/道具后层（人物 behind）
   // 地面掉落物（矢量图标+光柱）
   for(const it of items){ // 掉落：品质光柱（新13）+ 临期闪烁（Bug6/7）
+    /* V1.12.9性能2：一屏之外的掉落物不画。金装光柱向上伸 112px、光环半径 32px，外扩 150；
+       这条循环原本每颗都要 createRadialGradient/createLinearGradient，实测大战场一帧 393 个
+       渐变对象里有相当比例花在屏幕外，而渐变对象是每帧新建、立刻要被 GC 的——手机 GC 卡顿的主因之一。 */
+    if(!onScreen(it.x,it.y,150))continue;
     const by=it.y+Math.sin((t+it.bob*20)*.08)*3;
     const ttl=it.q!=null?7200:1800,late=it.t>ttl-600;
     if(late&&((t>>3)%4===0))continue;
@@ -6360,9 +6381,12 @@ function draw(){
     }
     icon(itemIcon(it),it.x,by-6,26);C.fillStyle='rgba(0,0,0,.3)';C.beginPath();C.ellipse(it.x,it.y+7,10,3,0,0,7);C.fill();
   }
-  for(const c of coins)icon('coin',c.x,c.y,15);
-  for(const c of clones)drawClone(c);
+  for(const c of coins){if(onScreen(c.x,c.y,40))icon('coin',c.x,c.y,15);}
+  for(const c of clones){if(onScreen(c.x,c.y,120))drawClone(c);}
   for(const m of mobs){ // 精英蓝光/BOSS红光：缩放+脉动光晕+名称标签（bug1-新7/8）
+      /* V1.12.9性能2：怪物同样先裁剪。mobAura 每只一个径向渐变、精英再叠符文环与名称标签，
+         60 只怪时这是全屏最大的一笔单项开销；屏幕外的怪没必要参与。外扩 120 覆盖光环与头顶血条/名牌。 */
+      if(!onScreen(m.x,m.y,120))continue;
       mobAura(m); // bug1-新33：所有怪物脚下霸气光环
       if(m.kind){const sc=m.kind===2?1.85:1.12,gcol=m.kind===2?'#ff3a2a':'#4aa8ff',gp=.35+.25*Math.sin(t*.1+m.id);
         C.save();C.translate(m.x,m.y);C.scale(sc,sc);C.translate(-m.x,-m.y);
@@ -6404,7 +6428,8 @@ function draw(){
     if(INST.on)drawInstWorld(); // v1.5需求1：副本平面/围墙/通道
   drawStalls();drawBreakables(); // v1.5.3需求18/19：商业摊位与建筑损伤态
   drawEscort(); // V1.11.1需求2/3：四门守军 + 近畿四支巡逻卫队
-  for(let i=0;i<NPCS.length;i++)drawVillager(NPCS[i],i); // 需求59：营地村民
+  for(let i=0;i<NPCS.length;i++){const n=NPCS[i]; // 需求59：营地村民
+    if(onScreen(n.x,n.y,90))drawVillager(n,i);} // V1.12.9性能2：立绘 ±30、名牌 y+32、气泡 y-64，外扩 90
   drawDigSpots();drawDigNPC(); // V1.11.2需求2：藏宝宝位与藏宝NPC
   drawPet(); // bug1-新41：拾取小精灵
   drawBossPet(); // v1.4需求6：四神兽宝宝宠物
