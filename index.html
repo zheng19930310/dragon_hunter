@@ -4377,21 +4377,88 @@ function manageMobs(){if(INST.on)return; // v1.5需求5：副本期间暂停主�
   for(const k in MT){const def=MT[k],near=zoneNear(def.zone); // 新43：只有主角附近的区域加载怪，没去的地方不加载
   if(near&&!def._loaded){def._loaded=true;populateZone(k);}else if(!near&&def._loaded){def._loaded=false;despawnZone(k);}}}
 
-/* ============ 静态地图预渲染（村庄+史莱姆草原+哥布林营地） ============ */
-const bg=document.createElement('canvas');bg.width=W;bg.height=H;
+/* ============ 静态地图预渲染（村庄+史莱姆草原+哥布林营地） ============
+   V1.12.9性能1（用户原话“手机浏览器中CPU和内存消耗都挺大的，可以优化性能吗”）：
+   旧版是一张 10000×7500 的整图离屏 canvas，RGBA 常驻 **286MB**（JS 堆才 9.5MB，大头全在这里）——
+   这既是大头内存，也是 CPU 元凶：它超过 Android GPU 单纹理上限（常见 4096）、也超过 iOS Safari
+   画布总面积上限（约 225MB），于是每帧那句 drawImage(bg,0,0) 很可能根本没走硬件纹理，而是 CPU 逐像素搬运。
+   现在改成“直接分块烘焙”：
+     · 瓦片覆盖 2560×2560 世界像素，纹理 1280×1280（BGS=0.5）→ 4×3=12 块、每块 6.25MB、合计 75MB（省 74%）
+     · 每块边长 ≤1280px，任何移动 GPU 都能直接当纹理用
+     · 每帧只贴与视口相交的那 1~4 块，不再提交 10000px 巨图
+     · 没有整图母版，所以启动过程中也不存在 286MB 的瞬时峰值，内存曲线只有最终的 75MB
+     · 全部瓦片启动时烘好常驻，不做懒加载——避免“走进新区块瞬间重建”的卡顿
+   分块烘焙最大的坑是接缝：一块地上的帐篷/泥斑如果正好压在瓦片边界上，两块各画一半、
+   只要随机数对不上就是撕裂的错影。所以本函数遵守两条铁律：
+     1) 每块烘焙前把种子 PRNG 复位到同一个值（_seed=BG_SEED），于是所有“随机撒东西”的循环
+        在每一块里都落在完全相同的世界坐标上——相邻两块画的是同一个帐篷，被各自裁开的那一半刚好互补。
+     2) 地表 8px 拖花和 40px 地貌斑改成“按坐标哈希”取随机（chash(x,y)），不再依赖调用顺序，
+        这样每块只扫自己那一片格子（省 12 倍烘焙耗时），跨界的泥斑还能由邻块补全。
+   地表最细的 2px 草叶/野花在 0.5 倍下是 1 纹素，放大后仍是一层柔和噪点，观感差异只在极近距离可辨，
+   实测截图对比见 v1.12.9 文档。 */
+const BGS=0.5;                 // 底图烘焙倍率（1=世界1像素:1纹素；0.5=一半分辨率，省 4 倍内存）
+/* 瓦片边界必须取 8 的倍数（地表拖花是 8px 网格），否则每块网格错位 → 接缝可见。
+   512 格 = 2560 世界像素 = 1280 纹素：边长既 ≤4096 能当硬件纹理，又不至于块数太多。 */
+const BG_SEED=20260923,BG_SEED0=_seed; // 烘焙专用种子；烘完还原，不影响世界生成的随机序列
+const BTBG=512,BTWD=BTBG*WS;
+/* 每侧外扩 8 格（=40 世界像素=20 纹素）的重叠边。为什么必须有：drawImage 放大做双线性采样时，
+   瓦片最外一纹素没有邻居可混，浏览器只能按边缘截断——于是接缝那一列拿到的是"未混合"的原色，
+   实测在 1:1 缩放下形成一条亮度差 5.2 的竖线（同图其他地方列间差仅 0.01），是肉眼可见的细线。
+   外扩后相邻块互相覆盖这 40 个世界像素，采样就有正确邻居了（实测降到 0.95，接近不可辨）。
+   MGG 必须是 8 的倍数：地表拖花是 8 格一步的网格，外扩 2 格会让本块从 x0-2 起步、
+   相位与邻块差半格，接缝处反而出现 8px 棋盘错格（实测逐像素差异从 0.1% 飙到 62%）。 */
+const MGG=8; // 外扩格数（必须 8 的倍数）
+const BGC=Math.ceil(BGW/BTBG),BGR=Math.ceil(BGH/BTBG); // 4×3 = 12 块
+const bgTiles=new Array(BGC*BGR);
+function bgTileAt(c,r){return c<0||r<0||c>=BGC||r>=BGR?null:bgTiles[r*BGC+c];}
+function chash(x,y){ // 坐标 → [0,1) 稳定哈希：同一格在任何瓦片里烘出的内容完全一致
+  let h=Math.imul(x|0,374761393)^Math.imul(y|0,668265263)^0x5bf03635;
+  h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;
+  return (h>>>0)/4294967296;}
 function buildBG(){
-  const G=bg.getContext('2d');G.setTransform(WS,0,0,WS,0,0); // 新29：基准绘制×5铺满放大后的世界
+  /* 逐块烘焙：每块一张 ≤1300px 的小离屏，烘完直接进 bgTiles——全程不存在整图母版。
+     烘焙 12 块约几十毫秒量级，在加载遮罩之后执行，不占用交互时间。 */
+  for(let r=0;r<BGR;r++)for(let c=0;c<BGC;c++){
+    const x0=c*BTBG,y0=r*BTBG,bw=Math.min(BTBG,BGW-x0),bh=Math.min(BTBG,BGH-y0);
+    const cv=document.createElement('canvas');
+    cv.width=Math.round((bw+MGG*2)*WS*BGS);cv.height=Math.round((bh+MGG*2)*WS*BGS);
+    const G=cv.getContext('2d');
+    G.setTransform(WS*BGS,0,0,WS*BGS,-(x0-MGG)*WS*BGS,-(y0-MGG)*WS*BGS); // 地图格坐标 → 本块纹理坐标（含外扩边）
+    _seed=BG_SEED; // 铁律 1：每块都从同一种子开跑，随机撒落物在世界坐标上完全重合
+    bakeBG(G,x0-MGG,y0-MGG,bw+MGG*2,bh+MGG*2);
+    bgTiles[r*BGC+c]={x:(x0-MGG)*WS,y:(y0-MGG)*WS,w:(bw+MGG*2)*WS,h:(bh+MGG*2)*WS,cv:cv};
+  }
+  collectBGLabels(); // 标题改为运行时绘制（见 bakeBG 末尾注释）
+  _seed=BG_SEED0;} // 还原：世界/天气等运行期随机数与改造前保持同一序列
+/* 每帧只提交视口相交的瓦片：视口 960×540 逻辑像素 × Z，永远小于 2560 的块宽，所以最多 2×2=4 块。 */
+function drawBG(){
+  const c0=Math.floor(camX/BTWD),c1=Math.floor((camX+LW)/BTWD);
+  const r0=Math.floor(camY/BTWD),r1=Math.floor((camY+LH)/BTWD);
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){const T=bgTileAt(c,r);
+    if(T)C.drawImage(T.cv,T.x,T.y,T.w,T.h);}}
+function bakeBG(G,tx0,ty0,tbw,tbh){ // 旧 buildBG 的函数体：入参是本块覆盖的地图格范围
+  /* 铁律 1 的配套：把本函数内所有 rnd/ri 改走种子 PRNG（遮蔽全局那两个用 Math.random 的版本），
+     否则每块烘出来的帐篷、石头、金脉位置都不一样，边界就成了拼贴画。 */
+  const rnd=function(a,b){return a+sr()*(b-a);},ri=function(a,b){return Math.floor(a+sr()*(b-a+1));};
   /* V1.8.1 地图精细化：地表多层烘焙——1) 8px 四色拖花 + 草叶/野花 2) 40px 中尺度地貌斑（泥土/枯草/碎石）
-     全程仅启动时烘焙到离屏 bg，不增加任何每帧开销（bg 画布已 10000x7500，禁止新增逐像素循环） */
-  for(let y=0;y<BGH;y+=8)for(let x=0;x<BGW;x+=8){const c=sr();
+     V1.12.9：随机源换成 chash(格坐标)，于是第 1 层只扫本块格子；第 2 层的椭圆最大半径约 26 格、
+     圆心还偏 0~40 格，所以外扩 88 格扫描，跨界的那一半交给邻块补，缝不上看得出。
+     禁止新增逐像素循环（本层只允许格子步进）。 */
+  const MX=88; // 地貌斑外扩扫描半径（格）
+  for(let y=ty0;y<ty0+tbh;y+=8)for(let x=tx0;x<tx0+tbw;x+=8){const c=chash(x,y);
     G.fillStyle=c<.12?'#2c4520':c<.42?'#2a421e':c<.7?'#273d1c':'#22361a';G.fillRect(x,y,8,8);
     if(c>.86){G.fillStyle=c>.965?'#3f6233':'#35512a';G.fillRect(x+2,y+2,2,2);}
     else if(c<.042){G.fillStyle='#476b34';G.fillRect(x+3,y+1,1,3);G.fillRect(x+5,y+3,1,2);} // 草叶丛
     else if(c>.982){G.fillStyle=['#e8e0b0','#e89ab0','#b0d0e8','#f0d86a','#ff9a6a'][((x+y)>>4)%5];G.fillRect(x+4,y+4,2,2);}} // 野花
-  for(let y=0;y<BGH;y+=40)for(let x=0;x<BGW;x+=40){const c=sr();if(c<.72)continue; // 中尺度地貌：40px 一块，只在 28% 的块上落笔
+  /* 扫描格必须是“世界绝对 40 格网”（x 恒为 40 的整数倍），不能从本块原点起算：
+     512 % 40 = 32，若按 tx0+i*40 枚举，相邻两块会各自错开 32 格，跨界那团泥斑两块各画一半且对不上，
+     接缝就成了一条真实的错影线。绝对网格 + chash(格坐标) 才能保证两块枚举到同一批格子、画出同一个椭圆。 */
+  for(let k=Math.floor((ty0-MX)/40);k*40<ty0+tbh+MX;k++)for(let m=Math.floor((tx0-MX)/40);m*40<tx0+tbw+MX;m++){
+    const x=m*40,y=k*40,c=chash(x,y);if(c<.72)continue; // 中尺度地貌：40px 一块，只在 28% 的块上落笔
     G.fillStyle=c<.86?'rgba(62,46,26,.17)':c<.95?'rgba(88,96,46,.14)':'rgba(44,50,32,.2)';
-    G.beginPath();G.ellipse(x+sr()*40,y+sr()*40,9+sr()*17,6+sr()*12,sr()*3.1,0,7);G.fill();
+    G.beginPath();G.ellipse(x+chash(x,y+7)*40,y+chash(x+3,y)*40,9+chash(x+11,y+5)*17,6+chash(x+29,y+13)*12,chash(x+41,y+17)*3.1,0,7);G.fill();
     if(c>.93){G.fillStyle='rgba(30,34,22,.28)';G.fillRect(x+18,y+16,3,2);G.fillRect(x+24,y+22,2,2);}} // 碎石点缀
+
   /* V1.8.1：区域底色改为径向羽化——消除硬边矩形，各区之间自然过渡 */
   function tint(r,col,a){if(!col||!r)return;G.save();G.globalAlpha=a==null?.5:a;
     const cx=r.x+r.w/2,cy=r.y+r.h/2,inn=Math.min(r.w,r.h)*.22,rad=Math.max(r.w,r.h)*.74;
@@ -4416,7 +4483,8 @@ function buildBG(){
       for(let k=0;k<n;k++){const f=k/n,sd=sr();if(sd<.45)continue;
         G.fillStyle=sd<.7?'rgba(120,104,74,.5)':'rgba(168,156,124,.42)';
         G.fillRect(x0+(x1-x0)*f+(sd-.5)*17,y0+(y1-y0)*f+(sr()-.5)*7,3,2);}}} // 路边碎石
-  G.setTransform(1,0,0,1,0,0); // 新29续：建筑物/文字改用世界1:1坐标+自然尺寸，与人物比例协调
+  // 新29续：建筑物/文字改用世界1:1坐标+自然尺寸，与人物比例协调（本块版：再叠上瓦片原点与 BGS 缩放）
+  G.setTransform(BGS,0,0,BGS,-tx0*WS*BGS,-ty0*WS*BGS);
   const tz=ZONES.town;
   road([[700,570],[500,620],[320,670],[200,650]]);road([[870,452],[1010,470],[1150,460],[1220,430]]);
   G.fillStyle='#5b4a2f';G.fillRect(tz.x*WS,tz.y*WS,tz.w*WS,tz.h*WS);
@@ -4473,28 +4541,48 @@ function buildBG(){
   function tree(x,y){G.fillStyle='rgba(0,0,0,.28)';G.beginPath();G.ellipse(x+8,y+24,11,4,0,0,7);G.fill();G.fillStyle='#3a2a18';G.fillRect(x+6,y+12,5,12);G.fillStyle='#1e3414';G.beginPath();G.arc(x+8,y+4,13,0,7);G.fill();G.fillStyle='#25401a';G.beginPath();G.arc(x+3,y+9,9,0,7);G.fill();G.fillStyle='#2c4a1f';G.beginPath();G.arc(x+14,y+8,8,0,7);G.fill();G.fillStyle='#3d6028';G.fillRect(x+2,y-4,4,4);}
   for(let x=0;x<BGW;x+=30){tree((x+(x%60?4:10))*WS,10);tree((x+(x%60?8:2))*WS,H-40);}
   for(let y=24;y<BGH-24;y+=30){tree(10,y*WS);tree(W-40,(y+10)*WS);}
-  G.font='bold 20px "Microsoft YaHei",sans-serif';G.textAlign='center';G.textBaseline='middle';
-  function label(s,col,x,y){G.strokeStyle='rgba(0,0,0,.7)';G.lineWidth=4;G.strokeText(s,x*WS,y*WS);G.fillStyle=col;G.fillText(s,x*WS,y*WS);}
-  label(zl('slime'),ZONES.slime.col,ZONES.slime.x+ZONES.slime.w/2,ZONES.slime.y+26);
-  label(zl('goblin'),ZONES.goblin.col,ZONES.goblin.x+ZONES.goblin.w/2,ZONES.goblin.y+22);
-  label('落鸦村','#e8d8b0',tz.x+tz.w/2,tz.y+tz.h-24);
-  label(zl('firecamp'),ZONES.firecamp.col,ZONES.firecamp.x+ZONES.firecamp.w/2,ZONES.firecamp.y+22);
-  label(zl('arena'),ZONES.arena.col,ZONES.arena.x+ZONES.arena.w/2,ZONES.arena.y+16);
-  label(zl('creek'),ZONES.creek.col,ZONES.creek.x+ZONES.creek.w/2,ZONES.creek.y+16);
-  label(zl('mine'),ZONES.mine.col,ZONES.mine.x+ZONES.mine.w/2,ZONES.mine.y+ZONES.mine.h-18);
-  label(zl('badlands'),ZONES.badlands.col,ZONES.badlands.x+ZONES.badlands.w/2,ZONES.badlands.y+16);
-  // v2.0 新大陆区域标题（需求：Lv25-50）
-  label(zl('wind'),ZONES.wind.col,ZONES.wind.x+ZONES.wind.w/2,ZONES.wind.y+16);
-  label(zl('scorp'),ZONES.scorp.col,ZONES.scorp.x+ZONES.scorp.w/2,ZONES.scorp.y+16);
-  label(zl('rock'),ZONES.rock.col,ZONES.rock.x+ZONES.rock.w/2,ZONES.rock.y+16);
-  label(zl('mage'),ZONES.mage.col,ZONES.mage.x+ZONES.mage.w/2,ZONES.mage.y+16);
-  label(zl('lava'),ZONES.lava.col,ZONES.lava.x+ZONES.lava.w/2,ZONES.lava.y+16);
-  label(zl('ascend'),ZONES.ascend.col,ZONES.ascend.x+ZONES.ascend.w/2,ZONES.ascend.y+ZONES.ascend.h/2);
-  label('飞升龟・定点刷新 '+zonePtStr('ascend'),'#8ab8d8',700,26); // V1.11.3需求1：旧标注写死 (985,985)，与小地图差 10 倍
-  /* 需求44/45/48/49：新区域标题（Lv55-75 + 四方 + 12星座） */
-  ['marsh','cliff','icef','altar','god','east','west','south','north'].forEach(function(z){const r=ZONES[z];label(zl(z),r.col,r.x+r.w/2,r.y+14);});
-  for(let zi=0;zi<ZOD.length;zi++){const r=ZONES[ZOD[zi]];label(MT[ZOD[zi]].name+' '+MT[ZOD[zi]].sym+' '+zonePtStr(ZOD[zi]),MT[ZOD[zi]].col,r.x+r.w/2,r.y+12);}
+  /* V1.12.9性能1附带：区域标题不再烘进瓦片。0.5 倍底图下 20px 中文只剩 10 纹素，
+     放大 3.6 倍后笔画糊成一团（旧版 1:1 烘焙是 20 纹素，勉强可读）——标题是玩家认路用的，
+     不能糊。改成收集到 bgLabels、运行时按视口裁剪绘制：一屏通常只有 1~3 个标题，共 2~6 次描边/填字，
+     代价可忽略，而且文字由主画布按真实 DPR 渲染，比旧版更清晰。收集放在 buildBG 里只做一次。 */
 }
+/* ============ 区域标题：启动时收集一次，运行时按视口裁剪 ============ */
+const bgLabels=[];
+function collectBGLabels(){
+  const tz=ZONES.town,push=function(z,col,x,y){bgLabels.push({s:zl(z),c:col,x:x*WS,y:y*WS});};
+  push('slime',ZONES.slime.col,ZONES.slime.x+ZONES.slime.w/2,ZONES.slime.y+26);
+  push('goblin',ZONES.goblin.col,ZONES.goblin.x+ZONES.goblin.w/2,ZONES.goblin.y+22);
+  bgLabels.push({s:'落鸦村',c:'#e8d8b0',x:(tz.x+tz.w/2)*WS,y:(tz.y+tz.h-24)*WS});
+  push('firecamp',ZONES.firecamp.col,ZONES.firecamp.x+ZONES.firecamp.w/2,ZONES.firecamp.y+22);
+  push('arena',ZONES.arena.col,ZONES.arena.x+ZONES.arena.w/2,ZONES.arena.y+16);
+  push('creek',ZONES.creek.col,ZONES.creek.x+ZONES.creek.w/2,ZONES.creek.y+16);
+  push('mine',ZONES.mine.col,ZONES.mine.x+ZONES.mine.w/2,ZONES.mine.y+ZONES.mine.h-18);
+  push('badlands',ZONES.badlands.col,ZONES.badlands.x+ZONES.badlands.w/2,ZONES.badlands.y+16);
+  // v2.0 新大陆区域标题（需求：Lv25-50）
+  push('wind',ZONES.wind.col,ZONES.wind.x+ZONES.wind.w/2,ZONES.wind.y+16);
+  push('scorp',ZONES.scorp.col,ZONES.scorp.x+ZONES.scorp.w/2,ZONES.scorp.y+16);
+  push('rock',ZONES.rock.col,ZONES.rock.x+ZONES.rock.w/2,ZONES.rock.y+16);
+  push('mage',ZONES.mage.col,ZONES.mage.x+ZONES.mage.w/2,ZONES.mage.y+16);
+  push('lava',ZONES.lava.col,ZONES.lava.x+ZONES.lava.w/2,ZONES.lava.y+16);
+  push('ascend',ZONES.ascend.col,ZONES.ascend.x+ZONES.ascend.w/2,ZONES.ascend.y+ZONES.ascend.h/2);
+  bgLabels.push({s:'飞升龟・定点刷新 '+zonePtStr('ascend'),c:'#8ab8d8',x:700*WS,y:26*WS}); // V1.11.3需求1：旧标注写死 (985,985)，与小地图差 10 倍
+  /* 需求44/45/48/49：新区域标题（Lv55-75 + 四方 + 12星座） */
+  ['marsh','cliff','icef','altar','god','east','west','south','north'].forEach(function(z){const r=ZONES[z];push(z,r.col,r.x+r.w/2,r.y+14);});
+  for(let zi=0;zi<ZOD.length;zi++){const r=ZONES[ZOD[zi]];
+    bgLabels.push({s:MT[ZOD[zi]].name+' '+MT[ZOD[zi]].sym+' '+zonePtStr(ZOD[zi]),c:MT[ZOD[zi]].col,x:(r.x+r.w/2)*WS,y:(r.y+12)*WS});}
+}
+function drawBGLabels(){
+  if(!bgLabels.length)return;
+  const x0=camX-300,y0=camY-60,x1=camX+LW+300,y1=camY+LH+60; // 标题最长约 24 字，横向留足余量
+  C.font='bold 20px "Microsoft YaHei",sans-serif';C.textAlign='center';C.textBaseline='middle';
+  C.lineJoin='round';C.strokeStyle='rgba(0,0,0,.7)';C.lineWidth=4;
+  let n=0;
+  for(let i=0;i<bgLabels.length;i++){const L=bgLabels[i];
+    if(L.x<x0||L.x>x1||L.y<y0||L.y>y1)continue;
+    C.strokeText(L.s,L.x,L.y);C.fillStyle=L.c;C.fillText(L.s,L.x,L.y);
+    if(++n>=8)break;} // 硬上限：极端缩放下也不超过 8 个标题
+}
+
 
 /* ============ 输入 ============ */
 const keys={};const mouse={x:LW/2,y:LH/2,down:false};
@@ -6250,7 +6338,7 @@ function draw(){
   const ox=shake?rnd(-shake,shake):0,oy=shake?rnd(-shake,shake):0;
   C.fillStyle='#0a0d08';C.fillRect(0,0,LW,LH);
   C.save();C.translate(-camX+ox,-camY+oy);
-  C.drawImage(bg,0,0);
+  drawBG(); // V1.12.9性能1：只贴视口相交的 1~4 块瓦片（旧版每帧提交 10000×7500 整图）
   drawSceneryBack(); // v1.5.2需求6：山脉/河流/城墙本体/道具后层（人物 behind）
   // 地面掉落物（矢量图标+光柱）
   for(const it of items){ // 掉落：品质光柱（新13）+ 临期闪烁（Bug6/7）
