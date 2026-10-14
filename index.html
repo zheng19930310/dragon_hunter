@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.8</title>
+<title>降龙猎手 · 五行觉醒 V1.12.9</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -43,7 +43,17 @@ const VIEW=document.getElementById('game');
 const C=VIEW.getContext('2d');
 let Z=1,DPR=1;
 let forceRot=0; // v1.4需求31：CSS 强制旋转标志（当 OS 不支持方向锁时兼容）
+/* V1.12.9性能5：省电模式开关（用户原话“手机浏览器中CPU和内存消耗都挺大的，可以优化性能吗”）。
+   状态存在 p.set.lp 里随存档走，但本函数在 p 声明之前就会被 resize() 调用（const p 有暂时性死区，
+   直接读 p 会抛 ReferenceError），所以用 try/catch 兜住——取不到就按"关"处理，正是启动时的正确值。 */
+const PART_MAX=260;
+function lpOn(){try{return !!(p&&p.set&&p.set.lp);}catch(e){return false;}}
+
 function resize(){DPR=window.devicePixelRatio||1;
+  /* V1.12.9性能5：省电模式把渲染分辨率压到 2 倍 DPR 上限。手机 DPR 常为 3，
+     画布从 2080×1170 降到 1387×780，光栅化像素直接少 57%——这是所有手段里对 GPU 和发热最猛的一刀。
+     代价是文字/线条略糊，所以做成玩家可自己选的开关，不默认开。 */
+  if(lpOn()&&DPR>2)DPR=2;
   if(forceRot){ // 竖屏下“伪横屏”：元素未旋转时 LW*Z 宽 × LH*Z 高，旋转后视觉 = LH*Z 宽 × LW*Z 高；需 LH*Z≤innerWidth & LW*Z≤innerHeight
     Z=Math.min(innerWidth/LH,innerHeight/LW);
     VIEW.style.width=(LW*Z)+'px';VIEW.style.height=(LH*Z)+'px';
@@ -1434,6 +1444,15 @@ function setTog(k,lab){p.set[k]=p.set[k]?0:1;sfx(p.set[k]?880:420,.07,'square',.
 function setDens(v){p.set.bd=v;sfx(700+v*90,.07,'triangle',.03);msg('🎐 祝福弹幕密度：'+BLESS_DENS[v]+'——击杀即放 '+['少','中','多'][v],'#ff9ad5');blessFire(v+1);doSave(true);}
 function setVol(k,lab,v){p.set[k]=v;sfx(k==='sv'?120+v*180:660+v*60,.07,'triangle',.03);
   msg('🎚 '+lab+'：'+v+'/5','#8fd08f');doSave(true);}
+/* V1.12.9性能5：省电模式。三处开销一起降——
+   ① DPR 上限压到 2（手机 3 倍屏时画布光栅像素少 57%，对 GPU/发热最直接）；
+   ② 粒子上限 260 → 120（updateFx 里裁剪）；
+   ③ 关掉区域天气与环境浮尘两层全屏叠加（实测这两层占满屏填充的一半以上）。
+   开关要立刻生效，所以必须重跑 resize()——画布尺寸只有那里会改。 */
+function setLP(){p.set.lp=p.set.lp?0:1;resize();
+  sfx(p.set.lp?520:880,.09,'triangle',.04);
+  msg('🔋 省电模式：'+(p.set.lp?'已开启（分辨率上限 2×、粒子减半、关闭天气与浮尘）':'已关闭（恢复原始分辨率与全部特效）'),p.set.lp?'#8fd08f':'#e8c86a');
+  doSave(true);}
 function blessTest(){if(!p.set.bless){p.set.bless=1;msg('🧧 已顺手打开祝福播报总开关','#8fd08f');}blessFire(3);sfx(1046,.09,'triangle',.04);}
 function blessReset(){blessInit();p.bless={q:blessNewQ(),done:0,r:p.bless.r};blessFly.length=0;blessP.length=0;
   msg('↺ 本轮祝福词库已重洗（'+BLESS_TOTAL+' 条待播）','#e8c86a');sfx(520,.1,'square',.04);}
@@ -1460,8 +1479,14 @@ function drawSetPanel(){
   txt('🎐 祝福弹幕密度（击杀一次放几条）',px+18,py+322,12.5,'#ff9ad5');
   BLESS_DENS.forEach(function(dn,i){btn(px+18+i*100,py+334,92,24,dn+(p.set.bd===i?' ●':''),(function(v){return function(){setDens(v);};})(i),p.set.bd===i?'#8a2a2a':'#3a3226');});
   txt(['普怪 20%·精英 1·BOSS 2','普怪 50%·精英 2·BOSS 4','普怪 100%·精英 3·BOSS 6'][Math.max(0,Math.min(2,p.set.bd|0))],px+18,py+368,10,'#8a9a7a',null,'400',true);
+  /* V1.12.9性能5：省电模式（左栏最下方一行，密度说明与提示文字之间的空档） */
+  {const yy=py+382,on=!!p.set.lp;
+    C.fillStyle='rgba(0,0,0,.2)';C.fillRect(px+12,yy-11,308,23);
+    txt('🔋 省电模式',px+18,yy,11,'#e8e0c0');
+    txt('降分辨率·减粒子·关特效',px+104,yy,9,'#8a9a7a',null,'400',true);
+    btn(px+238,yy-11,74,22,on?'✅ 开启':'⭕ 关闭',setLP,on?'#2a5a4a':'#3a3a2a');}
   const TIP=['🏮 词库 6 类 '+BLESS_TOTAL+' 条：财运·幸福·事业·学业·安康·好运','一条弹幕一个好词，击杀即放出，屏幕中上部播出','全部播完且弹幕飞尽 → 即时成就【福满乾坤】','到营地天使处按 E 交接，可分三档点亮长效增益','不想看弹幕？上方把祝福播报关掉即可'];
-  TIP.forEach(function(L,i){txt(L,px+18,py+392+i*18,10,i===2?'#ffd700':'#8a9a7a',null,i===2?'700':'400',true);});
+  TIP.forEach(function(L,i){txt(L,px+18,py+404+i*16,10,i===2?'#ffd700':'#8a9a7a',null,i===2?'700':'400',true);});
   /* 右侧：本轮祝福进度卡与实用按钮 */
   const cx3=px+336,cw3=pw-362;
   rr(cx3-8,py+42,cw3+16,ph-104,8);C.fillStyle='rgba(64,8,8,.55)';C.fill();C.strokeStyle='#8a5a2a';C.lineWidth=1.5;C.stroke();
@@ -2269,7 +2294,7 @@ const p={x:3500,y:2260,hp:100,mp:50,lvl:1,exp:0,gold:0,aim:0,cool:0,inv:0,flash:
   equip:{mweap:null,sweap:null,hat:null,top:null,pants:null,boots:null,acc:null,neck:null},
   slots:[0,8,4,11],skcd:[0,0,0,0],skLvl:{},skUse:{},store:{},ek:{},ekN:{},bagRows:10,qs:[],qa:{},qv:0,main:0,encN:0, // 需求50/70：qs=进行中任务列表(≤10)、qa=成就位图、qv=已交付数、encN=已发大鼓励次数；V1.11.2：ek=召BOSS倒计时（每 20 归零）、ekN=精英累计净击杀（主线判定的唯一依据，只增不减）
   autoSell:{eq:false,wp:false,pot:false,book:false,mat:false},colEq:0,colMat:{},ach2:{enhOk:0,drillOk:0,skLvlMax:0,morphN:0,petLvl:0,towerMax:0,towerKills:0,towerAch:0,mazeK:0,mazeEx:0,petKill:0,mountN:0,blessR:0},morphUsed:{}, // 需求76：自动售卖开关；需求77：装备/材料收集计数；v1.4需求27/28：ach2=五大系统联动成就计数；v1.5需求3/4：tower*=爬塔进度；V1.6/V1.7：mazeK/mazeEx/petKill/mountN；V1.8：blessR=祝福大典圆成轮数
-  set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度
+  set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度；V1.12.9性能5：lp=省电模式（默认关）
   mounts:{un:{},sel:''},mr:false, // V1.7：un=已解锁坐骑、sel=当前坐骑、mr=野外自由乘骑旗标
   pets:[null,null,null,null], // v1.4需求21：同时携带4个宝宝（兼容旧 p.pet 单人档）
   kills:{slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0}};
@@ -2480,7 +2505,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.8';
+const GLOG_MAX=600,GLOG_VER='1.12.9';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -6353,6 +6378,13 @@ function learnOrUpSkill(i){ // 需求3-8/14：技能书叠加升级，学/升Lv�
 function updateFx(){
   for(let i=sched.length-1;i>=0;i--){const s=sched[i];if(s.t>0){s.t--;continue;}s.f();sched.splice(i,1);}
   for(let i=parts.length-1;i>=0;i--){const q=parts[i];q.x+=q.vx;q.y+=q.vy;q.vy+=.12;if(--q.t<=0)parts.splice(i,1);}
+  /* V1.12.9性能4（用户原话“手机浏览器中CPU和内存消耗都挺大的，可以优化性能吗”）：粒子总量闸门。
+     粒子本身不分配内存（对象池没有，但每个只有 7 个字段），问题在"同时存活数"：
+     一场混战里 burst/尾焰/升级礼花可以叠到四五百个，每个至少 1 次 fillRect 或 arc+fill，
+     而且它们互相覆盖，是全屏 overdraw 的主要来源。超限时从最老的开始丢——最老的那批本来也快到寿、
+     透明度已经很低，丢掉最不显眼，比丢新出现的（玩家正在等的那个反馈）好。 */
+  const pmax=lpOn()?120:PART_MAX;
+  if(parts.length>pmax)parts.splice(0,parts.length-pmax);
   for(let i=floats.length-1;i>=0;i--){const f=floats[i];f.y+=f.vy;if(--f.t<=0)floats.splice(i,1);}
   if(goldDt>0)goldDt--; // V1.12.2需求1：金币角标的存活帧（归零即不再画）
   for(let i=msgs.length-1;i>=0;i--){if(--msgs[i].t<=0)msgs.splice(i,1);}
@@ -6395,9 +6427,17 @@ function draw(){
   refreshGait(); // V1.12.8需求8：每帧先刷一次坐骑步态快照，坐骑本体/鞍点/骑手腿共用同一份
   camX=clamp(p.x-LW/2,0,W-LW);camY=clamp(p.y-LH/2,0,H-LH);
   const ox=shake?rnd(-shake,shake):0,oy=shake?rnd(-shake,shake):0;
-  C.fillStyle='#0a0d08';C.fillRect(0,0,LW,LH);
+  /* V1.12.9性能4：这一句"先铺满底色"在 286MB 整图时代是必需的（整图 blit 前留个黑底防透），
+     现在底图是 12 块带 8 格外扩边的瓦片，相机被 clamp 在世界内，视口永远被完整覆盖——
+     这一笔就成了纯浪费的全屏填充（手机 2080×1170 设备像素，每帧多写 9.7MB 带宽）。
+     只有震屏会让 translate 偏移、边缘露出一条上一帧残影，所以只在 shake 时铺底。 */
+  if(shake){C.fillStyle='#0a0d08';C.fillRect(0,0,LW,LH);}
   C.save();C.translate(-camX+ox,-camY+oy);
   drawBG(); // V1.12.9性能1：只贴视口相交的 1~4 块瓦片（旧版每帧提交 10000×7500 整图）
+  /* V1.12.9性能1：区域标题从烘焙底图里搬出来，改成运行时绘制。
+     原因是瓦片按 BGS=0.5 半分辨率烘焙，20px 的中文字只有 10 个纹素，糊成一团；
+     运行时文字走真实 DPR，反而比优化前更清晰。这一句同时补上了 P1 漏掉的调用。 */
+  drawBGLabels();
   drawSceneryBack(); // v1.5.2需求6：山脉/河流/城墙本体/道具后层（人物 behind）
   // 地面掉落物（矢量图标+光柱）
   for(const it of items){ // 掉落：品质光柱（新13）+ 临期闪烁（Bug6/7）
@@ -6476,7 +6516,11 @@ function draw(){
   drawBossPet(); // v1.4需求6：四神兽宝宝宠物
   drawBaseArrays();drawBima(); // V1.6需求1/3：基地两座传送阵；V1.7需求1：弼马温
   drawHorseStand(); // v1.5.2需求9：营地马桩
-  drawSceneryFront();drawWeather();drawAmbient(); // v1.5.2需求6：墙冠/树冠遮挡层 + 区域天气 + V1.8.1 环境浮尘
+  drawSceneryFront(); // v1.5.2需求6：墙冠/树冠遮挡层
+  /* V1.12.9性能5：省电模式关掉这两层全屏叠加。实测这两层贡献了近一屏的满屏填充
+     （天气每区一层全屏色块 + 几十个小矩形，浮尘一层 15~26 个 40px 光点），
+     关掉后视口填充量从 5.02 屏降到约 4.0 屏，观感只少了飘雪/飞灰，不影响玩法。 */
+  if(!lpOn()){drawWeather();drawAmbient();}
   // 伤害数字（高清描边）
   for(const f of floats){C.globalAlpha=Math.min(1,f.t/25);txt(f.txt,f.x,f.y,15,f.col,'center');C.globalAlpha=1;}
   C.restore();
@@ -8505,7 +8549,7 @@ function doLoad(quiet,slot){
   /* V1.6/V1.7：四条新成就线计数 + 坐骑图鉴读档（旧档自动补零） */
   for(const ak of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[ak]=(q.ach2&&q.ach2[ak])|0;
   /* V1.8需求1/2：播报设置读档（旧档一律默认全开）；祝福轮次进度非法/缺失则重开一轮 */
-  p.set=q.set?{kN:q.set.kN|0,kE:q.set.kE|0,kB:q.set.kB|0,drop:q.set.drop|0,bless:q.set.bless|0,bd:q.set.bd|0,mus:q.set.mus==null?1:q.set.mus|0,mv:q.set.mv|0||3,sv:q.set.sv|0||5,asfx:q.set.asfx==null?1:q.set.asfx|0}:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1};
+  p.set=q.set?{kN:q.set.kN|0,kE:q.set.kE|0,kB:q.set.kB|0,drop:q.set.drop|0,bless:q.set.bless|0,bd:q.set.bd|0,mus:q.set.mus==null?1:q.set.mus|0,mv:q.set.mv|0||3,sv:q.set.sv|0||5,asfx:q.set.asfx==null?1:q.set.asfx|0,lp:q.set.lp|0}:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0};
   if(q.set&&q.set.kN==null&&!q.set.kE&&!q.set.kB&&!q.set.drop&&!q.set.bless)p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1}; // 全零旧档回退默认（避免读不到字段的误关机）
   p.bless=q.bless&&Array.isArray(q.bless.q)?{q:q.bless.q.slice(0),done:q.bless.done|0,r:q.bless.r|0}:null;
   blessInit();blessFly.length=0;blessP.length=0;
@@ -8513,6 +8557,9 @@ function doLoad(quiet,slot){
   if(!p.mounts.un[p.mounts.sel])p.mounts.sel=Object.keys(p.mounts.un)[0]||'';
   p.mr=false;
   p.dores=q.dores|0; // V1.12.8需求9：世界尽头探索次数读档（旧档无字段=0 次）
+  /* V1.12.9性能5：读档时若存档带着省电模式，必须补一次 resize()——
+     启动那次 resize() 跑在 p 声明之前（暂时性死区），当时拿不到 lp 值。 */
+  resize();
   edgeT=0;shatter=null;petWanderInit(); // 读档属于瞬移：贴边计时/碎屏演出/宝宝位置全部就地重建
   p.dig=q.dig&&typeof q.dig==='object'&&Array.isArray(q.dig.pts)?{got:q.dig.got|0,tot:q.dig.tot|0,fee:q.dig.fee|0,t:q.dig.t|0,pts:q.dig.pts.filter(function(o){return o&&o.x!=null;}).map(function(o){return {x:o.x,y:o.y,z:o.z||'town',got:o.got|0};})}:null; // V1.11.2需求2：藏宝图入档
   p.dbuff=q.dbuff&&q.dbuff.t>0?{atk:q.dbuff.atk|0,t:q.dbuff.t|0}:null;
@@ -8546,7 +8593,7 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   p.dig=null;p.dbuff=null; // V1.11.2需求2：新角无藏宝图、无宝气加成
   nav=null;findSel=null;findQ='';findCat=0;findPage=0;findFocus=false; // V1.11.3需求2/3：引导线与查找态是瞬态，不入存档、不跨角色
   for(const mk2 of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[mk2]=0;
-  p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库
+  p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库；V1.12.9性能5：省电模式默认关
   for(let i=0;i<BAGCAP;i++)bag[i]=null;
   for(let i=0;i<chest.length;i++)chest[i]=null;
   mobs.length=0;items.length=0;coins.length=0;projs.length=0;parts.length=0;floats.length=0;fx.length=0;clones.length=0;respawns.length=0;sched.length=0;
