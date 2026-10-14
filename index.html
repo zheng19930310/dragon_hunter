@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.6</title>
+<title>降龙猎手 · 五行觉醒 V1.12.7</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -2167,6 +2167,26 @@ let hot=[],hotBase=0,mobId=0,started=false,t=0,shake=0,camX=0,camY=0,flashS=0;
 let killfeed=[]; // v2.0 需求：击杀播报（右侧滚动）
 let bagOpen=false,skPanel=false,charPanel=false,selSlot=0,selBag=-1,selEq=-1;
 let bagScroll=0,drag={from:-1,on:false},justSwapped=false;
+/* V1.12.7需求1（用户原话「在移动端背包需要手指上下翻滚翻页」）：手指在格子区上下拖 = 连续滚行。
+   只对 touch 生效——鼠标若也这样，按住 2 秒换位前的一点抖动就会被当成滚动，反而弄坏 bug1-新37 的长按拖动。 */
+let bagPan={on:false,id:-1,y0:0,s0:0,moved:false};
+/* V1.12.7需求2（用户原话「根据背包内的物品类型快速切换对应的类型物品」）：类型筛选轨 + 每类件数，
+   点一类就只看这一类并从头翻页；bagView 为"当前筛选下第 n 个格子 → 真实背包下标"的映射。 */
+const BFILT=[['all','全部','🎒'],['eq','装备',''],['wp','武器',''],['pot','药品',''],['book','技能书','📖'],['mat','材料','🧱'],['egg','宠物蛋','🥚']];
+let bagFilter=0,bagView=[],bagWasOpen=false;
+function bagCat(it){if(!it)return '';if(it.book)return 'book';
+  if(it.slot==='pot')return 'pot';if(it.slot==='mat')return 'mat';if(it.slot==='egg')return 'egg';
+  if(it.slot==='mweap'||it.slot==='sweap')return 'wp';return 'eq';}
+function bagPass(it){if(!it)return false;const f=BFILT[bagFilter][0];return f==='all'||bagCat(it)===f;}
+function bagViewSync(){bagView.length=0;if(!bagOpen)return;
+  /* 「全部」档是恒等映射（含空格），于是 200 格仍是 20 行、长按拖动换位仍能丢进空格——
+     与 V1.12.6 及以前的行为完全一致；只有筛选档才把视图压缩成"只看这一类"。 */
+  const f=BFILT[bagFilter][0];
+  if(f==='all'){for(let i=0;i<bagMax();i++)bagView.push(i);}
+  else for(let i=0;i<bagMax();i++)if(bagPass(bag[i]))bagView.push(i);}
+function bagViewCnt(){let n=0;for(const v of bagView)if(bag[v])n++;return n;}
+function bagRowsN(){return Math.max(1,Math.ceil(bagView.length/10));} // 当前视图总行数（至少 1 行，空类也不崩）
+function bagMaxScroll(){return Math.max(0,bagRowsN()-BAGROWS);}
 let press={cell:-1,t0:0,on:false};const HOLD=2000; // bug1-新37：长按2秒=拖动换位，单击=查看 // bug1-Bug8滚动 / Bug5拖拽换位
 let hovSk=-1,skSel=-1; // bug1-新9：技能悬停tooltip / 面板选中格
 let statPrev={},statFlash={}; // bug1-新22：转换后属性快照 + 变化高亮
@@ -2261,7 +2281,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.6';
+const GLOG_MAX=600,GLOG_VER='1.12.7';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -4449,6 +4469,13 @@ function onPointerMove(e){const l=toLogical(e),r=ptr[e.pointerId];
   if(rotDrag.on&&e.pointerId===rotDrag.id){ // v1.4需求32：拖动横屏钮到任意位置（限幅在屏内）
     ROT_B.x=clamp(l.x+rotDrag.dx,24,LW-24);ROT_B.y=clamp(l.y+rotDrag.dy,24,LH-64);
     if(dist(ROT_B.x,ROT_B.y,rotDrag.sx,rotDrag.sy)>6)rotDrag.moved=true;return;}
+  /* V1.12.7需求1：手指在背包格子区上下拖 → 按行翻页。位移满半格（26px）才起效，避免"手抖一下"就跳行；
+     一旦判定为翻页，立刻取消长按/点选，抬手也不会误选中某格。 */
+  if(bagPan.on&&bagOpen&&e.pointerId===bagPan.id){
+    const dy=l.y-bagPan.y0;
+    if(!bagPan.moved&&Math.abs(dy)>BCELL/2)bagPan.moved=true;
+    if(bagPan.moved){press.on=false;
+      bagScroll=clamp(bagPan.s0+Math.round(-dy/BCELL),0,bagMaxScroll());return;}}
   if(r){if(r.k==='joy')setVJ(l);return;}
   mouse.x=l.x;mouse.y=l.y;bagCellHot();}
 VIEW.addEventListener('pointermove',onPointerMove);
@@ -4484,6 +4511,11 @@ function onDownCore(l,e){
     if(drag.on)return;
     if(hotAt(l,true))return; // 需求47：按钮优先响应，修复换装点击被背包格截获
     const ci=bagCellAt(l);
+    /* V1.12.7需求1（用户原话「在移动端背包需要手指上下翻滚翻页」）：手指按在格子区内即起手势登记，
+       位移超过半格才判定为"翻页"并取消点选/长按；不超过则一切照旧（单击查看、长按 2 秒换位）。 */
+    if(e.pointerType==='touch'&&bagCellXY(l)){
+      bagPan={on:true,id:e.pointerId,y0:l.y,s0:bagScroll,moved:false};
+      e.preventDefault();try{VIEW.setPointerCapture(e.pointerId);}catch(_){}}
     if(ci>=0&&bag[ci]){e.preventDefault();try{VIEW.setPointerCapture(e.pointerId);}catch(_){}
       press={cell:ci,t0:performance.now(),on:true};return;}
   } // 拖拽中交给 mouseup 换位
@@ -4514,21 +4546,24 @@ VIEW.addEventListener('pointerup',function(e){
     else{if(started){if(forceRot)exitLandscape();else goLandscape();}else goLandscape();}
     endPtr(e);return;}
   if(endPtr(e))return;
+  if(bagPan.on&&e.pointerId===bagPan.id)bagPan.on=false; // V1.12.7需求1：翻页手势收尾（moved 时 press 已被取消，不会误选中）
   if(drag.on){swapBagCell(e);press.on=false;return;}
   if(press.on){if(performance.now()-press.t0<HOLD&&press.cell>=0&&bag[press.cell]){selBag=press.cell;selEq=-1;sfx(660,.05,'triangle',.03);}press.on=false;}
   mouse.down=false;});
-VIEW.addEventListener('pointercancel',function(e){endPtr(e);rotDrag.on=false;});
+VIEW.addEventListener('pointercancel',function(e){endPtr(e);rotDrag.on=false;if(bagPan.on&&e.pointerId===bagPan.id)bagPan.on=false;});
 VIEW.addEventListener('wheel',function(e){ // bug1-Bug8：背包滚轮滚动
   if(rideOpen&&!bagOpen){e.preventDefault();ridePage=clamp(ridePage+(e.deltaY>0?1:-1),0,Math.max(0,Math.ceil(RIDE_DEST.length/16)-1));return;} // v1.5.2需求9：骑乘面板分页
   if(towerSelOpen&&!bagOpen){e.preventDefault();towerSelPage=clamp(towerSelPage+(e.deltaY>0?1:-1),0,Math.max(0,Math.ceil(Math.min(100,p.ach2.towerMax||0)/24)-1));return;} // v1.5.3需求11：选层面板分页
   if(findOpen&&!bagOpen){e.preventDefault();const _fpg=Math.max(1,Math.ceil(findRows().length/FROWS));findPage=clamp(findPage+(e.deltaY>0?1:-1),0,_fpg-1);return;} // V1.11.3需求2：查找面板滚轮翻页
   if(mountOpen&&!bagOpen){e.preventDefault();mountPage=clamp(mountPage+(e.deltaY>0?1:-1),0,Math.max(0,Math.ceil(MOUNTS.length/8)-1));return;} // V1.7需求5：坐骑面板分页（V1.8需求10：页数随坐骑数变化）
   if(!bagOpen)return;e.preventDefault();
-  bagScroll=clamp(bagScroll+(e.deltaY>0?1:-1),0,Math.max(0,bagMax()/10-BAGROWS));},{passive:false}); // V1.12.1需求2：行数口径改用格子数
-function bagCellAt(l){const bx=bagGeo.lx,by=bagGeo.ty;
-  if(l.x<bx||l.y<by)return -1;
+  bagScroll=clamp(bagScroll+(e.deltaY>0?1:-1),0,bagMaxScroll());},{passive:false}); // V1.12.1需求2：行数口径改用格子数；V1.12.7需求2：改走 bagMaxScroll()，筛选后页数随视图收缩
+function bagCellXY(l){const bx=bagGeo.lx,by=bagGeo.ty; // 落在可视格上吗 → {c,r}（格内列/行），否则 null
+  if(l.x<bx||l.y<by)return null;
   const c=Math.floor((l.x-bx)/BCELL),r=Math.floor((l.y-by)/BCELL);
-  return(c>=0&&c<10&&r>=0&&r<BAGROWS)?(bagScroll+r)*10+c:-1;} // v1.4需求4：20列→10列
+  return(c>=0&&c<10&&r>=0&&r<BAGROWS)?{c:c,r:r}:null;}
+function bagCellAt(l){const p=bagCellXY(l);if(!p)return -1; // v1.4需求4：20列→10列
+  const vi=bagView[(bagScroll+p.r)*10+p.c];return vi==null?-1:vi;} // V1.12.7需求2：经筛选映射表换算成真实背包下标
 function swapBagCell(e){const l=toLogical(e),tgt=bagCellAt(l),src=drag.from;
   drag={from:-1,on:false};if(src<0)return;
   if(tgt>=0&&tgt<bagMax()&&tgt!==src){const tmp=bag[src];bag[src]=bag[tgt];bag[tgt]=tmp;
@@ -5987,6 +6022,7 @@ function draw(){
   /* v1.4需求16：面板打开时——固定HUD模块全部压到底层（暗化遮罩），面板置于最上层，避免遮挡冲突 */
   if(anyPanel){C.fillStyle='rgba(0,0,0,.55)';C.fillRect(0,0,LW,LH);}
   if(charPanel)drawChar();
+  if(bagWasOpen&&!bagOpen)bagWasOpen=false; // V1.12.7需求1：关闭时复位，下次打开从第一行开始
   if(bagOpen)drawBag();
   if(chestOpen)drawChest();
   if(skPanel)drawSkPanel();
@@ -7494,24 +7530,52 @@ function drawBag(){
   }
   // ---- 右侧：10列×10行滚轮可视5行（v1.4需求4：格子弹大、每行少一半） ----
   bagGeo.lx=x+150;bagGeo.ty=y+36;
-  const maxScroll=Math.max(0,bagMax()/10-BAGROWS); // V1.12.1需求2：默认 200 格 = 20 行全部可滚出（旧写法只能滚到第 10 行）
+  /* V1.12.7需求2：每帧重建"筛选视图 → 真实背包下标"映射表。放在绘制开头做，是因为输入事件总在
+     两帧之间处理，于是手指点到的永远是"上一帧看到的那一格"，不会出现"画面是A、点下去是B"。 */
+  if(!bagWasOpen){bagWasOpen=true;bagScroll=0;bagFilter=0;} // 本次刚打开：回到「全部」+ 第一行
+  bagViewSync();
+  const maxScroll=bagMaxScroll(); // V1.12.1需求2：默认 200 格 = 20 行全部可滚出（旧写法只能滚到第 10 行）
   if(bagScroll>maxScroll)bagScroll=maxScroll;
   btn(x+150,y+6,16,22,'▲',function(){if(bagScroll>0)bagScroll--;},'#3a4a2a');
   btn(x+150,y+h-34,16,22,'▼',function(){if(bagScroll<maxScroll)bagScroll++;},'#3a4a2a');
-  txt('页 '+(bagScroll/5+1|0)+' · 第'+(bagScroll+1)+'-'+(bagScroll+BAGROWS)+'行',x+172,y+13,9,'#778',null,'400',true);
-  for(let i=bagScroll*10;i<Math.min(bagMax(),(bagScroll+BAGROWS)*10);i++){
-    const cx=bagGeo.lx+(i%10)*BCELL,cy=bagGeo.ty+(((i/10)|0)-bagScroll)*BCELL,it=bag[i];
-    rr(cx,cy,BCELL-3,BCELL-3,7);C.fillStyle=i===selBag?'rgba(232,207,74,.16)':'rgba(30,36,24,.9)';C.fill();
-    C.strokeStyle=i===selBag?'#e8cf4a':it&&it.q!=null?QC[it.q]:'#333';C.lineWidth=i===selBag?2:1.2;C.stroke();
-    if(it){icon(itemIcon(it),cx+23,cy+23,38);
-      if((it.count||1)>1){txt('×'+it.count,cx+46,cy+45,12,'#fff','right','bold');} // bug1-Bug2：数量角标
-      if(it.enh)txt('+'+it.enh,cx+5,cy+12,11,'#7ee0ff');
-      if(it.book)txt('书',cx+5,cy+45,11,'#e8b33a');
-      if(it.wn)txt('✦',cx+44,cy+11,12,'#ff6aff'); // v1.4：特效武器角标
-      if(it.lock)txt('🔒',cx+4,cy+9,13,'#e8cf4a'); // 需求11：锁定角标
-      if(drag.on&&drag.from===i){C.strokeStyle='#fff';C.lineWidth=2;C.setLineDash([4,3]);C.strokeRect(cx+2,cy+2,BCELL-7,BCELL-7);C.setLineDash([]);}}
-    (function(ii){hot.push({x:cx,y:cy,w:BCELL-3,h:BCELL-3,cell:1,fn:function(){selBag=ii;selEq=-1;}});})(i);
+  txt('第'+(bagScroll+1)+'-'+Math.min(bagRowsN(),bagScroll+BAGROWS)+'行 / 共'+bagRowsN()+'行 · '+BFILT[bagFilter][1]+bagViewCnt()+'件',x+172,y+13,9,'#778',null,'400',true);
+  for(let vr=0;vr<BAGROWS;vr++){ // V1.12.7需求2：按"视图行"遍历（旧版按真实下标，筛选后中间会挖空）
+    for(let c=0;c<10;c++){
+      const vi=(bagScroll+vr)*10+c,i=bagView[vi];
+      const cx=bagGeo.lx+c*BCELL,cy=bagGeo.ty+vr*BCELL,it=i==null?null:bag[i];
+      rr(cx,cy,BCELL-3,BCELL-3,7);C.fillStyle=(i!=null&&i===selBag)?'rgba(232,207,74,.16)':'rgba(30,36,24,.9)';C.fill();
+      C.strokeStyle=(i!=null&&i===selBag)?'#e8cf4a':it&&it.q!=null?QC[it.q]:'#333';C.lineWidth=(i!=null&&i===selBag)?2:1.2;C.stroke();
+      if(it){icon(itemIcon(it),cx+23,cy+23,38);
+        if((it.count||1)>1){txt('×'+it.count,cx+46,cy+45,12,'#fff','right','bold');} // bug1-Bug2：数量角标
+        if(it.enh)txt('+'+it.enh,cx+5,cy+12,11,'#7ee0ff');
+        if(it.book)txt('书',cx+5,cy+45,11,'#e8b33a');
+        if(it.wn)txt('✦',cx+44,cy+11,12,'#ff6aff'); // v1.4：特效武器角标
+        if(it.lock)txt('🔒',cx+4,cy+9,13,'#e8cf4a'); // 需求11：锁定角标
+        if(drag.on&&drag.from===i){C.strokeStyle='#fff';C.lineWidth=2;C.setLineDash([4,3]);C.strokeRect(cx+2,cy+2,BCELL-7,BCELL-7);C.setLineDash([]);}}
+      (function(ii){hot.push({x:cx,y:cy,w:BCELL-3,h:BCELL-3,cell:1,fn:function(){if(ii>=0){selBag=ii;selEq=-1;}}});})(i==null?-1:i);
+    }
   }
+  /* ============ V1.12.7需求2：类型快速切换轨（用户原话「根据背包内的物品类型快速切换对应的类型物品」） ============
+     贴在格子区正下方，7 类各一枚、带件数；点一下即只看这一类并回到第一行。
+     宽度只占格子区左侧 7 格（x+150..x+514），避开右侧信息区里"存仓库"那颗钮（x≥544）。 */
+  const FTY=y+300,FW=52;
+  txt('🔎 只看这类',x+12,FTY+13,10,'#9ab08a',null,'700',true); // 与面板底部那排「☐自动出售」区分开，避免两排同类文字被认错
+  const fcnt={};for(let i=0;i<bagMax();i++){const it=bag[i];if(!it)continue;
+    const c=bagCat(it);fcnt[c]=(fcnt[c]||0)+1;fcnt.all=(fcnt.all||0)+1;}
+  for(let fi=0;fi<BFILT.length;fi++){
+    const key=BFILT[fi][0],lab=BFILT[fi][1],ic=BFILT[fi][2],fx=x+150+fi*FW,on=fi===bagFilter;
+    rr(fx,FTY,FW-4,26,6);C.fillStyle=on?'rgba(232,207,74,.22)':'rgba(34,42,26,.9)';C.fill();
+    C.strokeStyle=on?'#e8cf4a':'#4a5638';C.lineWidth=on?2:1;C.stroke();
+    txt((on?'●':'○')+ic+lab,fx+(FW-4)/2,FTY+9,10.5,on?'#fff2b0':'#9ab08a','center','700',true);
+    txt((fcnt[key]||0)+' 件',fx+(FW-4)/2,FTY+20,9,on?'#e8cf4a':'#66744f','center','400',true);
+    (function(ff){hot.push({x:fx,y:FTY,w:FW-4,h:26,fn:function(){
+      if(bagFilter===ff)return;
+      bagFilter=ff;bagScroll=0;bagViewSync();
+      msg('🎒 背包筛选：'+BFILT[ff][1]+'（'+bagViewCnt()+' 件）——再点「全部」看整包；手指在格子上上下拖即可翻页',
+        ff===0?'#9ab08a':'#e8cf4a');sfx(700,.05,'triangle',.03);
+    }});})(fi);
+  }
+  txt('手机：手指在格子上上下拖 = 翻页 · 单击查看 · 长按2秒换位',x+150,FTY+34,9.5,'#66744f',null,'400',true);
   // ---- 信息区（bug1-Bug3：按钮全部移入面板可视区） ----
   const ix=x+524,iy=y+34,iw=w-524-16;
   const bi=selBag>=0?bag[selBag]:null,ei=selEq!==-1?p.equip[selEq]:null;
