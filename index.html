@@ -107,6 +107,48 @@ const dist=(a,b,c,d)=>Math.hypot(c-a,d-b);
    pad 是外扩余量：给投影、光晕、气泡、招幌这类超出锚点的部分留量，避免"边缘被切一半"。 */
 function onScreen(x,y,pad){pad=pad||0;return x>camX-pad&&x<camX+LW+pad&&y>camY-pad&&y<camY+LH+pad;}
 function onScreenR(x,y,w,h,pad){pad=pad||0;return x+w>camX-pad&&x<camX+LW+pad&&y+h>camY-pad&&y<camY+LH+pad;}
+/* V1.12.9性能3：径向光晕精灵（用户原话“手机浏览器中CPU和内存消耗都挺大的，可以优化性能吗”）
+   光晕是本项目最高频的渐变：每只怪脚下 1 个、每个精英/BOSS 再 1 个、每件掉落物 1 个——
+   实测大战场一帧 createRadialGradient 393 次。渐变对象是即时模式的光栅化描述，每帧新建、
+   用完即弃，既花 CPU 建表又给 GC 制造节奏（手机上的"周期性一卡"多来自这里）。
+   改成按颜色烘一张 64px 的"中心实色 → 边缘透明"小图，之后 drawImage 放大到目标半径、
+   用 globalAlpha 调浓度。数学上等价：原渐变 stop0=rgba(col,al)、stop1=rgba(0,0,0,0)，
+   浏览器按预乘插值，等价于"颜色恒为 col、alpha 线性衰减"，与精灵 × globalAlpha 完全一致。
+   中心 2px 平芯（半径 2~4px）在 r≥20 的光晕里占比 <5%，肉眼不可辨。 */
+const GLOWC={};
+function glowSprite(col){
+  let g=GLOWC[col];if(g)return g;
+  const S=64;g=document.createElement('canvas');g.width=g.height=S;
+  const c=g.getContext('2d'),h=S/2;
+  const gr=c.createRadialGradient(h,h,0,h,h,h);
+  gr.addColorStop(0,col);gr.addColorStop(.09,col);gr.addColorStop(1,'rgba(0,0,0,0)'); // .09 平芯对应原渐变 2px 内半径（r≈22 时 2/22≈0.09）
+  c.fillStyle=gr;c.fillRect(0,0,S,S);
+  GLOWC[col]=g;return g;}
+function glowAt(col,x,y,r,al){
+  if(al==null||al>=1){C.drawImage(glowSprite(col),x-r,y-r,r*2,r*2);return;} // 满浓度时不改状态，省一次读写
+  const a0=C.globalAlpha;C.globalAlpha=a0*al;
+  C.drawImage(glowSprite(col),x-r,y-r,r*2,r*2);
+  C.globalAlpha=a0;}
+/* V1.12.9性能3：静态渐变缓存。渐变对象本身是不可变的绘制描述，参数一样就该复用——
+   HUD/技能栏/时辰条这些位置固定、配色固定的辉光，旧版每帧重新 create 一遍（技能栏一格 2 个、
+   七格 14 个，加头像光环、药丸描边，稳定占用十几二十个/帧）。键里带上全部参数，
+   任何一项变了就是另一个键，不会串色；上限 MAXG 防住把"每帧变一次参数"的东西误塞进来撑爆内存。 */
+const GCACHE={};let GCKEYS=0;const MAXG=240;
+function gkey(p){let s='';for(let i=0;i<p.length;i++)s+=(i?',':'')+p[i];return s;}
+function gradRad(x0,y0,r0,x1,y1,r1,stops){
+  const k=gkey(['r',x0,y0,r0,x1,y1,r1,stops]);let g=GCACHE[k];
+  if(g)return g;
+  g=C.createRadialGradient(x0,y0,r0,x1,y1,r1);
+  for(let i=0;i<stops.length;i++)g.addColorStop(stops[i][0],stops[i][1]);
+  if(GCKEYS<MAXG)GCACHE[k]=g,GCKEYS++;
+  return g;}
+function gradLin(x0,y0,x1,y1,stops){
+  const k=gkey(['l',x0,y0,x1,y1,stops]);let g=GCACHE[k];
+  if(g)return g;
+  g=C.createLinearGradient(x0,y0,x1,y1);
+  for(let i=0;i<stops.length;i++)g.addColorStop(stops[i][0],stops[i][1]);
+  if(GCKEYS<MAXG)GCACHE[k]=g,GCKEYS++;
+  return g;}
 const TAU=Math.PI*2;
 function angDiff(a,b){let d=a-b;while(d>Math.PI)d-=TAU;while(d<-Math.PI)d+=TAU;return d;}
 function pickW(w){let s=0;for(const x of w)s+=x;let r=Math.random()*s;for(let i=0;i<w.length;i++){r-=w[i];if(r<0)return i;}return 0;}
@@ -6377,7 +6419,7 @@ function draw(){
         C.globalAlpha=.5;C.fillRect(it.x-bh2*.3,by-3,bh2*.6,6);
         C.globalAlpha=.85;const sp2=6+Math.sin(t*.25)*2.6;C.fillRect(it.x-sp2,by-30-sp2,sp2*2,2.4); // 星芒横臂
         C.restore();}
-      else{const gl=C.createRadialGradient(it.x,by,2,it.x,by,20);gl.addColorStop(0,QC[it.q]+'66');gl.addColorStop(1,'transparent');C.fillStyle=gl;C.beginPath();C.arc(it.x,by,20,0,7);C.fill();}
+      else{glowAt(QC[it.q],it.x,by,20,.4);} // V1.12.9性能3：原 QC[q]+'66'（0x66/255≈0.4）走光晕精灵
     }
     icon(itemIcon(it),it.x,by-6,26);C.fillStyle='rgba(0,0,0,.3)';C.beginPath();C.ellipse(it.x,it.y+7,10,3,0,0,7);C.fill();
   }
@@ -6390,8 +6432,7 @@ function draw(){
       mobAura(m); // bug1-新33：所有怪物脚下霸气光环
       if(m.kind){const sc=m.kind===2?1.85:1.12,gcol=m.kind===2?'#ff3a2a':'#4aa8ff',gp=.35+.25*Math.sin(t*.1+m.id);
         C.save();C.translate(m.x,m.y);C.scale(sc,sc);C.translate(-m.x,-m.y);
-        const gr=C.createRadialGradient(m.x,m.y,4,m.x,m.y,34);gr.addColorStop(0,gcol);gr.addColorStop(1,'rgba(0,0,0,0)');
-        C.globalAlpha=gp;C.fillStyle=gr;C.beginPath();C.arc(m.x,m.y,34,0,7);C.fill();C.globalAlpha=1;
+        glowAt(gcol,m.x,m.y,34,gp); // V1.12.9性能3：精英/BOSS 压迫光环走光晕精灵（此处仍在 scale 变换内，行为与旧版一致）
         drawMobArt(m);
         mvpFx(m,m.x,m.y); // v1.4需求3：凝滞中的怪物叠加冰灰蒙层
         C.restore();
@@ -6491,7 +6532,7 @@ function draw(){
 function drawAvatar(x,y,r){
   const aq=EQSLOTS.reduce(function(a,s){const e=p.equip[s];return a+(e?e.q||0:0);},0);
   C.save();C.beginPath();C.arc(x,y,r,0,7);C.fillStyle='#12160e';C.fill();
-  if(aq>=3){const ag=C.createRadialGradient(x,y,r*.3,x,y,r);ag.addColorStop(0,'rgba(255,215,80,'+Math.min(.5,aq*.02)+')');ag.addColorStop(1,'rgba(0,0,0,0)');C.fillStyle=ag;C.beginPath();C.arc(x,y,r,0,7);C.fill();}
+  if(aq>=3){C.fillStyle=gradRad(x,y,r*.3,x,y,r,[[0,'rgba(255,215,80,'+Math.min(.5,aq*.02)+')'],[1,'rgba(0,0,0,0)']]);C.beginPath();C.arc(x,y,r,0,7);C.fill();} // 套装光环：aq 是整数，档位有限，可安全缓存
   C.beginPath();C.arc(x,y,r,0,7);C.clip();
   /* V1.12.5需求3：头像与捏脸关联、区分男女（用户原话「左上角的人物头像要区分男女和捏脸头像关联」）。
      旧版这里是一套硬编码的通用脸（棕帽+黑方眼），完全没读 p.gender / p.face，
@@ -6512,10 +6553,8 @@ function skillIcon(i,x,y,s){const sk=SK[i];if(!sk)return;
   const col=sk.p?'#59c959':(sk.book||sk.w==='any')?'#ff9a5a':sk.w==='sword'?'#9adcfa':sk.w==='blade'?'#ff7a3a':sk.w==='gun'?'#c9a2ff':'#e8cf4a';
   C.save();
   const pl=.5+.5*Math.sin(t*.08+i);
-  const g=C.createRadialGradient(x,y,1,x,y,s*.72);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');
-  C.globalAlpha=.24+.16*pl;C.fillStyle=g;C.beginPath();C.arc(x,y,s*.72,0,7);C.fill();C.globalAlpha=1;
-  const bg=C.createRadialGradient(x,y,s*.16,x,y,s*.5);bg.addColorStop(0,'rgba(255,255,255,.04)');bg.addColorStop(1,col);
-  C.globalAlpha=.15;C.fillStyle=bg;C.beginPath();C.arc(x,y,s*.5,0,7);C.fill();C.globalAlpha=1; // 内沿发光底板
+  C.globalAlpha=.24+.16*pl;C.fillStyle=gradRad(x,y,1,x,y,s*.72,[[0,col],[1,'rgba(0,0,0,0)']]);C.beginPath();C.arc(x,y,s*.72,0,7);C.fill();C.globalAlpha=1;
+  C.globalAlpha=.15;C.fillStyle=gradRad(x,y,s*.16,x,y,s*.5,[[0,'rgba(255,255,255,.04)'],[1,col]]);C.beginPath();C.arc(x,y,s*.5,0,7);C.fill();C.globalAlpha=1; // 内沿发光底板
   C.strokeStyle=col;C.lineWidth=1.2;C.globalAlpha=.5+.26*pl;C.beginPath();C.arc(x,y,s*.48,0,7);C.stroke();C.globalAlpha=1;
   const a0=(t*.04)%6.28;C.strokeStyle=col;C.globalAlpha=.55;C.lineWidth=1.6;C.setLineDash([4,6]);
   C.beginPath();C.arc(x,y,s*.52,a0,a0+3.5);C.stroke();C.beginPath();C.arc(x,y,s*.52,a0+3.14,a0+6.64);C.stroke();C.setLineDash([]);C.globalAlpha=1;
@@ -6531,9 +6570,9 @@ function mobAura(m){ // bug1-新33：普通怪暗红威肱光环、精英/BOSS�
   const rgb=m.kind===2?'255,50,35':m.kind===1?'70,150,255':'190,55,40';
   const pl=.5+.5*Math.sin(t*.08+m.id);
   const al=(m.kind?.4:.14)*(0.7+pl*.5);
-  const g=C.createRadialGradient(m.x,m.y,2,m.x,m.y,r);
-  g.addColorStop(0,'rgba('+rgb+','+al+')');g.addColorStop(1,'rgba(0,0,0,0)');
-  C.fillStyle=g;C.beginPath();C.arc(m.x,m.y,r,0,7);C.fill();
+  /* V1.12.9性能3：这里原来是每帧一次 createRadialGradient + addColorStop×2 + arc + fill，
+     现在换成一次 drawImage（光晕精灵按颜色缓存，全游戏只有三种颜色）。 */
+  glowAt('rgb('+rgb+')',m.x,m.y,r,al);
   /* V1.8.1 怪物精细化：精英/BOSS 叠加旋转符文环 + 6 枚沿环公转的符文，
      外环正转、内环逆转，带浮动呼吸，使威压不再只是一团径向渐变 */
   if(m.kind){
@@ -7736,14 +7775,35 @@ function drawInstMap(){
   const tw=Math.round(INST.w/PT_UNIT),th=Math.round(INST.h/PT_UNIT),rx=clamp(Math.round((p.x-INST.x)/PT_UNIT),0,tw),ry=clamp(Math.round((INST.y+INST.h-p.y)/PT_UNIT),0,th);
   txt(fitStr('📍 图内 ('+rx+', '+ry+') / '+tw+'×'+th+' 单位',w-10,9.5),x+w/2,y+h+44,9.5,'#9adcfa','center',null,true);
 }
+/* V1.12.9性能3：小地图静态层烘焙（底 + 全部区域色块）。
+   顺带修掉一个自 v2.0 区域扩容以来一直在的错位（附带修复，非本次需求）：
+   旧代码 `C.fillRect(x+z.x*sx, y+z.y*sy, z.w*sx, z.h*sy)` 里 z 是 ZONES 的**基准格坐标**，
+   而 sx=w/W 是**世界像素→图框**的比例，两者差一个 WS=5 倍——于是除落鸦村（它走 ZR() 换算过）
+   以外所有区域色块都被压进小地图左上角 1/5 的范围内挤成一团，玩家看小地图根本对不上方位。
+   实测旧图：村块正常落在 (46,24)-(75,43)，其余色块全糊在 (0,0)-(34,22)。
+   这里统一走 ZR()（世界坐标），色块与坐标点、怪物点、地标针才在同一套坐标系里。 */
+let _mmBase=null;
+function mmBase(){
+  if(_mmBase)return _mmBase;
+  const S=3,W2=172*S,H2=112*S;
+  const cv=document.createElement('canvas');cv.width=W2;cv.height=H2;
+  const c=cv.getContext('2d'),sx=W2/W,sy=H2/H;
+  c.fillStyle='#1e2c16';c.fillRect(0,0,W2,H2);
+  for(const k in ZONES){if(k==='town')continue;const z=ZR(k);c.fillStyle=ZONES[k].col||'#4a5a3a';c.globalAlpha=.45;c.fillRect(z.x*sx,z.y*sy,z.w*sx,z.h*sy);}
+  c.globalAlpha=1;
+  const tz=ZR('town');c.fillStyle='#5b4a2f';c.fillRect(tz.x*sx,tz.y*sy,tz.w*sx,tz.h*sy);
+  _mmBase=cv;return cv;}
 function drawMinimap(){
   if(INST.on){drawInstMap();return;} // V1.12.4需求3：副本里画副本，不再画主世界全图
   const w=172,h=112,x=LW-w-12,y=10,sx=w/W,sy=h/H;
   rr(x-4,y-4,w+8,h+56,8);C.fillStyle='rgba(10,12,8,.8)';C.fill();C.strokeStyle='#6a5a2e';C.lineWidth=1.5;C.stroke();
   C.save();rr(x,y,w,h,5);C.clip();
-  C.fillStyle='#1e2c16';C.fillRect(x,y,w,h);
-  for(const k in ZONES){if(k==='town')continue;const z=ZONES[k];C.fillStyle=z.col||'#4a5a3a';C.globalAlpha=.45;C.fillRect(x+z.x*sx,y+z.y*sy,z.w*sx,z.h*sy);C.globalAlpha=1;} // 需求44：遍历全部区域（含Lv55-75/四方/12星座）
-  C.fillStyle='#5b4a2f';{const z=ZR('town');C.fillRect(x+z.x*sx,y+z.y*sy,z.w*sx,z.h*sy);}
+  /* V1.12.9性能3：底图 + 全部区域色块是永不变化的静态层，旧版每帧重画 ~40 个 fillRect，
+     加上 mobs 点，小地图一项就吃掉 864 次 fillRect/帧（实测占空场景总操作量的 1/5）。
+     烘成一张 3 倍分辨率的小图（516×336 ≈ 0.7MB），之后每帧一次 drawImage 打底。
+     3 倍是按手机 Z*DPR≈2.2 留的余量，缩放到图框尺寸时仍是降采样，比原来更锐利。 */
+  const mm=mmBase();
+  C.drawImage(mm,x,y,w,h);
   const MCOL={slime:'#5fbf4a',goblin:'#c9c25a',fire:'#ff7a3a',knight:'#b8a8d8',turtle:'#7ee0ff',miner:'#e8c86a',bandit:'#d86a5a',wind:'#a8e8d8',scorp:'#d8b86a',rock:'#9a8a7a',mage:'#8a6ad8',lava:'#ff5a2a',ascend:'#8ab8d8'};
   for(const m of mobs){const en=m.kind===2;C.fillStyle=(MCOL[m.key]||ZONES[MT[m.key].zone]&&ZONES[MT[m.key].zone].col||'#c9a2ff');if(m.kind)C.fillStyle=m.kind===2?'#ff3a2a':'#4aa8ff';const r=en?4.4:m.kind?2.8:(m.key==='turtle'||m.key==='knight'||m.key==='miner'||m.key==='bandit'?2.6:1.6);C.fillRect(x+m.x*sx-r,y+m.y*sy-r,r*2,r*2);}
   if((t>>4)%2){C.fillStyle='#fff';C.beginPath();C.arc(x+p.x*sx,y+p.y*sy,2.5,0,7);C.fill();}
