@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.14</title>
+<title>降龙猎手 · 五行觉醒 V1.12.15</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -2493,19 +2493,23 @@ const EDGE_DWELL=300,SHARD_DUR=110,EDGE_SAFE=140;
    · flows       —— 数据流数组；ecgBuf —— 心电图采样环；hbT —— 距下一次心跳的帧数；
    · voidSteps   —— 每满 5 个单位吐一条数据流的计数器；voidMoved —— 本次虚空走过的总像素（喂按钮长大）；
    · voidRet     —— 进虚空前的世界坐标，点「送我回去」原样放回去；voidFocus —— 回归合焦演出。
-   · voidHint    —— 虚空自绘提示条：虚空不画 HUD，msg()/floatTxt 在那里根本看不见。 */
+   · voidEndOn   —— V1.12.15需求9：是否已进入「终点」演出（走满 VOID_END_UNITS 个坐标点后：渐白 →
+                      主角与一切消失 → 屏幕中间一双眼睛缓缓睁开 → 一直学人眨眼 → 那句话一直挂着）；
+   · voidEndT    —— 终点演出已走的帧数；eyeBl/eyeBlT —— 眨眼的倒计时与进行中的眨眼相位。 */
 /* VOID_FLOW_EVERY 的"单位"取本仓库既有的坐标点口径（PT_UNIT=50 世界像素，与小地图读数一致，
    DASH.EDGE 的"20 个坐标点"同源）：每走 5 个坐标点 = 250 世界像素，一条数据流。
    若按 5 个世界像素算，走路 276px/秒 ⇒ 每秒 55 条，3 秒就撞 200 上限，戏还没开场就先卡死。 */
-const VOID_EDGE_DWELL=600,VOID_DRIFT=150,VOID_FLOW_EVERY=5,VOID_CAP=200;
-/* VEG=带高（屏幕正中的心电图上下各 VEG 像素）、BTN_Y/BTN_R0/BTN_R1=「送我回去」的位置与半径区间。
-   这三个数必须一起看：数据流走 flowBox 上下两条航道，航道之间 [LH/2-VEG, LH/2+VEG] 是心跳线专道，
+const VOID_EDGE_DWELL=600,VOID_DRIFT=150,VOID_FLOW_EVERY=5,VOID_CAP=400; // V1.12.15需求4：200 条扩到 400 条（口径不变，心跳线仍恒占 1 条）
+/* VEG=带高（屏幕正中的心跳红线上下各 VEG 像素）、BTN_Y/BTN_R1=「送我回去」的位置与半径上限。
+   这几个数必须一起看：数据流走 flowBox 上下两条航道，航道之间 [LH/2-VEG, LH/2+VEG] 是心跳红线专道，
    按钮落在下航道里、贴屏幕底部，画在数据流之上；BTN_R1 的上限保证长满后整颗圆仍在画面内，
    且顶边不压到心跳带（BTN_Y-BTN_R1=344 > LH/2+VEG=322）。 */
-const VOID_HB_MIN=120,VOID_HB_MAX=480,ECG_N=300,VEG=52,FLOW_WIN=56;
-const BTN_Y=LH-104,BTN_R0=34,BTN_R1=92;
+const VOID_HB_MIN=60,VOID_HB_MAX=300,ECG_N=300,VEG=52,FLOW_WIN=56; // V1.12.15需求8：心跳 2~8 秒 → 1~5 秒随机
+const BTN_Y=LH-104,BTN_R1=92; // V1.12.15需求2：按钮从 0 长起，起点半径 BTN_R0 取消
+const VOID_END_UNITS=1500;    // V1.12.15需求9：虚空里走满 1500 个坐标点 → 终点演出（渐白→消失→睁眼）
 let voidOn=false,voidPhase=0,voidDrift=null,voidSnap=null,voidDark=0;
-let flows=[],ecgBuf=[],ecgPh=-1,hbT=0,hbN=0,hbIv=420,voidSteps=0,voidMoved=0,voidRet=null,voidFocus=null,voidHint=null;
+let flows=[],ecgBuf=[],ecgPh=-1,hbT=0,hbN=0,hbIv=300,voidSteps=0,voidMoved=0,voidRet=null,voidFocus=null,voidMoveA=0;
+let voidEndOn=false,voidEndT=0,eyeBl=0,eyeBlT=0; // V1.12.15需求9：终点演出状态；voidMoveA=当前移动朝向（需求3 反方向数据流用）
 let killfeed=[]; // v2.0 需求：击杀播报（右侧滚动）
 let bagOpen=false,skPanel=false,charPanel=false,selSlot=0,selBag=-1,selEq=-1;
 let bagScroll=0,drag={from:-1,on:false},justSwapped=false;
@@ -2632,7 +2636,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.14';
+const GLOG_MAX=600,GLOG_VER='1.12.15';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -5264,10 +5268,9 @@ function tutbGrazed(l,k){ // 落点是否只"擦边"命中了工具钮的容错�
   return dist(l.x,l.y,u.x,u.y)>(u.r+2)*tScale();}
 function onDownCore(l,e){
   if(!started){handleStartClick(l);return;}
-  if(voidOn){ // V1.12.13需求2：空白里唯一的可点对象就是「送我回去」
-    const B=voidBtn();
-    if(dist(l.x,l.y,B.x,B.y)<=B.r){voidBack();}
-    else voidHint={t:200,txt:'💠 这里只有那颗「送我回去」——继续走，它会越来越大'}; // 虚空不绘 HUD，msg()/floatTxt 在这里看不见
+  if(voidOn){ // V1.12.13需求2：空白里唯一的可点对象就是「送我回去」；V1.12.15需求1：点不中也就不再补提示文字
+    if(voidEndOn){voidBack();return;} // V1.12.15需求9：终点演出里点哪儿都回去
+    if(voidBtnHit(l))voidBack();
     return;}
   if(bagOpen){ // bug1-新37：长按2秒=拖动换位，单击=查看
     if(drag.on)return;
@@ -5298,10 +5301,9 @@ VIEW.addEventListener('pointerdown',function(e){const l=toLogical(e);
      它们在虚空里既没画出来也绝不该响应（否则点空白处会莫名打开背包）。
      但这条拦截必须在按钮之前放行「送我回去」，否则手机上那颗唯一的钮反而点不动。 */
   if(touchMode&&started&&voidOn){
-    const VB=voidBtn();
-    if(dist(l.x,l.y,VB.x,VB.y)<=VB.r){e.preventDefault();voidBack();return;}
+    if(voidEndOn){e.preventDefault();voidBack();return;} // V1.12.15需求9：终点演出里点哪儿都回去
+    if(voidBtnHit(l)){e.preventDefault();voidBack();return;}
     if(tHit(l)==='joy')onTouchDown('joy',l,e);
-    else voidHint={t:170,txt:'💠 这里只有那颗「送我回去」——继续走，它会越来越大'};
     return;}
   if(touchMode&&started){const pnl=panelOn();let k=tHit(l); // V1.9.1：任意面板开启时只允许切换工具钮，不再隔面板移动/攻击/施法
     /* V1.12.11需求3附带修复：工具钮的 +8 容错圈压在面板按钮上时会截胡（见 panelHotAt 注释）——
@@ -5796,8 +5798,8 @@ function updateShatter(){
    流程：画面随风飘散 → 世界清空 → 主角「这是哪里？！」→ 空白里只剩一颗会随移动变大的
    「送我回去」→ 继续走则进入黑客帝国数据流（背景白切黑）+ 屏幕中间心电图与心跳声
    → 没有尽头，直到玩家自己点回去（或卡到刷新浏览器，用户原话允许这个结局）。 */
-/* 硬上限（用户原话：“同时播放的数据流和心跳不能超过200条”）：心跳线恒为 1 条，
-   于是数据流最多 199 条，两者合计恰好 200，到顶就只更新不再新增。 */
+/* 硬上限：V1.12.15需求4 把 200 条扩到 400 条，口径不变——心跳线恒占 1 条，
+   于是数据流最多 399 条，两者合计恰好 400，到顶就只更新不再新增。 */
 function voidMaxFlows(){return VOID_CAP-1;}
 function voidDigit(){const r=Math.random();
   if(r<.82)return ''+((Math.random()*10)|0);
@@ -5810,7 +5812,9 @@ function voidAddFlow(){
   const lane=Math.random()<.5?0:1;              // 上/下两条航道，中间 VEG 带永远留给心电图
   const box=flowBox(lane);
   const b=new Array(L);for(let i=0;i<L;i++)b[i]=voidDigit();
-  flows.push({s:b.join(''),cs:cs,a:rnd(0,TAU),sp:rnd(.5,2.2),x:rnd(0,box.w),y:rnd(0,box.h),lane:lane});
+  /* V1.12.15需求3：新流的方向不再随机，取"主角当前移动方向的反向"（±0.55rad 抖动，免得整屏完全平行）——
+     人往哪儿走，字就从哪儿迎面来，视觉上像世界在倒退。数据流只在走动中生成，voidMoveA 必已就位。 */
+  flows.push({s:b.join(''),cs:cs,a:voidMoveA+Math.PI+rnd(-.55,.55),sp:rnd(.5,2.2),x:rnd(0,box.w),y:rnd(0,box.h),lane:lane});
   return true;
 }
 function flowBox(lane){ // 航道矩形：中间 [LH/2-VEG, LH/2+VEG] 留给心跳线，数据流靠裁剪绝不越界
@@ -5818,8 +5822,10 @@ function flowBox(lane){ // 航道矩形：中间 [LH/2-VEG, LH/2+VEG] 留给心�
 }
 /* 「送我回去」：半径随走过的路数长，从 46 一路涨到 110（约 2.4 倍），中心刻意压在航道下沿之内。 */
 function voidUnits(){return voidMoved/PT_UNIT;} // 走过的坐标点数（与按钮读数、数据流节奏同一口径）
-/* 按钮随主角移动越变越大：每走 1 个坐标点长 1.5px，从 34 涨到上限 BTN_R1（≈150px 直径 → 3 倍多）。 */
-function voidBtn(){return{x:LW/2,y:BTN_Y,r:Math.min(BTN_R1,BTN_R0+voidUnits()*1.5)};}
+/* V1.12.15需求2：从 0 开始长——刚进虚空时它根本不存在，走一步冒一点，每走 1 个坐标点长 1.5px，到 BTN_R1 封顶。
+   点击判定留 18px 保底热区，否则手机上那颗刚冒头的钮小得点不中（画多大是一回事，点得中是另一回事）。 */
+function voidBtn(){return{x:LW/2,y:BTN_Y,r:Math.min(BTN_R1,voidUnits()*1.5)};}
+function voidBtnHit(l){const B=voidBtn();return dist(l.x,l.y,B.x,B.y)<=Math.max(18,B.r);}
 function voidGo(){
   if(voidOn||voidDrift)return;
   voidRet={x:p.x,y:p.y};                        // 记下“被擦掉之前站在哪”，回来还放这儿
@@ -5844,8 +5850,9 @@ function voidGo(){
   voidSaveHere();                               // 存档写“进虚空前”的坐标，中途刷新不会掉进墙里
 }
 function voidResetState(){
-  voidPhase=0;voidDark=0;voidSteps=0;voidMoved=0;voidHint=null;
-  flows.length=0;ecgBuf.length=0;ecgPh=-1;hbN=0;hbIv=420;hbT=150;voidFocus=null;
+  voidPhase=0;voidDark=0;voidSteps=0;voidMoved=0;voidMoveA=0;
+  voidEndOn=false;voidEndT=0;eyeBl=0;eyeBlT=0;
+  flows.length=0;ecgBuf.length=0;ecgPh=-1;hbN=0;hbIv=300;hbT=150;voidFocus=null;
 }
 function voidSaveHere(){ // doSave 取的是 p.x/p.y，这里临时换回真实落点再换回来
   if(!voidRet)return;
@@ -5865,8 +5872,7 @@ function voidEnterBlank(){
   voidPhase=1;voidDrift=null;voidSnap=null;voidClearWorld();
   p.x=clamp(p.x,60,W-60);p.y=clamp(p.y,60,H-60);gaitReset();
   pet.x=p.x;pet.y=p.y;
-  sayPlayer('这是哪里？！',260);
-  voidHint={t:280,txt:'💠 世界被擦干净了——只剩一颗「送我回去」'};
+  sayPlayer('这是哪里？！',260); // V1.12.15需求1：只留这句念白，提示条删掉
   sfx(88,.8,'sine',.06);flashS=.45; // 白底上这一记闪几乎看不出，留着是给回归后的衰减一个起点
 }
 function voidBack(){
@@ -5887,9 +5893,13 @@ function voidBack(){
   glog('biz','edge void back',{n:p.dores|0},null);
   doSave(true);
 }
-/* 心跳 2~8 秒一次；出声的同一帧心电图才开始跳（用户原话“有心跳声则心跳线也开始跳动”）。 */
-function hbThump(){ // lub-dub：两记低频正弦，第二记更闷，就是监护仪旁边那种声音
-  sfx(64,.14,'sine',.13);later(function(){sfx(46,.20,'sine',.10);},10);
+/* 出声的同一帧心跳线才开始跳（用户原话“有心跳声则心跳线也开始跳动”）。
+   V1.12.15需求5（用户原话“特殊空间的心跳声没开启”）：旧版是 64Hz/46Hz 两记正弦——
+   手机喇叭放不出 60Hz 以下，玩家听到的就是"没声音"。把主体提到 150/110Hz（胸腔闷响仍在可放频段内），
+   各叠一记短促高次泛音当"咚"的起振头；音量也抬半档。间隔 1~5 秒随机见 VOID_HB_MIN/MAX。 */
+function hbThump(){ // lub-dub：两记，第二记更闷更短，就是监护仪旁边那种声音
+  sfx(150,.13,'sine',.20);sfx(300,.05,'triangle',.06);
+  later(function(){sfx(110,.20,'sine',.16);sfx(220,.06,'triangle',.05);},10);
 }
 function updateVoid(){
   if(!voidOn)return;
@@ -5903,8 +5913,8 @@ function updateVoid(){
     if(--voidDrift.t<=0)voidEnterBlank();
     return;
   }
+  if(voidEndOn){updateVoidEnd();return;} // V1.12.15需求9：终点演出接管一切，主角不再移动、不再吐数据流
   if(p.sayT>0)p.sayT--;
-  if(voidHint&&--voidHint.t<=0)voidHint=null;
   /* 虚空里只留最朴素的一条移动：不吃成就/装备/场景增益，也正因为在这里走，按钮才变大、数据流才来。 */
   const spd=4.6*(p.morph?.8:1);
   let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),
@@ -5913,10 +5923,12 @@ function updateVoid(){
   p.mv=(dx||dy)?1:0;
   if(dx||dy){
     const L=Math.hypot(dx,dy),amp=Math.min(1,L),mx=dx/L*spd*amp,my=dy/L*spd*amp;
+    const ox=p.x,oy=p.y; // V1.12.15需求9：进度只认"真的挪了多少"——贴着虚空边界顶墙不算走路
     p.x=clamp(p.x+mx,20,W-20);p.y=clamp(p.y+my,20,H-20);p.walk++;
-    if(dx)p.dir=dx>0?1:-1;p.movA=Math.atan2(my,mx);
-    voidMoved+=Math.abs(mx)+Math.abs(my);
-    voidSteps+=Math.abs(mx)+Math.abs(my);
+    if(dx)p.dir=dx>0?1:-1;p.movA=Math.atan2(my,mx);voidMoveA=p.movA; // V1.12.15需求3：记下朝向，新流沿反方向来
+    const real=Math.abs(p.x-ox)+Math.abs(p.y-oy);
+    voidMoved+=real;
+    voidSteps+=real;
     while(voidSteps>=VOID_FLOW_EVERY*PT_UNIT){ // 每走 5 个坐标点增加一条数据流
       voidSteps-=VOID_FLOW_EVERY*PT_UNIT;
       if(voidAddFlow()&&hbN===0)hbT=Math.min(hbT,60); // 第一条一起手，1 秒内就要听见心跳（用户要的是"移动的过程中"）
@@ -5926,8 +5938,8 @@ function updateVoid(){
     if(voidDark<1)voidDark=Math.min(1,voidDark+.0045); // ≈3.7 秒走完白→黑，看得见"切"的过程
     if(!ecgBuf.length)for(let i=0;i<ECG_N;i++)ecgBuf.push(rnd(-.01,.01)); // 先把底衬满，避免线从一头长出来
     if(--hbT<=0){hbT=ri(VOID_HB_MIN,VOID_HB_MAX);hbIv=hbT;hbN++;ecgPh=0;hbThump();
-      if(hbN===1)sayPlayer('这是什么声音？',240);
-      else if(hbN%12===0)sayPlayer('它一直在跳……',220);}
+      /* V1.12.15需求6：主角自言自语报数——每跳一下说一次"第 N 下"，第一跳先问一句"这是什么声音"。 */
+      sayPlayer(hbN===1?'这是什么声音？……咚，这是第 1 下。':'又听到了……咚，这是第 '+hbN+' 下。',200);}
     let samp;
     if(ecgPh>=0){samp=ecgAmp(ecgPh);ecgPh+=1/40;if(ecgPh>1)ecgPh=-1;}
     else samp=rnd(-.014,.014); // 无心跳时是基线微抖，跟真监护仪一样有底噪
@@ -5939,6 +5951,32 @@ function updateVoid(){
     const box=flowBox(f.lane);
     f.x=((f.x%box.w)+box.w)%box.w;f.y=((f.y%box.h)+box.h)%box.h;
   }
+  /* V1.12.15需求9：走满 1500 个坐标点（75000 世界像素）→ 终点。触发一次即锁进演出态，不会反复进。 */
+  if(!voidEndOn&&voidUnits()>=VOID_END_UNITS)voidEndGo();
+}
+/* ---------- V1.12.15需求9：终点 ----------
+   流程：150 帧渐白（主角与数据流一起淡掉，世界清空）→ 纯白里一双眼睛缓缓睁开（180 帧）
+   → 睁开后一直学人眨眼（每 2.5~5 秒一次：7 帧闭、4 帧顿、12 帧睁）
+   → 睁眼起满 10 秒，屏幕中间浮出那句话，一直显示。点任意处回到游戏世界（voidBack 原路放回）。 */
+function voidEndGo(){
+  voidEndOn=true;voidEndT=0;eyeBl=ri(150,300);eyeBlT=0;
+  flows.length=0;ecgBuf.length=0;ecgPh=-1;hbT=1e9;p.sayT=0; // 主角消失：数据流、心跳线、气泡全清
+  glog('biz','edge void end',{u:Math.round(voidUnits())},null);
+  voidSaveHere(); // 终点也算"还在虚空"，存档仍写进虚空前的落点
+}
+function updateVoidEnd(){
+  voidEndT++;
+  if(voidEndT>150){ // 睁开之后才开始眨眼
+    if(eyeBlT>0){if(++eyeBlT>23){eyeBlT=0;eyeBl=ri(150,300);}}
+    else if(--eyeBl<=0)eyeBlT=1;
+  }
+}
+function eyeOpenness(){ // 0~1：渐白完成后 180 帧从 0 睁到 1，再乘上当前眨眼相位
+  const base=clamp((voidEndT-150)/180,0,1);
+  if(base<=0)return 0;
+  let k=1;
+  if(eyeBlT>0)k=eyeBlT<=7?1-eyeBlT/7:(eyeBlT<=11?0:(eyeBlT-11)/12);
+  return base*Math.max(0,Math.min(1,k));
 }
 /* 归一化心电复合波（P 波—QRS 群—T 波），形状照医院监护仪那条线调的。 */
 const ECG_W=[[0,0],[.05,0],[.09,.14],[.13,0],[.18,0],[.21,-.14],[.25,.98],[.29,-.52],[.33,.06],[.40,0],[.52,.24],[.64,.27],[.76,.13],[.88,0],[1,0]];
@@ -5969,10 +6007,9 @@ function drawVoidDrift(){
     C.globalAlpha=1;
   }
   C.fillStyle='rgba(248,250,252,'+(k*.85).toFixed(3)+')';C.fillRect(0,0,LW,LH);
-  txt('💠 画面随风飘散…',LW/2,LH/2-140,17,'#5a6a7a','center','700',true);
 }
 /* 每帧绘制的字符总量闸门。字符是本演出的开销主体：一条流画 FLOW_WIN 个字，
-   199 条满仓时若仍按 56 个字算，就是每帧 ~11000 次 fillText——那不是“越来越卡”，是当场定住。
+   满仓时若仍按 56 个字算，就是每帧上万次 fillText——那不是“越来越卡”，是当场定住。
    闸门把每帧字符数压在 GLYPH_BUDGET 内（尾随字数随条数收缩），于是手感是
    “越往后越掉帧”，正是用户原话里“越来越卡了，刷新浏览器才回复正常”的那种卡。 */
 const GLYPH_BUDGET=4200;
@@ -5999,17 +6036,14 @@ function drawFlows(){
   C.globalAlpha=1;C.restore();
 }
 function sAt(f,n,i){i%=n;return f.s.charAt(i);}
-/* 屏幕正中的心电图：一条监护仪带（网格 + 波形 + 读数），高度固定 VEG，两侧被数据流的裁剪绕开。 */
+/* V1.12.15需求7（用户原话“心跳不用一个合适的大宽条，心跳线使用一条红线”）：
+   监护仪底板、网格、两行读数全部撤掉——心跳就是屏幕正中一条红线。
+   数据流的裁剪航道照旧绕开 [LH/2-VEG, LH/2+VEG]，这条带归红线独占。 */
 function drawEcg(){
   if(!ecgBuf.length)return;
-  const by=LH/2-VEG,bh=VEG*2,d=1-voidDark;
   C.save();
-  C.fillStyle=d>.5?'rgba(255,255,255,.72)':'rgba(2,10,4,.62)';C.fillRect(0,by,LW,bh);
-  C.strokeStyle=d>.5?'rgba(30,190,90,.16)':'rgba(40,255,120,.12)';C.lineWidth=1;
-  for(let x=0;x<LW;x+=24){C.beginPath();C.moveTo(x+.5,by);C.lineTo(x+.5,by+bh);C.stroke();}
-  for(let y=by;y<=by+bh;y+=24){C.beginPath();C.moveTo(0,y+.5);C.lineTo(LW,y+.5);C.stroke();}
-  C.strokeStyle='#35ff72';C.lineWidth=2;C.lineJoin='round';
-  if(hbT>Math.max(0,hbIv-26)) {C.shadowColor='#35ff72';C.shadowBlur=14;} // 刚跳完那一拍带余辉
+  C.strokeStyle='#ff3b3b';C.lineWidth=2.2;C.lineJoin='round';
+  if(hbT>Math.max(0,hbIv-26)){C.shadowColor='#ff5a4a';C.shadowBlur=12;} // 刚跳完那一拍带余辉
   C.beginPath();
   const step=LW/(ECG_N-1);
   for(let i=0;i<ecgBuf.length;i++){
@@ -6018,11 +6052,6 @@ function drawEcg(){
   }
   C.stroke();C.shadowBlur=0;
   C.restore();
-  const bpm=hbIv>0?(3600/hbIv):0;
-  txt('♥ '+hbN+' 次 · 每 '+(hbIv/60).toFixed(1)+' 秒一跳（约 '+bpm.toFixed(0)+' BPM）'+(AC?'':' · 静音'),
-      10,LH/2-VEG+12,11,'#35ff72','left',null,true);
-  txt('数据流 '+flows.length+'/'+VOID_CAP+' 条（每条尾 '+flowWin()+' 字）· 走 '+voidUnits().toFixed(1)+' 坐标点 · 背景 '+(voidDark*100).toFixed(0)+'% 黑',
-      10,LH/2+VEG-12,11,'#35ff72','left',null,true);
 }
 /* 虚空里 HUD/触控层整体不上，可手机玩家没有摇杆就没法“移动”——按钮也就永远不会变大。
    于是这里补画一支最小摇杆，只保留方向盘与帽，配色跟随白→黑。 */
@@ -6038,16 +6067,6 @@ function drawVoidJoy(){
     txt('▶',bx+30*ts,by,20*ts,dark>.5?'rgba(200,255,210,.75)':'rgba(20,60,30,.7)','center');}
   tdisc(vj.id>=0?vj.kx:bx,vj.id>=0?vj.ky:by,22*ts,dark>.5?'rgba(44,255,120,.3)':'rgba(30,120,60,.3)',rim);
 }
-/* 虚空里浮在数字雨上的那几行字：先按实测文本宽度铺一块与底色同调的压暗板再写字。
-   不透明度取 .74——实测 .35 时绿字雨直接把标题吃掉，看不清"这是哪里"。 */
-function voidBanner(y,s,fs,col){
-  C.save();
-  C.font='700 '+fs+'px "Microsoft YaHei",sans-serif';
-  const w=Math.min(LW-16,C.measureText(s).width)+22,h=fs+13;
-  rr(LW/2-w/2,y-h/2,w,h,6);C.fillStyle='rgba(2,10,4,.74)';C.fill();
-  C.restore();
-  txt(s,LW/2,y,fs,col,'center','700',true);
-}
 function drawVoid(){
   refreshGait(); // 虚空里也刷步态快照：drawPlayer 的骑马/转向分支共用同一份
   const dark=voidDark;
@@ -6055,6 +6074,7 @@ function drawVoid(){
   C.fillStyle='rgb('+Math.round(248-244*dark)+','+Math.round(250-242*dark)+','+Math.round(252-244*dark)+')';
   C.fillRect(0,0,LW,LH);
   if(voidDrift){drawVoidDrift();return;}
+  if(voidEndOn){drawVoidEnd();return;} // V1.12.15需求9：终点演出接管整块画布
   /* 主角不能按常规居中：那样他就永远站在屏幕正中那条心跳线上（实测截图里人被波形穿过）。
      虚空里没有世界要对齐，把相机往下压 120，人就落在心跳带上方，气泡改挂脚下。
      这只影响取景，不影响任何坐标口径——回归时仍按 voidRet 原坐标放回。 */
@@ -6070,21 +6090,65 @@ function drawVoid(){
   C.restore();
   /* 唯一的那颗大按钮 */
   const B=voidBtn(),pulse=1+Math.sin(t*.06)*.03,r=B.r*pulse;
+  /* V1.12.15需求2：半径从 0 长起，所以 r≈0 时这一整块（含 26px 外发光与 3px 描边）必须不画——
+     否则屏幕里会留一个既看不见又确实在那里的绿点（探针在中带抓到 15,14,14 / 偏绿像素即为此物）。 */
+  if(r>1.5){
   C.save();C.shadowColor='#2cff6a';C.shadowBlur=26;
   C.beginPath();C.arc(B.x,B.y,r,0,7);C.fillStyle='rgba(10,26,14,.9)';C.fill();C.restore();
   C.beginPath();C.arc(B.x,B.y,r,0,7);C.strokeStyle='#2cff6a';C.lineWidth=3;C.stroke();
   C.beginPath();C.arc(B.x,B.y,r*.82,0,7);C.strokeStyle='rgba(44,255,106,.35)';C.lineWidth=1.4;C.stroke();
-  txt('送我回去',B.x,B.y-6,Math.min(30,r*.34),'#eafff0','center','700',true);
-  txt(voidUnits()>0.5?'（越来越大 · 半径 '+r.toFixed(0)+'px）':'（我继续走，它会变大）',B.x,B.y+Math.min(26,r*.28),
-      Math.min(13,r*.16),'#8adfa8','center',null,true);
-  /* 顶部两行是虚空里唯一的"旁白"，绿字满屏时必须还能读——所以给它们一块与底色同调的压暗板。
-     不透明度高到 0.72 才压得住背后的数字雨，0.35 时实测仍然糊成一片。 */
-  voidBanner(26,'💠 这是哪里？！——世界空了，累计探索 '+p.dores+' 次',15,'#8adfa8');
-  if(voidHint){C.globalAlpha=Math.min(1,voidHint.t/30);
-    voidBanner(52,voidHint.txt,13.5,'#ffe14a');C.globalAlpha=1;}
+  /* V1.12.15需求1（用户原话“去掉世界边界特殊空间里面的文字和描述”）：
+     顶部旁白横幅、点空提示条、WASD/摇杆操作说明、上限警告、按钮副标题、心电图两行读数——全部删掉。
+     虚空里剩下的文字只有两处：主角自己的气泡念白，和那颗按钮上的「送我回去」。
+     钮从 0 长起（需求2），r 小的时候字会糊出圆外，等长到 24px 再落字。 */
+  if(r>24)txt('送我回去',B.x,B.y-6,Math.min(30,r*.34),'#eafff0','center','700',true);
+  }
   if(touchMode)drawVoidJoy();
-  voidBanner(BTN_Y-BTN_R1-12,touchMode?'左下摇杆走路；点「送我回去」就回去':'WASD 走路；点「送我回去」就回去',11.5,'#7ad8a0');
-  if(flows.length>=voidMaxFlows())voidBanner(LH/2-VEG-16,'⚠ 数据流已到 '+VOID_CAP+' 上限：继续走只会更卡（刷新浏览器可恢复正常）',12,'#ffd24a');
+}
+/* 终点画面：前 150 帧渐白（主角在中央淡出，其余已清空）；之后纯白底上一双眼睛，
+   睁开度走 eyeOpenness()；那句话在睁眼满 10 秒后出现并一直挂着。 */
+function drawVoidEnd(){
+  const k=clamp(voidEndT/150,0,1);
+  C.fillStyle='#ffffff';C.fillRect(0,0,LW,LH);
+  if(k<1){ // 渐白途中：主角还看得见，但正在淡掉——"屏幕边白，主角消失，所有东西都消失了"
+    camX=p.x-LW/2;camY=p.y-(LH/2-120);
+    C.save();C.globalAlpha=1-k;C.translate(-camX,-camY);drawPlayer();C.restore();
+    C.fillStyle='rgba(255,255,255,'+(k*k).toFixed(3)+')';C.fillRect(0,0,LW,LH);
+    return;
+  }
+  drawEyePair(LW/2-105,LH/2-46,eyeOpenness(),1);
+  drawEyePair(LW/2+105,LH/2-46,eyeOpenness(),-1);
+  if(voidEndT>=150+600){ // 睁眼 10 秒后：那句话出现，一直显示
+    /* 白底上必须 noStroke：txt() 默认描一圈 4px 黑边，深灰字配黑边在纯白背景上糊成一团（实测截图）。 */
+    txt('这只是一个游戏，欢迎回到现实世界，加油，努力，一切都会变好的',LW/2,LH/2+118,22,'#241f1a','center','700',true);
+    txt('（点一下任意处，回到游戏）',LW/2,LH/2+152,12,'#8a8078','center','400',true);
+  }
+}
+/* 一具眼睛：上下两道二次曲线夹出杏仁形，眼白填充 + 裁剪出虹膜/瞳孔/高光，再描眼线。
+   睁开度 op 直接压杏仁形的高度——op=0 时收成一条线，就是闭着的眼。s=±1 决定高光落在哪一侧，
+   两只眼的高光同向，看着才像同一张脸上的一对。
+   杏仁形必须存成 Path2D：画虹膜时的 beginPath() 会把当前路径冲掉，
+   直接沿用旧路径描边，描出来的是最后那个高光小圆，眼线根本不在（实测截图里眼睛没有轮廓）。 */
+function drawEyePair(cx,cy,op,s){
+  const w=150,hh=Math.max(1.2,58*op);
+  const almond=new Path2D();
+  almond.moveTo(cx-w/2,cy);
+  almond.quadraticCurveTo(cx,cy-hh*2,cx+w/2,cy);
+  almond.quadraticCurveTo(cx,cy+hh*2,cx-w/2,cy);
+  almond.closePath();
+  C.save();
+  C.fillStyle='#fffdf7';C.fill(almond);
+  C.save();C.clip(almond);
+  const ir=Math.min(34,Math.max(2,hh*.92)); // 虹膜跟着睁开度缩放，全闭时不会在细缝里露出一圈棕
+  C.beginPath();C.arc(cx,cy,ir,0,7);C.fillStyle='#7a5230';C.fill();
+  C.beginPath();C.arc(cx,cy,ir*.45,0,7);C.fillStyle='#15100b';C.fill();
+  C.beginPath();C.arc(cx-ir*.3*s,cy-ir*.35,ir*.16,0,7);C.fillStyle='rgba(255,255,255,.92)';C.fill();
+  C.restore();
+  C.lineWidth=3.2;C.strokeStyle='#3a2c20';C.stroke(almond); // 上眼线
+  C.beginPath(); // 上眼睑一道阴影，睁开时眼睛才有"眼皮"而不只是两个洞
+  C.moveTo(cx-w/2+6,cy-2);C.quadraticCurveTo(cx,cy-hh*2-6,cx+w/2-6,cy-2);
+  C.lineWidth=5;C.strokeStyle='rgba(58,44,32,.5)';C.stroke();
+  C.restore();
 }
 /* 回归时的“画面逐渐清晰”：与碎屏同构，只是这次只合焦不再撕裂。 */
 function drawFocus(){
@@ -9396,7 +9460,10 @@ function doSave(quiet){
     const b=[];let n=0;
     for(let i=0;i<bagMax();i++){const c=stripItem(bag[i]);b.push(c);if(c)n++;}
     const ch=chest.map(stripItem);let cn=0;for(const c of ch)if(c)cn++; // 需求14：仓库数据存入缓存
-    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,dores:p.dores|0,duoI:p.duoI|0,set:p.set,cos:p.cos,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
+    /* V1.12.15：虚空里主角的坐标是"空白世界"里的位置，切后台/关页面触发的自存若照写，
+       下次读档人就落在墙里（虚空走满 1500 点要 4 分半，撞上的概率不低）。与副本同理，落档写回进虚空前的点。 */
+    const sx=(voidOn&&voidRet)?voidRet.x:p.x, sy=(voidOn&&voidRet)?voidRet.y:p.y;
+    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:sx,y:INST.on?INST.homeY:sy,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,dores:p.dores|0,duoI:p.duoI|0,set:p.set,cos:p.cos,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
     localStorage.setItem(slotKey(curSlot),JSON.stringify(d));
     lastSave=Date.now();
     if(!quiet)msg('💾 '+p.name+'（档'+(curSlot+1)+'）已保存：Lv'+p.lvl+' · 背包 '+n+' 件 · 仓库 '+cn+' 件','#8fd08f');
