@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.10</title>
+<title>降龙猎手 · 五行觉醒 V1.12.11</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -1854,7 +1854,9 @@ function drawMntPanel(){
   if(mntMgr)btn(px+pw-142,py+8,94,26,'✨ 乘最快骑',function(){bestMountRide();},'#3a5a3a'); // V1.12.0需求5：一键换到已收服里跑得最快的
   txt(mntMgr?'🏇 御骑厩 · 坐骑管理':'🏇 弼马温 · 御骑厩',px+pw/2,py+20,16,'#e8c86a','center'); // V1.12.0需求5：同一个面板，两个入口语境
   const unN=MOUNTS.filter(function(m){return mntUn(m.key);}).length,cm=myMnt();
-  txt('已收 '+unN+' / '+MOUNTS.length+' 骑 · 当前「'+(cm?cm.n:'未骑（可去马桩乘凡马）')+'」· 移速 +'+mntSpdAdd(),px+pw/2,py+40,11,'#9ab8a8','center');
+  /* V1.12.11需求3：旧行写「当前『X』」，让人以为 X 已经骑在身上——其实那只是"选定的那匹"，
+     是否真的骑着另有 p.mr。现在把两件事分开说，避免再次误认为"点了没骑上"。 */
+  txt('已收 '+unN+' / '+MOUNTS.length+' 骑 · 已选「'+(cm?cm.n:'无')+'」· '+(p.mr?('正骑「'+(cm?cm.n:'凡马')+'」移速 +'+mntSpdAdd()):'未骑乘（点下方或格内「乘坐此兽」）'),px+pw/2,py+40,11,'#9ab8a8','center');
   const nc=mntCur();
   txt(nc?'📜 坐骑任务：讨伐【'+nc.mkn+'】→ 得「'+nc.ic+nc.n+'」（Lv'+nc.lv+' 可战，现 Lv'+p.lvl+'）':'📜 '+MOUNTS.length+'骑尽归麾下——你已是大陆第一御骑师！',px+pw/2,py+56,11.5,nc?'#e8cf4a':'#8fd08f','center');
   txt(mntMgr?'坐骑管理随时可开（按 K / 右上「🏇 坐骑」/ 触控「骑」）——换骑、上下面不必回基地；弼马温那里只负责初次领取':('弼马温捋须：“坐骑每五级一种，等级够了就去御骑境砍它的王——砍倒就归你；不图别的，只快。”'),px+pw/2,py+72,10.5,'#8ab8d8','center');
@@ -1868,8 +1870,16 @@ function drawMntPanel(){
     C.strokeStyle=cur?'#e8c86a':un?'#6a8a4a':'#4a4460';C.lineWidth=cur?2:1.2;C.stroke();
     txt(m.ic+' '+m.n,cx+10,cy+15,13,cur?'#fff2b0':un?'#cfe4b0':'#9a92b0','left');
     txt('Lv'+m.lv+' 起 · 移速 +'+m.spd,cx+10,cy+33,10.5,'#8a92a8','left');
-    txt(un?(cur?'✅ 正在被骑':'🟢 已收服'):(ok?'⚔ 可讨伐':'🔒 等级不足'),cx+cw-10,cy+33,10.5,un?(cur?'#e8c86a':'#8fd08f'):(ok?'#ff9a5a':'#6a6480'),'right');
-    if(cur)btn(cx+10,cy+46,cw-20,22,'当前乘骑',function(){},'#4a5a2a');
+    txt(un?(cur?'✅ 已选乘':'🟢 已收服'):(ok?'⚔ 可讨伐':'🔒 等级不足'),cx+cw-10,cy+33,10.5,un?(cur?'#e8c86a':'#8fd08f'):(ok?'#ff9a5a':'#6a6480'),'right');
+    /* V1.12.11需求3（用户原话：“修复坐骑初次点击乘坐按钮没有乘坐的情况；现在是切换成其他的坐骑，
+       再切换回来才显示”）——病根不是渲染，是热区：选中坐骑那一格的按钮被写成了
+       btn(...,'当前乘骑',function(){}) 一个空函数，而 p.mounts.sel 与 p.mr（是否真的骑在身上）
+       本是两件事：mntWin() 收服时会顺手把 sel 设成新坐骑，但从不置 p.mr。于是玩家第一次打开
+       坐骑面板，自己想骑的那一匹恰好就是"当前 sel"，于是看到的是一枚点了没反应的「当前乘骑」——
+       只有先去点别的坐骑（走 rideMount 真的上了马），再点回来才看得到坐骑，正是用户的描述。
+       现改成：未骑乘时该格按钮就是「乘坐此兽」（照常 rideMount），已骑乘时才显示「下坐骑」。 */
+    if(cur&&p.mr)btn(cx+10,cy+46,cw-20,22,'⬇ 下坐骑',function(){toggleRide();},'#5a4a2a');
+    else if(cur)btn(cx+10,cy+46,cw-20,22,mntMgr?'🏇 乘坐此兽':'🏇 骑乘此兽',function(){rideMount(m.key);},'#4a5a2a');
     else if(un)btn(cx+10,cy+46,cw-20,22,mntMgr?'🏇 乘坐此兽':'🏇 换骑此兽',function(){rideMount(m.key);},'#3a5a3a'); // V1.12.0需求5：管理入口里直接“乘坐”
     else if(ok)btn(cx+10,cy+46,cw-20,22,'⚔ 入御骑境讨伐 '+m.mkn,function(){mountOpen=false;enterMountDun(m);},'#5a2a2a');
     else btn(cx+10,cy+46,cw-20,22,'🔒 升到 Lv'+m.lv+' 方可应战',function(){msg('🔒 「'+m.n+'」需 Lv'+m.lv+'——现在 Lv'+p.lvl+'，还差 '+(m.lv-p.lvl)+' 级','#e85a5a');sfx(200,.08,'square',.03);},'rgba(40,38,52,.8)');}
@@ -2294,7 +2304,7 @@ const p={x:3500,y:2260,hp:100,mp:50,lvl:1,exp:0,gold:0,aim:0,cool:0,inv:0,flash:
   equip:{mweap:null,sweap:null,hat:null,top:null,pants:null,boots:null,acc:null,neck:null},
   slots:[0,8,4,11],skcd:[0,0,0,0],skLvl:{},skUse:{},store:{},ek:{},ekN:{},bagRows:10,qs:[],qa:{},qv:0,main:0,encN:0, // 需求50/70：qs=进行中任务列表(≤10)、qa=成就位图、qv=已交付数、encN=已发大鼓励次数；V1.11.2：ek=召BOSS倒计时（每 20 归零）、ekN=精英累计净击杀（主线判定的唯一依据，只增不减）
   autoSell:{eq:false,wp:false,pot:false,book:false,mat:false},colEq:0,colMat:{},ach2:{enhOk:0,drillOk:0,skLvlMax:0,morphN:0,petLvl:0,towerMax:0,towerKills:0,towerAch:0,mazeK:0,mazeEx:0,petKill:0,mountN:0,blessR:0},morphUsed:{}, // 需求76：自动售卖开关；需求77：装备/材料收集计数；v1.4需求27/28：ach2=五大系统联动成就计数；v1.5需求3/4：tower*=爬塔进度；V1.6/V1.7：mazeK/mazeEx/petKill/mountN；V1.8：blessR=祝福大典圆成轮数
-  set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度；V1.12.9性能5：lp=省电模式（默认关）
+  set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0},cos:{},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度；V1.12.9性能5：lp=省电模式（默认关）；V1.12.11需求2：cos=成就外显开关（键存在且为 0 才隐藏，缺省即显示）
   mounts:{un:{},sel:''},mr:false, // V1.7：un=已解锁坐骑、sel=当前坐骑、mr=野外自由乘骑旗标
   pets:[null,null,null,null], // v1.4需求21：同时携带4个宝宝（兼容旧 p.pet 单人档）
   kills:{slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0}};
@@ -2505,7 +2515,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.10';
+const GLOG_MAX=600,GLOG_VER='1.12.11';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -2771,11 +2781,26 @@ function drawHovTip(anyPanel){
 
 /* ============ 需求50/51/52：怪物故事线任务 + 成就勋章 + 天使交接 ============ */
 const QTGT=[10,50,150]; // 每怪3档成就：击杀10/50/150
-const QEFF={atk:'攻击+2%',hp:'生命+3%',def:'防御+3',gold:'金币+6%',crit:'暴击+1.2%',spd:'移速+2.5%',exp:'经验+8%',mp:'魔法+15%'};
+/* V1.12.11需求2（用户原话：“修复数值生效异常+平衡数值”）：
+   旧版有两套数值口径——QEFF 是写死的说明文字（攻击+2%／魔法+15%…），achEff() 是另一套算式
+   （v*3、def v*2、crit v*1.2、spd v*2.5），两者从来不一致：文案说 +2%，实际每档 +3%；
+   魔法文案 +15%，实际只有 +3%（差 5 倍）。玩家按文案理解强度，面板与浮窗又各自引用文案，
+   于是看起来就是「数值没生效」。现在把**算式收敛成唯一出口 achVal(e,v)，文案由同一个函数生成**，
+   文字与生效值在结构上不可能再分家。
+   同时整体平衡：全部 147 档点亮时旧口径为 攻击+168% 生命+186% 经验+123% 魔法+105% 金币+93%
+   移速+82.5% 暴击+45.6% 防御+96 —— 攻击/生命两项接近翻倍以上，把装备、加点、套装全部比下去，
+   后期数值膨胀失控。按每效果的 v 总量（atk56 hp62 def48 gold31 exp41 mp35 crit38 spd33）
+   重配倍率，满成就收敛为 攻击+84% 生命+93% 防御+48点 金币+37.2% 经验+49.2% 魔法+42%
+   移速+26.4% 暴击+19%——约为原来的一半，仍然显著，但不再盖过玩家自己的养成。 */
+const ACH_MUL={atk:1.5,hp:1.5,def:1,gold:1.2,crit:0.5,spd:0.8,exp:1.2,mp:1.2};
+const QEFF={atk:['攻击','%'],hp:['生命','%'],def:['防御','点'],gold:['金币','%'],crit:['暴击','%'],spd:['移速','%'],exp:['经验','%'],mp:['魔法','%']};
+function achVal(e,v){return Math.round(v*(ACH_MUL[e]||1)*100)/100;} // 唯一生效值出口（文案与算式共用）
+function achTxt(e,v){const q=QEFF[e];return q[0]+'+'+achVal(e,v)+q[1];} // 由生效值反推文案
+const ACHIC={atk:'⚔',hp:'❤',def:'🛡',gold:'💰',crit:'💥',spd:'🌀',exp:'⭐',mp:'🔮'}; // V1.12.11需求2：成就列表里的勋章改用图标+数值，宽度可控
 const QEFFK=Object.keys(QEFF);
 const STORY=(function(){const L=[];for(const k in MT){if(MT[k].onlyBoss)continue; // 需求50：全怪物故事线（含12星座/Lv55-75），神兽不入线
   L.push({key:k,name:MT[k].name,zone:MT[k].zone,
-    st:[0,1,2].map(function(j){const e=QEFFK[(hashStr(k)+j)%8];const nm=['初窥门径','渐入佳境','登堂入室'][j];return{t:QTGT[j],e:e,v:j===0?1:j===1?2:4,txt:'讨伐 '+MT[k].name+' ×'+QTGT[j],d:'【'+zl(MT[k].zone)+'】'+nm+'：'+QEFF[e]}})});}
+    st:[0,1,2].map(function(j){const e=QEFFK[(hashStr(k)+j)%8];const nm=['初窥门径','渐入佳境','登堂入室'][j];return{t:QTGT[j],e:e,v:j===0?1:j===1?2:4,txt:'讨伐 '+MT[k].name+' ×'+QTGT[j],d:'【'+zl(MT[k].zone)+'】'+nm+'：'+achTxt(e,j===0?1:j===1?2:4)}})});}
   return L;})();
 function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return Math.abs(h);}
 /* 需求59/68：营地村民——集中部署在落鸦村中央广场（天使周围），简单对话 + 纳入成就任务线（对话次数即进度） */
@@ -2791,7 +2816,7 @@ const NPCS=[
  {key:'npc_taoist',name:'道士紫云',x:3008,y:1884,hue:280,lines:['道可道，非常道；店可开，非常店','观施主印堂发黑……哦不，发金光！此乃猎天之相！','每日三叩首，财位天上来——福生无量天尊','杀孽太重要焚香化解，请一炷，打折','夜饭菰蒲无兼肉，羡子清吟得满卷——啊，好诗！']},
 ];
 NPCS.forEach(function(n,i){STORY.push({key:n.key,name:n.name,zone:'town',
-  st:[0,1,2].map(function(j){const e=QEFFK[(i*3+j*2)%8];return{t:[10,30,80][j],e:e,v:j===0?1:j===1?2:4,txt:'与 '+n.name+' 交谈 ×'+[10,30,80][j],d:'【落鸦村】'+['初识','熟络','莫逆'][j]+'：'+QEFF[e]};})});});
+  st:[0,1,2].map(function(j){const e=QEFFK[(i*3+j*2)%8];const v=j===0?1:j===1?2:4;return{t:[10,30,80][j],e:e,v:v,txt:'与 '+n.name+' 交谈 ×'+[10,30,80][j],d:'【落鸦村】'+['初识','熟络','莫逆'][j]+'：'+achTxt(e,v)};})});});
 /* v1.4需求28：五大系统联动成就——强化/打孔/技能/变身/宝宝，各自 3 档目标 */
 const SYS_ACH=[
   {custom:'enh',key:'ach_enh',name:'强化宗师',zone:'town',tiers:[5,20,60],eff:['atk','crit','atk'],labels:['初锤','匠师','入化']},
@@ -2800,20 +2825,20 @@ const SYS_ACH=[
   {custom:'morph',key:'ach_morph',name:'变身收藏家',zone:'town',tiers:[3,10,25],eff:['spd','hp','atk'],labels:['入门','收藏','方物']},
   {custom:'pet',key:'ach_pet',name:'宝宝之友',zone:'town',tiers:[5,15,30],eff:['gold','exp','hp'],labels:['新手','豢养','通灵']}];
 SYS_ACH.forEach(function(a,ai){STORY.push({key:a.key,custom:a.custom,name:a.name,zone:'town',
-  st:[0,1,2].map(function(j){const e=a.eff[j];return{t:a.tiers[j],e:e,v:j===0?1:j===1?2:4,txt:a.name+'：'+a.labels[j]+'（达 '+a.tiers[j]+'）',d:'【成就】'+a.labels[j]+'阶段：'+QEFF[e]};})});});
+  st:[0,1,2].map(function(j){const e=a.eff[j],v=j===0?1:j===1?2:4;return{t:a.tiers[j],e:e,v:v,txt:a.name+'：'+a.labels[j]+'（达 '+a.tiers[j]+'）',d:'【成就】'+a.labels[j]+'阶段：'+achTxt(e,v)};})});});
 /* v1.5需求4：塔之王成就线——爬塔深度 20/50/100 三档 */
 STORY.push({key:'ach_tower',custom:'tower',name:'塔之王',zone:'town',
-  st:[0,1,2].map(function(j){const e=['atk','exp','hp'][j];return{t:[20,50,100][j],e:e,v:j===0?2:j===1?3:5,txt:'塔之王：登临通天塔第 '+[20,50,100][j]+' 层',d:'【成就·爬塔】'+['小跃层云','半临天界','塔之王·百层登顶'][j]+'：'+QEFF[e]};})});
+  st:[0,1,2].map(function(j){const e=['atk','exp','hp'][j],v=j===0?2:j===1?3:5;return{t:[20,50,100][j],e:e,v:v,txt:'塔之王：登临通天塔第 '+[20,50,100][j]+' 层',d:'【成就·爬塔】'+['小跃层云','半临天界','塔之王·百层登顶'][j]+'：'+achTxt(e,v)};})});
 /* V1.6需求2 + V1.7需求：迷宫斩妖/迷宫行者/万兽之母/御骑宗师 四条分阶段成就线（进度存 p.ach2） */
 [['ach_maze','mazeK','百妖辟易',[3,10,25],['atk','crit','hp'],['初破妖威','群妖辟易','迷宫之主'],['在万妖迷宫斩杀迷宫 BOSS','连斩十妖','荡平廿五妖']],
  ['ach_mazeout','mazeEx','迷宫行者',[1,2,4],['exp','hp','atk'],['寻得门户','轻车熟路','万径归宗'],['找到迷宫隐藏出口','再寻两次','累计寻径四次']],
  ['ach_petk','petKill','万兽之母',[6,18,40],['gold','exp','hp'],['孵蛋新手','兽群如云','万兽朝凤'],['在产蛋秘境斩杀神兽','连破十八兽','万兽归心']],
  ['ach_mnt','mountN','御骑宗师',[3,7,11],['atk','exp','hp'],['初执缰','牧四方','御骑宗师'],['讨伐御骑境拿下坐骑','七骑连营在厩','十一骑尽归麾下']]].forEach(function(a){
   STORY.push({key:a[0],custom:a[1],name:a[2],zone:'town',
-    st:[0,1,2].map(function(j){const e=a[4][j];return{t:a[3][j],e:e,v:j+1,txt:a[2]+'：'+a[5][j]+' ×'+a[3][j],d:'【'+a[2]+'】'+a[5][j]+'阶：'+a[6][j]+'——'+QEFF[e]};})});});
+    st:[0,1,2].map(function(j){const e=a[4][j],v=j+1;return{t:a[3][j],e:e,v:v,txt:a[2]+'：'+a[5][j]+' ×'+a[3][j],d:'【'+a[2]+'】'+a[5][j]+'阶：'+a[6][j]+'——'+achTxt(e,v)};})});});
 /* V1.8需求6：福满乾坤成就线——一轮回 48 条祝福全部播完记 1 轮，三档 1/3/6 轮（进度存 p.ach2.blessR） */
 STORY.push({key:'ach_bless',custom:'blessR',name:'福满乾坤',zone:'town',
-  st:[0,1,2].map(function(j){const e=['gold','hp','atk'][j];return{t:[1,3,6][j],e:e,v:j+2,txt:'福满乾坤：圆成第 '+[1,3,6][j]+' 轮祝福大典',d:'【成就·祝福】'+['初闻喜炮','喜满衣襟','福泽绵长'][j]+'阶：'+QEFF[e]};})});
+  st:[0,1,2].map(function(j){const e=['gold','hp','atk'][j],v=j+2;return{t:[1,3,6][j],e:e,v:v,txt:'福满乾坤：圆成第 '+[1,3,6][j]+' 轮祝福大典',d:'【成就·祝福】'+['初闻喜炮','喜满衣襟','福泽绵长'][j]+'阶：'+achTxt(e,v)};})});
 /* ============ V1.11.1需求2/3：基地防卫体系——四门守军 + 近畿四支巡逻卫队 ============
    设计口径：
    · 守卫驻在寨墙豁口（出入口）内侧，怪物追进基地范围内即自动交战；
@@ -3941,7 +3966,36 @@ function qProg(i){const s=STORY[i];/* v1.4需求28：五大系统联动成就—
   return p.kills[s.key]||0;}
 function qDone(i,j){return (p.qa[i]>>j)&1;}
 const QMAX=10; // 需求70：任务最多同时接取 10 个，接取/交付均在营地天使处
-const COSMGIFT=['🎐 魂火肩饰','🌠 星河披帛','🧧 晚霞云裳','💫 虹彩双环','🪶 凯旋羽冠','🐉 龙影盘绕','❄️ 霜骨冰魄','⚡ 紫电绕身','🔥 浴火凰环','✨ 不灭金身']; // 需求72：每5成就赠1件外显装扮，共10件
+/* ============ V1.12.11需求2：成就外显体系（装扮表 + 显示开关 + 管理界面） ============
+   旧版只有 10 件装扮（每 5 个成就 1 件，封顶 50），且"要么全显要么没有"——
+   到后期 147 个成就全部点亮时，身上仍只挂 10 件，且永远无法关掉想关掉的那件。
+   现在：装扮表扩到 16 件（5~135 档）+ 成就称号（最高档随进度升阶），
+   每一件都可单独开关，开关存在 p.cos（缺省=全部显示，旧档无需迁移）。 */
+const COSMGIFT=[ /* need=达成多少个成就点亮；k=存档/开关键 */
+  {k:'g1', ic:'🎐',n:'魂火肩饰',need:5},   {k:'g2', ic:'🌠',n:'星河披帛',need:10},
+  {k:'g3', ic:'🧧',n:'晚霞云裳',need:15},  {k:'g4', ic:'💫',n:'虹彩双环',need:20},
+  {k:'g5', ic:'🪶',n:'凯旋羽冠',need:25},  {k:'g6', ic:'🐉',n:'龙影盘绕',need:30},
+  {k:'g7', ic:'❄️',n:'霜骨冰魄',need:35},  {k:'g8', ic:'⚡',n:'紫电绕身',need:40},
+  {k:'g9', ic:'🔥',n:'浴火凰环',need:45},  {k:'g10',ic:'✨',n:'不灭金身',need:50},
+  /* V1.12.11 新增 6 件——旧版 50 个成就以后就再无外显，51~147 这段长尾全是空档 */
+  {k:'g11',ic:'🌌',n:'星河天冠',need:60},  {k:'g12',ic:'🪐',n:'环带星轨',need:75},
+  {k:'g13',ic:'🏵️',n:'金莲步',need:90},   {k:'g14',ic:'⚔️',n:'剑影随行',need:105},
+  {k:'g15',ic:'🕊️',n:'圣羽环绕',need:120}, {k:'g16',ic:'🌟',n:'永恒星冕',need:135}];
+const COS_ANGEL=[ /* 天使三件套（沿用需求78里程碑，纳入统一管理） */
+  {k:'wing',ic:'🪽',n:'光之翼',need:WING_T},{k:'ring',ic:'👑',n:'圣辉头环',need:RING_T},{k:'angel',ic:'👼',n:'天使形态',need:ANGEL_T}];
+const COS_TITLE=[10,30,60,100,147].map(function(n,i){return {n:n,t:['初露锋芒','名动一方','大陆传说','万魔俯首','降龙猎手'][i]};});
+const COS_ALL=COS_ANGEL.concat(COSMGIFT,[{k:'title',ic:'🏅',n:'成就称号',need:10}]); // 管理界面清单
+function cosHas(o){return p.qv>=o.need;}
+function cosS(){if(!p.cos)p.cos={};return p.cos;}
+function cosOn(k){return cosS()[k]!==0;} // 缺省即显示——旧档没有该字段也不会少东西
+function cosTog(k,label){const s=cosS();const now=!cosOn(k);s[k]=now?1:0;
+  msg((now?'👁 已显示【'+label+'】':'🙈 已隐藏【'+label+'】')+'（外显只影响观感，成就加成照常生效）','#ff9ad5');
+  sfx(now?760:420,.06,'triangle',.03);doSave(true);}
+function cosTogAll(show){const s=cosS();for(const o of COS_ALL)s[o.k]=show?1:0;
+  msg(show?'🎨 成就外显：全部显示':'🎨 成就外显：全部隐藏（加成仍在，只是不挂身上）','#ff9ad5');sfx(660,.08,'triangle',.04);doSave(true);}
+function cosGifts(){ /* 已点亮的装扮（按达成数） */
+  return COSMGIFT.filter(function(o){return cosHas(o);});}
+function cosTitle(){let t='';for(const c of COS_TITLE)if(p.qv>=c.n)t=c.t;return t;}
 const ENCMODE=['焰火礼','金雨礼','彩虹环','胜利号角','爱心雨','流星雨','凤鸣九天','龙吟大地','惊雷贺彩','莲华绽放']; // 需求64：10种大鼓励方式轮换不重复
 function encCelebrate(n){ // 需求64：每完成5个成就给一个大大的鼓励，方式各不相同
   const k=(n-1)%ENCMODE.length,cx=p.x,cy=p.y;
@@ -3975,23 +4029,33 @@ function qTake(){ // 需求70：天使批量接取（持有上限10），已达�
 function qLight(i,j){ // 点亮成就勋章（自动激活）+ 需求63/64/72里程碑反馈
   const st=STORY[i].st[j];
   p.qa[i]|=1<<j;p.qv++;
-  msg('🎖 成就达成【'+st.d+'】——勋章已自动激活：'+QEFF[st.e],'#ffd700');
+  msg('🎖 成就达成【'+st.d+'】——勋章已自动激活：'+achTxt(st.e,st.v),'#ffd700');
   arp([523,659,784,1046],85);flashS=Math.max(flashS,.25);
-  if(p.qv%5===0){encCelebrate(p.qv/5); // 需求64
-    msg('🎁 阶段装扮赠礼【'+COSMGIFT[Math.min(9,p.qv/5-1)]+'】已点亮外显！','#ff9ad5');} // 需求72
-  if(p.qv===10)msg('🪽 交付满10个任务！天使为你戴上光之翼（背后翅膀已显化）','#ffd700');
-  if(p.qv===RING_T)msg('👑 达成'+RING_T+'个成就！天使授予你圣辉头环','#ffd700'); // 需求78
+  if(p.qv%5===0)encCelebrate(p.qv/5); // 需求64
+  /* V1.12.11需求2：赠礼播报改为按装扮表逐条判定（旧版用 qv/5 取下标，装扮档位一旦不等间距就报错位）。
+     同时播报新到手的称号。 */
+  for(const o of COSMGIFT)if(o.need===p.qv)msg('🎁 阶段装扮赠礼【'+o.ic+' '+o.n+'】已点亮外显！按 J 可单独开关','#ff9ad5');
+  for(const o of COS_ANGEL)if(o.need===p.qv)msg(o.ic+' 达成'+o.need+'个成就！天使授予你【'+o.n+'】','#ffd700');
   if(p.qv===ANGEL_T){msg('👼 达成'+ANGEL_T+'个成就！你褪去凡躯——化身天使！','#fff2b0');
     flashS=.4;arp([523,659,784,1046,1318],110);}
+  for(const c of COS_TITLE)if(c.n===p.qv)msg('🏅 成就称号升阶——你现在是「'+c.t+'」（头顶铭牌已更新，按 J 可关闭显示）','#ffe9a8');
   if(p.qv>=QALL){msg('☕ 冒险家提示：所有故事都写完了——休息休息，记得喝口水！','#8fe8c8'); // 需求63
     flashS=.4;arp([523,659,784,1046,1318],110);}
 }
 function achCnt(i,j){return qDone(i,j);}
 function achEff(){ // 成就勋章效果聚合（自动激活，无需佩戴）
+  /* V1.12.11需求2：倍率不再写死在这里，统一走 achVal()——与面板/播报文案同一个出口。 */
   const r={atk:0,hp:0,def:0,gold:0,crit:0,spd:0,exp:0,mp:0};
   for(let i=0;i<STORY.length;i++)for(let j=0;j<3;j++){if(!qDone(i,j))continue;
-    const st=STORY[i].st[j];r[st.e]+=(st.e==='def'?st.v*2:st.e==='crit'?st.v*1.2:st.e==='spd'?st.v*2.5:st.v*3);}
+    const st=STORY[i].st[j];r[st.e]=Math.round((r[st.e]+achVal(st.e,st.v))*100)/100;}
   return r;}
+/* V1.12.11需求2：成就总收益明细（给成就面板/浮窗显示"目前成就共为你加了多少"） */
+function achLines(){ // 按效果聚合已点亮档数：{e,val,n}
+  const m={};
+  for(let i=0;i<STORY.length;i++)for(let j=0;j<3;j++){if(!qDone(i,j))continue;
+    const st=STORY[i].st[j];const q=m[st.e]||(m[st.e]={e:st.e,val:0,n:0});
+    q.val=Math.round((q.val+achVal(st.e,st.v))*100)/100;q.n++;}
+  return QEFFK.filter(function(e){return m[e];}).map(function(e){return m[e];});}
 function achN(){let n=0;for(let i=0;i<STORY.length;i++)for(let j=0;j<3;j++)if(qDone(i,j))n++;return n;}
 function nearAngel(){return dist(p.x,p.y,ANGEL.x,ANGEL.y)<ER.angel;} // 需求51/68：天使站在营地中央广场（V1.12.0需求1：半径取 ER）
 /* v1.4需求26：抽取 doTalk，给触控与键盘共用；当前周围是否可交互 NPC */
@@ -4039,6 +4103,7 @@ function angelInteract(){ // 需求70：交付全部已达标任务→自动补�
   else if(!del)msg('📜 任务匣已满（'+QMAX+'/'+QMAX+'），先完成一些再来找天使','#e8cf4a');
 }
 let questOpen=false;
+let cosTab=0; // V1.12.11需求2：J 面板第二页「🎨 外显」的当前页签（0=成就 1=外显）
 /* ===== v1.4需求9：万象变身——必须已完全解锁对应怪物三档成就才可变身，获其属性10倍加成，持续60秒、冷却30秒 ===== */
 let morphOpen=false;
 const MORPH_DUR=3600,MORPH_CD=1800; // 60秒持续 / 30秒冷却（60帧每秒）
@@ -4208,15 +4273,27 @@ function drawMorphPanel(){ // v1.4需求9：变身面板——列出全部怪物
 function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方式+自动激活效果+外观进度
   /* V1.10.2需求6：手机字太小——任务/成就面板整体改大字号，并按字号计算列宽，避免溢出 */
   const SC=1.02,FH=11.5,FS=10,FN=9,FD=14.5;let FROW=13*1.3; // 标题/进度行/主线行/支线徽章/支线行/行高
-  const COLW=Math.floor((560-28)/2); // 单列可用宽
-  const w=560,h=470,x=(LW-w)/2,y=34;
+  /* V1.12.11需求2：面板 560→700、勋章改「图标+数值」并按 measureText 顺排——
+     旧版三枚 🎖 文案（如「🎖攻击+1.5%」约 53px）挤在 48px 的固定槽里，第二枚直接压住第一枚，
+     右列还越界盖到下一列的行名上；而本版要玩家"看清数值到底加了多少"，重叠等于白做。
+     实测（同一字体口径）：最长行名 165.5px、三枚勋章最宽 137.3px，单列 336px 刚好容得下
+     （14 + 165.5 + 6 + 137.3 = 322.8 < 336-8），背包面板本就是 920 宽，700 不算突兀。 */
+  const w=700,h=470,x=(LW-w)/2,y=34;
+  const COLW=Math.floor((w-28)/2); // 单列可用宽
 
   panelRect={x:x,y:y,w:w,h:h}; // V1.9.1需求3：任务/成就面板补齐 panelRect，点面板外才能正确判定
   rr(x,y,w,h,10);C.fillStyle='rgba(8,10,6,.95)';C.fill();C.strokeStyle='#8a7a3a';C.lineWidth=2;C.stroke();
   closeBtn(x+w-42,y+8,32,26,function(){questOpen=false;sfx(420,.06,'square',.03);}); // V1.10.2需求7：成就页 ✕ 走 top 热区 + 外扩命中区 // V1.9.1需求3：成就页无关闭按钮→补上
-  txt('📖 主线任务 · 📜 支线讨伐 · 🎖 成就勋章',x+w/2,y+20,16.5,'#ffd700','center','bold');
-  const wing=p.qv>=WING_T,ring=p.qv>=RING_T,angel=p.qv>=ANGEL_T;
-  txt('进度 '+p.qv+'/'+QALL+' ｜ 🪽光之翼 '+(wing?'✔已获得':'需'+WING_T+'(现'+p.qv+')')+' ｜ 👑圣辉头环 '+(ring?'✔已获得':'需'+RING_T+'(现'+p.qv+')')+' ｜ 👼天使形态 '+(angel?'✔已觉醒':'需'+ANGEL_T+'(现'+p.qv+')'),x+w/2,y+40,12,angel?'#fff2b0':'#c9b878','center');
+  /* V1.12.11需求2（用户原话：“成就外显管理的界面（可以控制哪些显示，哪些关闭）”）：
+     J 面板加一页「🎨 外显」——沿用面板互斥/关闭体系，不新增全局面板旗标，避免漏接 closeAllPanels。 */
+  (function(){const TB=[['📜 成就',0],['🎨 外显',1]];
+    TB.forEach(function(T,i){const tx=x+w-220+i*70,on=(cosTab===1)===(i===1);
+      btn(tx,y+6,66,26,T[0],function(){cosTab=T[1];sfx(700,.05,'triangle',.03);},on?'#5a4a2a':'rgba(40,38,52,.9)');});})();
+  if(cosTab===1){drawCosMgr(x,y,w,h);return;}
+  txt('📖 主线 · 📜 支线 · 🎖 成就勋章',x+14,y+20,15.5,'#ffd700',null,'bold');
+  const wing=p.qv>=WING_T&&cosOn('wing'),ring=p.qv>=RING_T&&cosOn('ring'),angel=p.qv>=ANGEL_T&&cosOn('angel');
+  /* V1.12.11需求2：一行念清"三件套 + 装扮件数 + 称号"，并提示可在「🎨 外显」页单独开关 */
+  txt('进度 '+p.qv+'/'+QALL+' ｜ 🪽'+(p.qv>=WING_T?(wing?'显示中':'已隐藏'):'需'+WING_T)+' ｜ 👑'+(p.qv>=RING_T?(ring?'显示中':'已隐藏'):'需'+RING_T)+' ｜ 👼'+(p.qv>=ANGEL_T?(angel?'已觉醒':'已隐藏'):'需'+ANGEL_T)+' ｜ 🎁装扮 '+cosGifts().length+'/'+COSMGIFT.length+' · 🏅'+(cosTitle()||'未得称号'),x+w/2,y+40,11.5,angel?'#fff2b0':'#c9b878','center');
   const md=MAINLIN[p.main]; // v1.5.3需求13/14：顶部主线区（当前章 + 等级门槛 + 剧情）
   const ML=mqLines(); // V1.11.2需求1：面板主线区改为「章节步骤」制——第1行章节/门槛，第2行当前步骤+引导
   txt(ML?(ML.chap+' '+ML.stp+'　'+ML.gateTxt):'📖 主线——所有章节已完成，你本身就是传说',x+w/2,y+57,12,md&&p.lvl<md.lv?'#e85a5a':'#ff9ad5','center');
@@ -4237,17 +4314,77 @@ function drawQuestPanel(){ // 任务与成就列表（J 键）：显示获取方
       let stt,dc;if(qDone(i,2)){stt='✔✔✔';dc='#8fd08f';}else if(!qDone(i,1)&&qProg(i)>=s.st[1].t){stt='✔✔·待交';dc='#e8cf4a';}else if(!qDone(i,0)&&qProg(i)>=s.st[0].t){stt='✔·待交';dc='#e8cf4a';}else{const cq=p.qs.filter(function(q){return q.qi===i;})[0];if(cq){stt='▶ '+qProg(i)+'/'+s.st[cq.sj].t;dc='#b06ae8';}else{stt='· '+qProg(i)+'/'+s.st[qDone(i,0)?qDone(i,1)?2:0:0].t;dc='#77807a';}} // 目标数按档取（兼容村民线10/30/80）
       const zc88=zoneCoord(s.zone); // 需求88：成就列表标注怪物坐标
       txt((r+1+col*per)+'. '+s.name+' 🧭'+zc88.x+','+zc88.y+' '+stt,cx0,cy0+r*FROW,FN,dc);
-      const badge=function(j){let d=s.st[j].d.split('：')[1]||'';const lim=Math.floor(((j===0?152:j===1?200:246)*SC)/FD*FD);return d.length>lim?d.slice(0,lim)+'…':d;};
-      if(qDone(i,0))txt('🎖'+badge(0),cx0+154*SC,cy0+r*FROW+1,FS,'#7c8f6a');
-      if(qDone(i,1))txt('🎖'+badge(1),cx0+202*SC,cy0+r*FROW+1,FS,'#7c8f6a');
-      if(qDone(i,2))txt('🎖'+badge(2),cx0+250*SC,cy0+r*FROW+1,FS,'#7c8f6a');
-    }}
+      /* V1.12.11需求2：一枚勋章 = 图标+生效值（⚔+1.5%），数值口径就是 achEff 真正加进去的那个；
+         三枚按 measureText 实测宽度顺排，不再挤在 48px 的固定槽里互相压字，超出列宽就少画一枚。 */
+      {let bx=cx0+172;const BMAX=cx0+COLW-8; // 最长行名实测 165.5px，勋章从 172 起笔才不会咬到名字
+        for(let j=0;j<3;j++){if(!qDone(i,j))break;
+          const st=s.st[j],bs=ACHIC[st.e]+'+'+achVal(st.e,st.v)+QEFF[st.e][1];
+          C.font='700 '+FS+'px "Microsoft YaHei",sans-serif';
+          const bw=C.measureText(bs).width;
+          if(bx+bw>BMAX)break;
+          txt(bs,bx,cy0+r*FROW+1,FS,'#7c8f6a');bx+=bw+4;}}}
+  }
   /* 需求77：装备/材料收集成就列表（自动实时刷新） */
   const matN=Object.keys(p.colMat||{}).length,eqN=p.colEq||0;
   const COLS=[['📚 收藏家·凡品（拾装 10 件）',eqN>=10,'('+eqN+'/10)'],['📚 收藏家·珍品（拾装 50 件）',eqN>=50,'('+eqN+'/50)'],['📚 收藏家·大师（拾装 150 件）',eqN>=150,'('+eqN+'/150)'],['🧺 拾荒学徒（收集 20 种材料）',matN>=20,'('+matN+'/20)'],['🧺 拾荒宗师（收集 50 种材料）',matN>=50,'('+matN+'/50)']];
   txt('🧵 收集成就（拾装/拾材自动计数）',x+14,y+h-72,12.5,'#ffd700',null,'bold');
-  for(let k=0;k<COLS.length;k++){const done=COLS[k][1];txt((done?'✔ ':'○ ')+COLS[k][0]+' '+COLS[k][2],x+14+(k%2)*276,y+h-56+((k/2)|0)*15,11,done?'#8fd08f':'#77807a');}
-  txt('勋章效果自动激活生效；击杀计数全程统计，无需重复接取已达标怪物',x+w/2,y+h-12,11,'#8a9a7a','center');
+  for(let k=0;k<COLS.length;k++){const done=COLS[k][1];txt((done?'✔ ':'○ ')+COLS[k][0]+' '+COLS[k][2],x+14+(k%2)*COLW,y+h-56+((k/2)|0)*15,11,done?'#8fd08f':'#77807a');} // V1.12.11：面板加宽后列距随 COLW 走，不再写死 276
+  /* V1.12.11需求2：成就页脚直接把"当前真正加进去的总值"念出来（与 achEff 同一个出口 achLines），
+     玩家不用再靠文案猜数值到底有没有生效。位置沿用旧版说明行的 y+h-12——
+     上一版把生效值行与「外显管理」提示行一起塞进脚部，结果和收集成就第三行（y+h-26）压字，
+     而「🎨 外显」页签本身就在右上角，提示行属于多余，删掉它换回干净排版。 */
+  const AL=achLines();
+  txt(AL.length?('勋章生效值：'+AL.map(function(q){return QEFF[q.e][0]+'+'+q.val+QEFF[q.e][1];}).join('  ')):'勋章效果自动激活生效；击杀计数全程统计，无需重复接取已达标怪物',x+w/2,y+h-12,11,AL.length?'#8fd08f':'#8a9a7a','center');
+}
+/* ============ V1.12.11需求2：成就外显管理页（J → 🎨 外显） ============
+   用户原话：“成就外显管理的界面（可以控制哪些显示，哪些关闭）”。
+   清单 = 天使三件套 + 16 件装扮 + 成就称号；每件一个开关，右侧实时预览当前这一身。
+   只改观感，绝不动数值——成就加成永远生效，这点在页面上直接写出来。 */
+function drawCosMgr(x,y,w,h){
+  txt('🎨 成就外显管理 · 已达成 '+p.qv+'/'+QALL,x+14,y+20,15,'#ff9ad5',null,'bold');
+  txt('每一件都可单独控制显示／关闭；关掉只是不挂在身上，成就加成照常生效',x+14,y+40,10.5,'#8a9a7a');
+  const LIT=COS_ALL.filter(function(o){return cosHas(o);});
+  /* V1.12.11需求2：面板 700 宽——两列清单各 210px（x+12 起，最右到 x+432），
+     预览区与称号阶梯挪到 x+452，行名（最长「👑 圣辉头环」约 58px）与开关钮（32px）间距充裕。 */
+  const CW=210,CH=20;
+  for(let i=0;i<COS_ALL.length;i++){const o=COS_ALL[i],col=(i/10)|0,row=i%10;
+    const bx=x+12+col*CW,by=y+72+row*CH,has=cosHas(o),vis=cosOn(o.k);
+    C.fillStyle=i%2?'rgba(255,255,255,.03)':'rgba(0,0,0,.18)';C.fillRect(bx,by-10,CW-4,CH-2);
+    txt(o.ic+' '+o.n,bx+6,by,10.5,has?(vis?'#e8e0c0':'#77725f'):'#5a5f52');
+    if(!has)txt('需'+o.need,bx+CW-40,by,9.5,'#6a6480','right');
+    btn(bx+CW-36,by-9,32,18,has?(vis?'👁':'🙈'):'🔒',
+      has?(function(O){return function(){cosTog(O.k,O.ic+' '+O.n);};})(o):function(){msg('🔒 该外显需达成 '+o.need+' 个成就（现 '+p.qv+'）','#e8cf4a');sfx(300,.06,'square',.03);},
+      has?(vis?'#2a4a2e':'#4a3a2a'):'rgba(40,38,52,.8)');
+  }
+  /* 已点亮 / 显示中 统计 + 一键全开全关 */
+  const shownN=LIT.filter(function(o){return cosOn(o.k);}).length;
+  txt('已点亮 '+LIT.length+' / '+COS_ALL.length+' 件 · 正在显示 '+shownN+' 件',x+12,y+300,11.5,'#c9b878');
+  btn(x+12,y+308,110,26,'✅ 全部显示',function(){cosTogAll(true);},'#2a5a3a');
+  btn(x+130,y+308,110,26,'🚫 全部隐藏',function(){cosTogAll(false);},'#4a3a2a');
+  /* 生效值小结（V1.12.11需求2：文案与算式同一个出口，这里读的就是真正加进去的数） */
+  txt('🎖 成就当前生效值',x+12,y+356,12,'#ffd700',null,'bold');
+  const LL=achLines();
+  for(let i=0;i<LL.length;i++){const q=LL[i];
+    txt(QEFF[q.e][0]+' +'+q.val+QEFF[q.e][1]+'（'+q.n+'枚）',x+14+(i%2)*210,y+372+((i/2)|0)*15,10.5,'#8fd08f');}
+  if(!LL.length)txt('（还没有点亮的成就勋章）',x+14,y+372,10.5,'#6a7a5a');
+  /* 右半：这一身的实时预览（走游戏里同一套绘制函数，所见即所得） */
+  const PXX=x+452,PY=y+72,PW=234,PH=214; // 面板 700 宽后预览框同步加宽，右边距留 14
+  rr(PXX,PY,PW,PH,8);C.fillStyle='rgba(6,8,5,.9)';C.fill();C.strokeStyle='#8a7a3a';C.lineWidth=1.4;C.stroke();
+  txt('预览（当前造型）',PXX+PW/2,PY+13,10.5,'#c9b878','center');
+  C.save();C.beginPath();C.rect(PXX+2,PY+20,PW-4,PH-22);C.clip();
+  const cx2=PXX+PW/2,cy2=PY+150;
+  drawAngelLook(cx2,cy2,1,'back');
+  drawHunterLook(cx2,cy2,1,0,0,p.gender,p.face);
+  drawAngelLook(cx2,cy2,1,'front');
+  drawCosmetics(cx2,cy2);
+  drawCosTitle(cx2,cy2-46);
+  C.restore();
+  /* 预览下方：称号阶梯 */
+  txt('🏅 称号阶梯',x+452,y+300,11.5,'#c9b878');
+  COS_TITLE.forEach(function(c,i){const cur=cosTitle()===c.t;
+    txt((p.qv>=c.n?'✔ ':'○ ')+c.t+'（'+c.n+'）',x+454,y+316+i*15,10.5,cur?'#ffd700':(p.qv>=c.n?'#8fd08f':'#6a7a5a'));});
+  /* 两行说明合并成一条通栏（约 448px）放在面板底部——旧版挤在右列窄栏里会顶到边框外。 */
+  txt('装扮档位：5 起每 5 个一件，60/75/90/105/120/135 追加 6 件 · 开关即时存档（换档/刷新不会丢）',x+14,y+440,10,'#7a8494');
 }
 function drawAngelNPC(){ // 需求51/66：驻地任务交接人——具象化天使（光轮+羽冠+长发+宝袍+双层巨翼+星尘环绕）
   if(!onScreen(ANGEL.x,ANGEL.y,120))return; // V1.12.9性能2：光轮半径 56 + 上下铭牌，外扩 120 足够
@@ -4304,11 +4441,12 @@ function drawAngelNPC(){ // 需求51/66：驻地任务交接人——具象化�
     txt((p.qv>=ANGEL_T?'✦ 天使形态已觉醒':p.qs.length?'📜 持有任务 '+p.qs.length+'/'+QMAX+'·达标后回来交付':'✉ 可沿故事线接取任务'),x,y+36,10.5,'#c9b878','center',null,true);}
 }
 function drawAngelLook(x,y,fr,part){ // 需求52：阶段奖励外观——翅膀(≥10)/头环(≥半数)/天使形态(全部)
+  /* V1.12.11需求2：三件套纳入成就外显管理，除达成数门槛外还要看玩家有没有关掉它（cosOn）。 */
   /* V1.9.12需求4：part 分层——'back' 只画身体之下的背翼，'front' 只画身体之上的头环/光轮，缺省全画（UI 预览）。
      修掉旧版两处调用都重画整翼造成的同位双层叠加，并把翅膀放大到约 2 倍 + 拍动/辉光/流光/飘落光羽。 */
-  const angel=p.qv>=ANGEL_T;
+  const angel=p.qv>=ANGEL_T&&cosOn('angel');
   if(!part||part==='back'){
-    if(p.qv>=WING_T){C.save();
+    if(p.qv>=WING_T&&cosOn('wing')){C.save();
       const sc=angel?1.25:1; // 天使形态整体再放大
       const flap=Math.sin(t*.12)*.5+.5; // 0~1 拍动相位
       const mv=p.walk?Math.abs(Math.sin(p.walk*.5))*.35:0; // 移动时拍得更用力
@@ -4350,10 +4488,10 @@ function drawAngelLook(x,y,fr,part){ // 需求52：阶段奖励外观——翅�
       C.restore();}
   }
   if(!part||part==='front'){
-    if(p.qv>=RING_T){C.save();C.strokeStyle='#ffd700';C.lineWidth=2.2;C.shadowColor='#ffe14a';C.shadowBlur=8;
+    if(p.qv>=RING_T&&cosOn('ring')){C.save();C.strokeStyle='#ffd700';C.lineWidth=2.2;C.shadowColor='#ffe14a';C.shadowBlur=8;
       C.beginPath();C.ellipse(x,y-24,9,3.2,0,Math.PI,0);C.stroke();
       C.fillStyle='#fff2b0';C.fillRect(x-1,y-29,2.5,2.5);C.fillRect(x-7,y-27,2,2);C.fillRect(x+5.5,y-27,2,2);C.restore();}
-    if(p.qv>=ANGEL_T){C.save();C.strokeStyle='rgba(255,235,150,.95)';C.lineWidth=3;C.shadowColor='#ffd700';C.shadowBlur=12;
+    if(angel){C.save();C.strokeStyle='rgba(255,235,150,.95)';C.lineWidth=3;C.shadowColor='#ffd700';C.shadowBlur=12;
       C.beginPath();C.ellipse(x,y-35,11,3.6,0,0,7);C.stroke();
       const g3=C.createRadialGradient(x,y-6,2,x,y-6,28);g3.addColorStop(0,'rgba(255,248,210,.38)');g3.addColorStop(1,'rgba(255,248,210,0)');
       C.fillStyle=g3;C.beginPath();C.arc(x,y-6,28,0,7);C.fill();C.restore();}
@@ -4845,6 +4983,22 @@ function hotAt(l,skipCell){
     if(skipCell&&h.cell)continue;
     if(l.x>=h.x&&l.x<=h.x+h.w&&l.y>=h.y&&l.y<=h.y+h.h){h.fn();return true;}}
   return false;}
+function panelHotAt(l){ /* V1.12.11需求3附带修复（探针实测出来的第二处"点了没反应"）：
+   御骑厩面板矩形 x184~776 / y32~506，而触控工具钮排就压在它身上（骑 674,316 r16、包 712,316 r17，
+   命中半径各再 +8）。旧顺序是 pointerdown 先问 tHit()、工具钮截获优先，于是玩家点第 6 格
+   「dragon·乘坐此兽」按钮的右半边（x≈687~737、y≈322~340）会被「包」钮抢走——面板当场跳成背包，
+   马没上成，表现和用户描述的"初次点击乘坐没乘坐"一模一样。
+   判定口径刻意收紧为"擦边"：落点已在该工具钮可见圆盘半径之外、只是被 +8 的触控容错吃走时，
+   才让位给面板自己的按钮矩形；正按在圆盘上仍照常切面板，其它面板的入口一律不受影响。 */
+  if(!panelOn())return false;
+  for(let i=hotBase;i<hot.length;i++){const h=hot[i];
+    if(h.cell)continue;
+    if(l.x>=h.x&&l.x<=h.x+h.w&&l.y>=h.y&&l.y<=h.y+h.h)return true;}
+  return false;}
+function tutbGrazed(l,k){ // 落点是否只"擦边"命中了工具钮的容错圈（可见圆盘之外）
+  if(!k)return false;
+  const u=TUTB.find(function(o){return o.k===k;});if(!u)return false;
+  return dist(l.x,l.y,u.x,u.y)>(u.r+2)*tScale();}
 function onDownCore(l,e){
   if(!started){handleStartClick(l);return;}
   if(bagOpen){ // bug1-新37：长按2秒=拖动换位，单击=查看
@@ -4872,7 +5026,10 @@ VIEW.addEventListener('pointerdown',function(e){const l=toLogical(e);
   if(e.pointerType==='touch'&&touchMode&&started&&rotDone()&&edgeTouchPx(e.clientX,e.clientY,l)){e.preventDefault();return;}
   if(touchMode&&!started&&!rotDone()&&dist(l.x,l.y,ROT_B.x,ROT_B.y)<ROT_B.r+10){rotDrag.on=true;rotDrag.id=e.pointerId;rotDrag.dx=ROT_B.x-l.x;rotDrag.dy=ROT_B.y-l.y;rotDrag.sx=ROT_B.x;rotDrag.sy=ROT_B.y;rotDrag.moved=false;try{VIEW.setPointerCapture(e.pointerId);}catch(_){}return;} // v1.4需求23/32：选档页也可转屏，同样支持拖拽
   if(loading())return; // V1.10.0需求3：加载遮罩期间屏蔽一切指针交互（触屏与鼠标同路径）
-  if(touchMode&&started){const k=tHit(l),pnl=panelOn(); // V1.9.1：任意面板开启时只允许切换工具钮，不再隔面板移动/攻击/施法
+  if(touchMode&&started){const pnl=panelOn();let k=tHit(l); // V1.9.1：任意面板开启时只允许切换工具钮，不再隔面板移动/攻击/施法
+    /* V1.12.11需求3附带修复：工具钮的 +8 容错圈压在面板按钮上时会截胡（见 panelHotAt 注释）——
+       手指擦到容错圈外沿、其实想点的是面板里那一枚钮时，把这次点击交还给 onDownCore 走 hotAt。 */
+    if(k&&pnl&&tutbGrazed(l,k)&&panelHotAt(l))k=null;
     if(k&&(!pnl||k==='bag'||k==='skp'||k==='cha'||k==='pot'||k==='dex'||k==='find'||k==='rot'||k==='set'||k==='mnt')){onTouchDown(k,l,e);return;}} // V1.12.0需求5：坐骑管理钮在面板开着时也可点
   onDownCore(l,e);});
 function endPtr(e){const r=ptr[e.pointerId];if(!r)return false;
@@ -6809,7 +6966,10 @@ function drawPlayer(){
     WROT=pu*(p.atkBack?.18:1.62);}
   if(p.castAct>0){const cf=1-Math.min(1,p.castAct/ACT_CAST);CASTG=Math.sin(cf*Math.PI);ALY-=CASTG*4.5;}
   C.save();C.translate(ALX,ALY);
-  if(p.qv>=10)drawAngelLook(x,y,fr,'back'); // V1.9.12需求4：身体前只画背翼
+  /* V1.12.11需求2：调用点不再自己判门槛——旧版这里写死 qv>=10 / qv>=QALL/2(=74)，
+     于是"圣辉头环 15 个成就即得"实际要到 74 个才画得出来（调用点的门槛比解锁门槛高得多），
+     同时装扮一旦在管理界面里关掉也无法生效。门槛与开关统一下沉到 drawAngelLook/drawCosmetics 内部。 */
+  drawAngelLook(x,y,fr,'back'); // V1.9.12需求4：身体前只画背翼
     for(let i=0;i<NPCS.length;i++)NPCS[i].sayT=Math.max(0,(NPCS[i].sayT||0)-1);
   // v2.0 需求4：装备穿在身上不再染色显示；需求80：造型由捏脸决定
   if(p.fury>0){C.strokeStyle='rgba(210,58,58,'+(.4+Math.sin(t*.3)*.2)+')';C.lineWidth=3;C.beginPath();C.arc(x,y-2,20,0,7);C.stroke();}
@@ -6827,8 +6987,9 @@ function drawPlayer(){
     C.strokeStyle='rgba(154,220,250,'+(.16+.2*Math.sin(t*.4)).toFixed(3)+')';C.lineWidth=2.4;
     C.beginPath();C.arc(x,y-4,r2,0,7);C.stroke();
     C.strokeStyle='rgba(234,246,255,.5)';C.lineWidth=1;C.beginPath();C.arc(x,y-4,r2*.72,0,7);C.stroke();}
-  if(p.qv>=Math.ceil(QALL/2))drawAngelLook(x,y-bob,fr,'front'); // V1.9.12需求4：身体后只画头环/光轮，不再重画整翼
+  drawAngelLook(x,y-bob,fr,'front'); // V1.9.12需求4：身体后只画头环/光轮，不再重画整翼（V1.12.11：门槛下沉）
   drawCosmetics(x,y-bob); // 需求72：每5成就一件的外显装扮
+  drawCosTitle(x,y-bob-46); // V1.12.11需求2：头顶成就称号（可关）
   const wBase=(p.equip.mweap&&WTYPE[p.equip.mweap.w])?WTYPE[p.equip.mweap.w].i:'bow';
   const wi=wBase+'@'+(p.equip.mweap?(p.equip.mweap.tier||0):0);
   // bug1-新17：不再按移动方向翻转旋转角，改为沿瞄准轴镜像，避免弓箭朝向反；新3：黄品以上光效
@@ -7930,64 +8091,133 @@ function drawKillFeed(){ // V1.9.1：设置按钮占用 178~204，播报起始�
     txt(k.dmg+'伤害',LW-16,y,11,'#ffd78a','right');
     C.globalAlpha=1;y+=20;}
 }
-/* ===== 需求72：每完成5个成就赠1件外显装扮（共10件，逐步点亮） ===== */
+/* ===== 需求72 + V1.12.11需求2：成就外显装扮（16 件，逐件可开关） =====
+   旧版用 n=Math.floor(p.qv/5) 一个数字决定画到哪一层，既没法关单件，也把装扮数锁死在 10。
+   现在每段外观包在 if(cos('gN')) 里：cos() 同时判"已点亮(need)"与"未被玩家关掉(cosOn)"。 */
 function drawCosmetics(x,y){
-  const n=Math.min(10,Math.floor(p.qv/5));if(n<=0)return;
-  if(n>=1){ // 1 魂火肩饰：双肩冷焰
+  const on=function(k,need){return p.qv>=need&&cosOn(k);};
+  if(on('g1',5)){ // 1 魂火肩饰：双肩冷焰
     for(const s of[-1,1]){const sx=x+s*10,sy=y-13-((t>>3)&1);
       const g=C.createRadialGradient(sx,sy,1,sx,sy,7);g.addColorStop(0,'rgba(140,220,255,.95)');g.addColorStop(1,'rgba(60,120,255,0)');
       C.fillStyle=g;C.beginPath();C.arc(sx,sy,7,0,7);C.fill();}
   }
-  if(n>=2){ // 2 星河披帛：环绕星点
+  if(on('g2',10)){ // 2 星河披帛：环绕星点
     for(let i=0;i<6;i++){const a=t*.06+i*1.05;
       C.fillStyle='rgba(200,180,255,'+(.3+.4*Math.sin(t*.1+i*2))+')';
       C.beginPath();C.arc(x+Math.cos(a)*16,y-8+Math.sin(a)*4,1.6,0,7);C.fill();}
   }
-  if(n>=3){ // 3 晚霞云裳：飘动绨纱
+  if(on('g3',15)){ // 3 晚霞云裳：飘动绨纱
     const sw=Math.sin(t*.08)*3;C.save();C.globalAlpha=.75;
     const g3=C.createLinearGradient(x,y-14,x-14+sw,y+14);g3.addColorStop(0,'rgba(255,150,90,.9)');g3.addColorStop(1,'rgba(190,70,160,.25)');
     C.fillStyle=g3;C.beginPath();C.moveTo(x-4,y-13);C.quadraticCurveTo(x-16+sw,y-4,x-13+sw,y+13);C.lineTo(x-7,y+10);C.quadraticCurveTo(x-9,y-2,x-2,y-12);C.closePath();C.fill();C.restore();
   }
-  if(n>=4){ // 4 虹彩双环：交替旋转椭圆环
+  if(on('g4',20)){ // 4 虹彩双环：交替旋转椭圆环
     C.save();C.globalAlpha=.5;
     C.strokeStyle='#ff8a6a';C.lineWidth=1.6;C.beginPath();C.ellipse(x,y+2,20,7,Math.sin(t*.03)*.5,0,7);C.stroke();
     C.strokeStyle='#7ad0ff';C.beginPath();C.ellipse(x,y+2,20,7,Math.sin(t*.03)*.5+2.1,0,7);C.stroke();C.restore();
   }
-  if(n>=5){ // 5 凯旋羽冠：金冠+白羽
+  if(on('g5',25)){ // 5 凯旋羽冠：金冠+白羽
     C.fillStyle='#ffd700';C.beginPath();C.moveTo(x-6,y-25);C.lineTo(x-3,y-30);C.lineTo(x,y-26);C.lineTo(x+3,y-30);C.lineTo(x+6,y-25);C.closePath();C.fill();
     C.strokeStyle='#fff';C.lineWidth=1.4;C.beginPath();C.moveTo(x+4,y-29);C.quadraticCurveTo(x+9,y-36,x+7,y-40);C.stroke();
   }
-  if(n>=6){ // 6 龙影盘绕：迷你青龙环身飞行
+  if(on('g6',30)){ // 6 龙影盘绕：迷你青龙环身飞行
     const a6=t*.05;
     for(let i=0;i<5;i++){const aa=a6-i*.34;
       C.fillStyle='rgba(90,220,160,'+(.75-i*.13)+')';
       C.beginPath();C.arc(x+Math.cos(aa)*22,y-6+Math.sin(aa)*8,3.6-i*.5,0,7);C.fill();}
     C.fillStyle='#bfffe8';C.beginPath();C.arc(x+Math.cos(a6)*22,y-6+Math.sin(a6)*8,4,0,7);C.fill();
   }
-  if(n>=7){ // 7 霜骨冰魄：肩头冰晶+寒气领域
+  if(on('g7',35)){ // 7 霜骨冰魄：肩头冰晶+寒气领域
     C.strokeStyle='#bfe8ff';C.lineWidth=1.6;
     for(const s of[-1,1]){const ix=x+s*12,iy=y-11;
       C.beginPath();C.moveTo(ix,iy-5);C.lineTo(ix,iy+5);C.moveTo(ix-4,iy-2);C.lineTo(ix+4,iy+2);C.moveTo(ix-4,iy+2);C.lineTo(ix+4,iy-2);C.stroke();}
     C.fillStyle='rgba(180,225,255,.16)';C.beginPath();C.arc(x,y,18,0,7);C.fill();
   }
-  if(n>=8){ // 8 紫电绕身：跳动电弧
+  if(on('g8',40)){ // 8 紫电绕身：跳动电弧
     if((t>>2)%3!==0){C.strokeStyle='#c9a2ff';C.lineWidth=1.4;C.beginPath();
       let lx=x-14,ly=y+8;C.moveTo(lx,ly);
       for(let i=1;i<=5;i++){lx+=6;ly=y+8-Math.sin(i*1.3)*10-((i*31+t*7)%7);C.lineTo(lx,ly);}
       C.stroke();}
   }
-  if(n>=9){ // 9 浴火凰环：头顶火圈+绕飞火羽
+  if(on('g9',45)){ // 9 浴火凰环：头顶火圈+绕飞火羽
     C.strokeStyle='rgba(255,120,50,.85)';C.lineWidth=2;
     C.beginPath();C.ellipse(x,y-33,10,3,0,0,7);C.stroke();
     for(let i=0;i<4;i++){const fa=i*1.57+t*.06;
       C.fillStyle='rgba(255,'+(180+(i*37)%60)+',60,.8)';
       C.beginPath();C.arc(x+Math.cos(fa)*10,y-33+Math.sin(fa)*3,2+Math.sin(t*.3+i),0,7);C.fill();}
   }
-  if(n>=10){ // 10 不灭金身：金色轮光呼吸
+  if(on('g10',50)){ // 10 不灭金身：金色轮光呼吸
     const g10=C.createRadialGradient(x,y-4,4,x,y-4,30);
     g10.addColorStop(0,'rgba(255,225,130,'+(.2+.06*Math.sin(t*.1))+')');g10.addColorStop(1,'rgba(255,215,80,0)');
     C.fillStyle=g10;C.beginPath();C.arc(x,y-4,30,0,7);C.fill();
   }
+  /* ===== V1.12.11 新增 6 件 ===== */
+  if(on('g11',60)){ // 11 星河天冠：头顶一道弧形星河 + 三颗游动亮星
+    C.save();C.globalAlpha=.85;
+    const g11=C.createLinearGradient(x-12,y-40,x+12,y-40);
+    g11.addColorStop(0,'rgba(120,170,255,.15)');g11.addColorStop(.5,'rgba(220,235,255,.95)');g11.addColorStop(1,'rgba(120,170,255,.15)');
+    C.strokeStyle=g11;C.lineWidth=2.2;C.shadowColor='#9adcfa';C.shadowBlur=8;
+    C.beginPath();C.ellipse(x,y-34,12,4.6,0,Math.PI+.2,-.2);C.stroke();C.shadowBlur=0;
+    for(let i=0;i<3;i++){const a=Math.PI+.3+i*(Math.PI-.6)/2+Math.sin(t*.05+i)*.12;
+      C.fillStyle='#eaf6ff';C.beginPath();C.arc(x+Math.cos(a)*12,y-34+Math.sin(a)*4.6,1.5+((t>>4)&1)*.4,0,7);C.fill();}
+    C.restore();
+  }
+  if(on('g12',75)){ // 12 环带星轨：三枚倾角不同的土星环 + 环上一颗滑行亮点
+    C.save();C.globalAlpha=.62;
+    const RH=[[19,'#c9a24a',.30],[23,'#9adcfa',-.22],[27,'#ff9ad5',.52]];
+    for(let i=0;i<RH.length;i++){const R=RH[i],tilt=R[2]+Math.sin(t*.02+i)*.06;
+      C.strokeStyle=R[1];C.lineWidth=1.3;C.beginPath();C.ellipse(x,y-4,R[0],R[0]*.26,tilt,0,7);C.stroke();
+      const a=t*.05*(i%2?1:-1)+i*2.1; // 环上滑行亮点
+      C.fillStyle='#fff';C.globalAlpha=.9;
+      C.beginPath();C.arc(x+Math.cos(a)*R[0]*Math.cos(tilt)-Math.sin(a)*R[0]*.26*Math.sin(tilt),
+        y-4+Math.cos(a)*R[0]*Math.sin(tilt)+Math.sin(a)*R[0]*.26*Math.cos(tilt),1.5,0,7);C.fill();
+      C.globalAlpha=.62;}
+    C.restore();
+  }
+  if(on('g13',90)){ // 13 金莲步：脚下随移动绽开莲纹（相位由 p.walk 驱动，站着不动则不叠）
+    const ph=(p.walk||0)*.06,bo=Math.abs(Math.sin(ph))*.8;
+    C.save();C.globalAlpha=.7;C.strokeStyle='#e8cf4a';C.lineWidth=1.4;
+    for(let i=0;i<6;i++){const a=i/6*Math.PI*2+ph*.5;
+      C.beginPath();C.ellipse(x+Math.cos(a)*7,y+13+Math.sin(a)*2.2-bo,4.2,2,a,0,7);C.stroke();}
+    C.fillStyle='rgba(255,225,130,.5)';C.beginPath();C.arc(x,y+12-bo,2.2,0,7);C.fill();C.restore();
+  }
+  if(on('g14',105)){ // 14 剑影随行：三柄小剑绕身公转，剑尖朝外
+    for(let i=0;i<3;i++){const a=t*.045+i*2.09,r=21, sx=x+Math.cos(a)*r, sy=y-6+Math.sin(a)*r*.42;
+      C.save();C.translate(sx,sy);C.rotate(a+Math.PI/2);
+      C.fillStyle='rgba(220,240,255,.9)';C.beginPath();C.moveTo(0,-7);C.lineTo(1.7,-1);C.lineTo(0,1);C.lineTo(-1.7,-1);C.closePath();C.fill();
+      C.fillStyle='#c9a24a';C.fillRect(-2.6,1,5.2,1.5);C.fillStyle='#7a5a2a';C.fillRect(-.8,2.5,1.6,3);
+      C.restore();}
+    C.fillStyle='rgba(154,220,250,.18)';C.beginPath();C.arc(x,y-4,21,0,7);C.fill();
+  }
+  if(on('g15',120)){ // 15 圣羽环绕：五片白羽螺旋上升并飘散
+    for(let i=0;i<5;i++){const cyc=((t*1.1)+i*28)%140,pr=cyc/140;
+      const a=i*1.26+t*.05,rr2=13+pr*10;
+      C.save();C.globalAlpha=(1-pr)*.85;C.translate(x+Math.cos(a)*rr2,y+6-pr*38);C.rotate(a+pr*4);
+      C.fillStyle='#fdfdf2';C.beginPath();C.ellipse(0,0,1.9,4.6,0,0,7);C.fill();
+      C.strokeStyle='rgba(200,210,235,.8)';C.lineWidth=.6;C.beginPath();C.moveTo(0,-4);C.lineTo(0,4);C.stroke();C.restore();}
+    C.globalAlpha=1;
+  }
+  if(on('g16',135)){ // 16 永恒星冕：七芒星冕 + 缓慢自转的光点日轮
+    C.save();C.translate(x,y-38);C.rotate(t*.012);
+    C.strokeStyle='#ffe14a';C.lineWidth=1.6;C.shadowColor='#ffd700';C.shadowBlur=10;
+    C.beginPath();
+    for(let i=0;i<7;i++){const a=-Math.PI/2+i*(Math.PI*2/7),r1=9,r2=4.2;
+      C.lineTo(Math.cos(a)*r1,Math.sin(a)*r1);C.lineTo(Math.cos(a+Math.PI/7)*r2,Math.sin(a+Math.PI/7)*r2);}
+    C.closePath();C.stroke();C.shadowBlur=0;
+    C.fillStyle='rgba(255,240,180,.9)';C.beginPath();C.arc(0,0,2.4,0,7);C.fill();C.restore();
+    for(let i=0;i<8;i++){const a=t*.03+i*.785;
+      C.fillStyle='rgba(255,232,150,'+(.3+.3*Math.sin(t*.08+i))+')';
+      C.beginPath();C.arc(x+Math.cos(a)*17,y-38+Math.sin(a)*5,1.2,0,7);C.fill();}
+  }
+}
+/* V1.12.11需求2：头顶成就称号铭牌（可关；与场景铭牌错开一行） */
+function drawCosTitle(x,y){
+  const tt=cosTitle();if(!tt||!cosOn('title'))return;
+  C.save();C.globalAlpha=.95;
+  const wpx=tt.length*12+16;
+  rr(x-wpx/2,y-6,wpx,15,5);C.fillStyle='rgba(20,14,4,.72)';C.fill();
+  C.strokeStyle='rgba(255,225,130,.7)';C.lineWidth=1;C.stroke();
+  txt('🏅 '+tt,x,y+2,10.5,'#ffe9a8','center',null,true);C.restore();
 }
 /* ===== 需求67：界面常驻任务列表（HUD 下方，随时看进度；J 看全量） ===== */
 let qTrackOpen=true; // V1.10.1需求6：左侧任务追踪可收起/展开（点标题行切换）
@@ -8405,7 +8635,10 @@ function statCell(o,cx,cy,key,col){
 }
 /* ============ 人物面板（bug1-新19/20/21）：属性自由加点 + 战斗详情 ============ */
 function drawChar(){
-  const w=520,h=492,x=(LW-w)/2,y=16;
+  /* V1.12.11需求2：面板 492→520。旧版底部按钮行固定在 y+h-58，而属性表 9 行 + 套装统计行
+     算下来基线已经到 455——套装那行一直被按钮压着看不见（HEAD 实测如此）。本版新增「成就加成」
+     通栏又要占 15px，索性把面板加高到 520、按钮行下移到 y+h-52，两行都露出来。 */
+  const w=520,h=520,x=(LW-w)/2,y=16;
   if(wipeArm&&t-wipeArm>180)wipeArm=0;
   if(reArm&&t-reArm>180)reArm=0;
   panel(x,y,w,h);txt('🧍 '+(p.gender==='女'?'♀':'♂')+p.name+' · 人物面板（档'+(curSlot+1)+'）',x+16,y+15,15,'#e8cf4a');
@@ -8438,21 +8671,27 @@ function drawChar(){
   pair('暴击率',Math.round(critRate()*100)+'%'+(critRaw()>1?'(溢出转爆伤)':''),'暴击伤害','×'+(1.8+critDmgBonus()/100).toFixed(2));
   pair('技能连击',Math.round(skillCombo()*100)+'%','格挡',Math.round(blockRate()*100)+'%');
   pair('闪避',Math.round(dodgeRate()*100)+'%','致命一击',Math.round(lethalChance()*100)+'%');
-  pair('📜 故事线任务',p.qv+'/'+QALL+(p.q?' 进行中：'+p.q.txt:''),'🎖 成就勋章',achN()+'枚已激活'+(p.qv>=QALL?' · 👼天使形态':(p.qv>=Math.ceil(QALL/2)?' · 👑头环':(p.qv>=10?' · 🪽翅膀':'')))); // 需求50/52：任务效果总览
+  pair('📜 故事线任务',p.qv+'/'+QALL+(p.q?' 进行中：'+p.q.txt:''),'🎖 成就勋章',achN()+'枚已激活'+(p.qv>=ANGEL_T&&cosOn('angel')?' · 👼天使形态':(p.qv>=RING_T&&cosOn('ring')?' · 👑头环':(p.qv>=WING_T&&cosOn('wing')?' · 🪽翅膀':'')))); // 需求50/52；V1.12.11：门槛统一取 WING_T/RING_T/ANGEL_T（旧版写死 QALL/2=74，与实际解锁门槛不符）
+  /* V1.12.11需求2：成就生效总值单独占一条通栏（与 achEff 同一个出口 achLines）。
+     早先做成 pair() 塞进左右两列，实测「🎖 成就加成 攻击+84% 生命+93% 防御+48点 金币+37.2%」
+     约 250px，而本面板只有 520 宽、单列 254px——直接压到右列并溢出边框，故改通栏 + 图标口径。 */
+  const CAL=achLines();
   pair('金币提升','+'+goldBonus()+'%','经验提升','+'+affSum('expP')+'%');
   pair('生命回复','+'+affSum('hpRegen')+'/秒','魔法回复','+'+Math.round(4/3+2*affSum('mpRegen')/3)+'/秒');
   for(let i=0;i<L.length;i++){statCell(L[i],x+18,ly+i*17,'L'+i,'#ffd9a8');statCell(R[i],x+272,ly+i*17,'R'+i,'#a8d8ff');}
   ly+=L.length*17+2;
+  /* 生效值口径与 achEff/成就页脚完全一致，只是换成图标写法以塞进 484px 通栏（实测 436px） */
+  if(CAL.length){txt('🎖成就 '+CAL.map(function(q){return ACHIC[q.e]+'+'+q.val+QEFF[q.e][1];}).join(' '),x+18,ly,11,'#8fd08f');ly+=17;}
   txt('套装(2件触发)：吸'+setCnt('吸血')+' 真'+setCnt('真伤')+' 焰'+setCnt('烈焰')+' 守'+setCnt('守护')+' 贪'+setCnt('贪婪')+' 风'+setCnt('疾风')+' 影'+setCnt('暗影')+'（武器不计）',x+18,ly,11,'#b8c8a0');
   const n=STKEYS.reduce(function(a,k){return a+p.st[k];},0);
-  btn(x+14,y+h-58,104,28,'洗点（'+n*30+' 金）',function(){resetStats();},n?'#5a3a7a':'#3a3a3a');
-  btn(x+124,y+h-58,72,28,'💾 保存',function(){doSave(false);},'#2e4a2e');
-  btn(x+202,y+h-58,72,28,'📂 读档',function(){doLoad(false);},'#2e3a4a');
-  btn(x+280,y+h-58,104,28,wipeArm?'⚠ 确认清除':'🗑 清除当前档',function(){if(wipeArm){if(curSlot>=0)wipeSlot(curSlot);wipeArm=0;msg('⚠ 已清除当前存档位的本地缓存','#e85a5a');}else{wipeArm=t;msg('⚠ 危险操作：再点一次才会删除当前档的本地存档','#e8cf4a');}},wipeArm?'#7a3a2a':'#4a2a2a'); // 新24
-  btn(x+390,y+h-58,104,28,reArm?'⚠ 确认重新开始':'🔄 重新开始',function(){if(reArm){doRestart();}else{reArm=t;msg('⚠ 重新开始将清空当前进度并回到开局，再点一次确认','#e8cf4a');}},reArm?'#7a4a2a':'#3a4a5a'); // 新25
+  btn(x+14,y+h-52,104,28,'洗点（'+n*30+' 金）',function(){resetStats();},n?'#5a3a7a':'#3a3a3a');
+  btn(x+124,y+h-52,72,28,'💾 保存',function(){doSave(false);},'#2e4a2e');
+  btn(x+202,y+h-52,72,28,'📂 读档',function(){doLoad(false);},'#2e3a4a');
+  btn(x+280,y+h-52,104,28,wipeArm?'⚠ 确认清除':'🗑 清除当前档',function(){if(wipeArm){if(curSlot>=0)wipeSlot(curSlot);wipeArm=0;msg('⚠ 已清除当前存档位的本地缓存','#e85a5a');}else{wipeArm=t;msg('⚠ 危险操作：再点一次才会删除当前档的本地存档','#e8cf4a');}},wipeArm?'#7a3a2a':'#4a2a2a'); // 新24
+  btn(x+390,y+h-52,104,28,reArm?'⚠ 确认重新开始':'🔄 重新开始',function(){if(reArm){doRestart();}else{reArm=t;msg('⚠ 重新开始将清空当前进度并回到开局，再点一次确认','#e8cf4a');}},reArm?'#7a4a2a':'#3a4a5a'); // 新25
   const sm=saveMeta();
-  txt(sm?('本地存档：Lv'+sm.lvl+' · '+Math.max(0,Math.round((Date.now()-sm.at)/60000))+' 分钟前'+(lastSave?'（本次已自动保存）':'')):'尚无本地存档（也会每 10 秒自动保存）',x+18,y+h-18,10,'#7d8f6d',null,'400',true);
-  txt('点面板外 / 按 H 关闭',x+w-18,y+h-18,10,'#778','right','400',true);
+  txt(sm?('本地存档：Lv'+sm.lvl+' · '+Math.max(0,Math.round((Date.now()-sm.at)/60000))+' 分钟前'+(lastSave?'（本次已自动保存）':'')):'尚无本地存档（也会每 10 秒自动保存）',x+18,y+h-14,10,'#7d8f6d',null,'400',true);
+  txt('点面板外 / 按 H 关闭',x+w-18,y+h-14,10,'#778','right','400',true);
 }
 
 /* ============ 技能搭配面板（v1.4：33格——武器系20 + 法术5 + 变身1 + 被动8，压缩网格防溢出） ============ */
@@ -8540,7 +8779,7 @@ function doSave(quiet){
     const b=[];let n=0;
     for(let i=0;i<bagMax();i++){const c=stripItem(bag[i]);b.push(c);if(c)n++;}
     const ch=chest.map(stripItem);let cn=0;for(const c of ch)if(c)cn++; // 需求14：仓库数据存入缓存
-    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,dores:p.dores|0,set:p.set,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
+    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,dores:p.dores|0,set:p.set,cos:p.cos,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
     localStorage.setItem(slotKey(curSlot),JSON.stringify(d));
     lastSave=Date.now();
     if(!quiet)msg('💾 '+p.name+'（档'+(curSlot+1)+'）已保存：Lv'+p.lvl+' · 背包 '+n+' 件 · 仓库 '+cn+' 件','#8fd08f');
@@ -8570,6 +8809,10 @@ function doLoad(quiet,slot){
   /* V1.8需求1/2：播报设置读档（旧档一律默认全开）；祝福轮次进度非法/缺失则重开一轮 */
   p.set=q.set?{kN:q.set.kN|0,kE:q.set.kE|0,kB:q.set.kB|0,drop:q.set.drop|0,bless:q.set.bless|0,bd:q.set.bd|0,mus:q.set.mus==null?1:q.set.mus|0,mv:q.set.mv|0||3,sv:q.set.sv|0||5,asfx:q.set.asfx==null?1:q.set.asfx|0,lp:q.set.lp|0}:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0};
   if(q.set&&q.set.kN==null&&!q.set.kE&&!q.set.kB&&!q.set.drop&&!q.set.bless)p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1}; // 全零旧档回退默认（避免读不到字段的误关机）
+  /* V1.12.11需求2：成就外显开关读档——只认"显式为 0"的隐藏项，旧档没有 cos 字段即全部显示。
+     同时清掉清单里已不存在的键（防止早期版本残留字段把界面统计带偏）。 */
+  p.cos={};
+  if(q.cos)for(const o of COS_ALL)if(q.cos[o.k]===0)p.cos[o.k]=0;
   p.bless=q.bless&&Array.isArray(q.bless.q)?{q:q.bless.q.slice(0),done:q.bless.done|0,r:q.bless.r|0}:null;
   blessInit();blessFly.length=0;blessP.length=0;
   p.mounts=q.mounts&&q.mounts.un?q.mounts:{un:{},sel:''}; // 旧档无坐骑字段：从首匹开始重新讨伐
@@ -8612,7 +8855,7 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   p.dig=null;p.dbuff=null; // V1.11.2需求2：新角无藏宝图、无宝气加成
   nav=null;findSel=null;findQ='';findCat=0;findPage=0;findFocus=false; // V1.11.3需求2/3：引导线与查找态是瞬态，不入存档、不跨角色
   for(const mk2 of ['mazeK','mazeEx','petKill','mountN','blessR'])p.ach2[mk2]=0;
-  p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库；V1.12.9性能5：省电模式默认关
+  p.set={kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0};p.cos={};p.bless={q:blessNewQ(),done:0,r:0};blessFly.length=0;blessP.length=0; // V1.8：新角默认全开播报 + 首轮祝福词库；V1.12.9性能5：省电模式默认关
   for(let i=0;i<BAGCAP;i++)bag[i]=null;
   for(let i=0;i<chest.length;i++)chest[i]=null;
   mobs.length=0;items.length=0;coins.length=0;projs.length=0;parts.length=0;floats.length=0;fx.length=0;clones.length=0;respawns.length=0;sched.length=0;
