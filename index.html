@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.13</title>
+<title>降龙猎手 · 五行觉醒 V1.12.14</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -675,7 +675,7 @@ const MNT_NPC={x:4250,y:2500};  // V1.7需求1：弼马温坐骑总管（基地�
    旧版最要命的问题不是"没写逻辑"，而是同一件事有三套半径：nearDoor 用 110/130 决定💬按钮与提示显隐，
    tryDoor 用 90/110 决定按下去有没有反应，地面提示文字又写死 130/92/70——于是"按钮亮了、提示闪了、
    按 E 却说附近没人"。ER 建好之后，判定 / 触发 / 提示文字三处一律从这里取值，不再各写各的。 */
-const ER={dun:130,tower:130,array:110,bima:170,inst:95,npc:150,angel:230,horse:150,dig:170};
+const ER={dun:130,tower:130,array:110,bima:170,inst:95,npc:150,angel:230,horse:150,dig:170,duo:170}; // V1.12.14需求2：duo=界壁话痨二人组的按 E 圈
 const MZONE={x:1040,y:1220,w:880,h:260}; // V1.6需求1：迷宫专属平面（×WS 后 5200,6100,4400,1300；右下角 9600,7400 均在世界边界内）
 const INSTWALLS=[]; // 实例临时围墙（出图拆除）
 /* V1.10.0需求3：进出副本 3 秒「地图加载中」遮罩——冻结世界更新与输入，倒计时结束自动恢复 */
@@ -2399,6 +2399,7 @@ const p={x:3500,y:2260,hp:100,mp:50,lvl:1,exp:0,gold:0,aim:0,cool:0,inv:0,flash:
   autoSell:{eq:false,wp:false,pot:false,book:false,mat:false},colEq:0,colMat:{},ach2:{enhOk:0,drillOk:0,skLvlMax:0,morphN:0,petLvl:0,towerMax:0,towerKills:0,towerAch:0,mazeK:0,mazeEx:0,petKill:0,mountN:0,blessR:0},morphUsed:{}, // 需求76：自动售卖开关；需求77：装备/材料收集计数；v1.4需求27/28：ach2=五大系统联动成就计数；v1.5需求3/4：tower*=爬塔进度；V1.6/V1.7：mazeK/mazeEx/petKill/mountN；V1.8：blessR=祝福大典圆成轮数
   set:{kN:1,kE:1,kB:1,drop:1,bless:1,bd:1,mus:1,mv:3,sv:5,asfx:1,lp:0},cos:{},bless:{q:[],done:0,r:0}, // V1.8需求1/2：播报开关（普通/精英/BOSS击杀、拾取、祝福总开关、bd=弹幕密度）与祝福轮次进度；V1.12.9性能5：lp=省电模式（默认关）；V1.12.11需求2：cos=成就外显开关（键存在且为 0 才隐藏，缺省即显示）
   mounts:{un:{},sel:''},mr:false, // V1.7：un=已解锁坐骑、sel=当前坐骑、mr=野外自由乘骑旗标
+  duoI:0, // V1.12.14需求2：界壁话痨二人组的对口供进度（聊到第几句），进存档，新角从第 0 句起
   pets:[null,null,null,null], // v1.4需求21：同时携带4个宝宝（兼容旧 p.pet 单人档）
   kills:{slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0}};
 /* 自由加点（bug1-新20/21）：每升1级 +10 属性点，力量/敏捷/体力/精神/防御 */
@@ -2631,7 +2632,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.13';
+const GLOG_MAX=600,GLOG_VER='1.12.14';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -3138,6 +3139,105 @@ function drawEscort(){
 /* 守军长枪划痕特效（世界层一次性） */
 function fxSpear(x0,y0,x1,y1){fx.push({k:'spear',x:x0,y:y0,x1:x1,y1:y1,t:10,max:10});}
 /* ============ /V1.11.1需求2/3 ============ */
+/* ============ V1.12.14需求2：天使广场东侧的「界壁话痨二人组」 ============
+   用户原话：“在城中天使附近增加两个NPC，相互聊天和探讨，每次主角经过他们，他们就开始对话，
+   对话内容就是要去边界探索，发现奇奇怪怪的东西，隐隐的暗示这个世界是虚拟的……
+   主角在这两个NPC前按E可以加快他们之间的对话”。
+   设计口径：
+   · 两人不进 NPCS——一塞进去就会被 npcNear/npcTalk/成就线/藏宝禁区那一整套逻辑认领成"可交谈村民"，
+     而他们的按 E 语义是"催他们快点说"，不是"换一句台词"，硬套会串味；
+   · 台词是一条 36 句的对口供（不是随机池），顺序推进、说完从头再来，所以"每次经过"听到的是下一句；
+   · 内容全部挂在这个游戏真实存在的现象上：村民翻来覆去那几句诗、史莱姆杀不完、死了扔回村口同一棵树、
+     界壁摸得着、第 11 次撞出去就回不来、白底、绿色的字往上爬、一条线中间猛地跳一下、医院走廊的灯、
+     「送我回去」、「我好像做了一个很长很长的梦」——即 V1.12.13 的边界探索彩蛋，两人是站在墙内议论它的人。 */
+const DUO_R=300;            // 起话圈：主角进入这个半径，两人就接着上一句往下聊
+const DUO_MID={x:3715,y:2245}; // 实测选点：距天使 265px（>ER.angel 230，按 E 不与天使抢目标），避开房墙/摊位/守卫/藏宝NPC
+/* who:0=陆八（闲汉，好奇，先动念头要去看）；who:1=秦九（闲汉，去过很多次，说得越少越瘆人） */
+const DUO_SCRIPT=[
+ {w:0,t:'九哥，你说这世界的边上，到底有什么？'},
+ {w:1,t:'边上什么也没有，只有一堵摸得着的墙。'},
+ {w:0,t:'我上回去摸了摸。是凉的，像薄冰。'},
+ {w:1,t:'你才摸一次。我数着呢——我去了十七次。'},
+ {w:0,t:'十七次，回回都被扔回来？'},
+ {w:1,t:'扔回村口。同一棵树，同一块石头，连落地的姿势都不带换。'},
+ {w:0,t:'……你这么一说，那棵树我是眼熟得很。'},
+ {w:1,t:'何止树。你听村口小蜜念诗，念了三十天，还是那三十句。'},
+ {w:0,t:'茶肆阿茶也是。翻来覆去五句话，客人换了八百个。'},
+ {w:1,t:'史莱姆草原一夜死三十只，第二天清早又是三十只。'},
+ {w:0,t:'那叫生意好。……你该不会想说，咱们也是被做出来的吧？'},
+ {w:1,t:'我不敢这么说。但有人敢。'},
+ {w:0,t:'谁？'},
+ {w:1,t:'就那个天天在界壁上撞的猎人。撞了十次，第十一次没被撞回来。'},
+ {w:0,t:'那他上哪儿去了？'},
+ {w:1,t:'回来过一回。整个人发白，说风把他的画面吹散了。'},
+ {w:0,t:'画面……还能被吹散？'},
+ {w:1,t:'他说世界被谁擦干净了，就剩他一个人在动。'},
+ {w:0,t:'那他不害怕？'},
+ {w:1,t:'他站在一片白里，只看见一颗大按钮，上面写着四个字。'},
+ {w:0,t:'哪四个字？'},
+ {w:1,t:'送我回去。'},
+ {w:0,t:'哈，这倒像句人话。那他点了没有？'},
+ {w:1,t:'点了。回来说他做了一个很长很长的梦。'},
+ {w:0,t:'梦里有什么？'},
+ {w:1,t:'有绿色的字，一串一串往上爬。'},
+ {w:0,t:'还有呢？'},
+ {w:1,t:'还有一条线，中间猛地跳了一下。他说那是心跳。'},
+ {w:0,t:'谁的心跳？'},
+ {w:1,t:'他没说。他只说那地方像医院走廊，灯很亮。'},
+ {w:0,t:'九哥，越说越瘆得慌，咱别聊这个了。'},
+ {w:1,t:'聊。我偏要聊。他还在界壁上撞，一次都没停。'},
+ {w:0,t:'那要是撞穿了，会怎么样？'},
+ {w:1,t:'不知道。反正撞不穿的时候，我们连这里是个世界都不知道。'},
+ {w:0,t:'……那这会儿，是不是正有人看着咱们说话？'},
+ {w:1,t:'那就说给他听。喂——你要是看得见，替我们把这堵墙记着。'}];
+const DUO=[
+ {name:'闲汉陆八',x:3650,y:2300,hue:45,say:'',sayT:0},
+ {name:'闲汉秦九',x:3780,y:2190,hue:195,say:'',sayT:0}];
+let duoT=0,duoFast=0,duoSeen=0;   // duoT=本句还剩几帧；duoFast=被催过之后的加速窗口；duoSeen=是否已播过发现提示
+function duoDur(t){return Math.min(430,150+t.length*7);} // 一句约 2.5~7 秒；被催时另乘加速系数
+function duoNear(){return dist(p.x,p.y,DUO_MID.x,DUO_MID.y)<ER.duo;} // 按 E 圈（170）
+function duoIn(){return dist(p.x,p.y,DUO_MID.x,DUO_MID.y)<DUO_R;}     // 起话圈（300）
+function duoSay(){const L=DUO_SCRIPT[(p.duoI|0)%DUO_SCRIPT.length],n=DUO[L.w];
+  DUO[1-L.w].sayT=0; // 催话时上一位可能还在说：先收掉残句，一次只留一张嘴（否则两个气泡叠在广场上）
+  n.say=L.t;n.sayT=Math.min(360,duoDur(L.t)*(duoFast>0?.45:1)); // 加速窗口里气泡也短，才不会压着下一句
+  duoT=n.sayT+ri(18,40);                                        // 下一句在本句说完后再隔一小口气
+  sfx(L.w?430:560,.05,'triangle',.03);}
+function updateDuo(){ // 放在 updateChatter 之后：主角气泡计时由那边衰减，这里只管两个人
+  if(!started||p.dead>0||INST.on)return; // 进副本时主世界不在这一层，别让他俩对着看不见的地方说话
+  if(duoFast>0)duoFast--;
+  for(let i=0;i<2;i++)if(DUO[i].sayT>0)DUO[i].sayT--;
+  if(!duoIn()){duoT=0;return;}                      // 走开就闭嘴：下次经过从下一句接着说
+  if(!duoSeen){duoSeen=1;msg('🗨 陆八和秦九又在聊界壁外头的事——走近按 E 能催他们说快点','#c9e0ff');}
+  if(duoT>0){duoT--;return;} // 递减排的是"下一句还有几帧"，别忘在 return 之前
+  duoSay();p.duoI=((p.duoI|0)+1)%DUO_SCRIPT.length;
+}
+function duoHurry(){ // 按 E：立刻接下一句，并开一段加速窗口（用户原话“加快他们之间的对话”）
+  if(!duoIn()){msg('他俩正聊到关键处，你得走近点才插得上话（天使广场东侧）','#8ab8d8');return;}
+  const wasFast=duoFast>0;   // 已在加速窗口里再按，就不重复播报（实测连按会刷出三条一样的话）
+  duoFast=260;duoT=0;duoSay();p.duoI=((p.duoI|0)+1)%DUO_SCRIPT.length;
+  if((p.duoI|0)===0)msg('🗨 一轮聊完了，两人对望一眼，从头再聊——这次说给那个撞墙的人听','#c9e0ff');
+  else if(!wasFast)msg('🗨 你催了一句，两人说得更快了（再按 E 可继续催）','#ffe14a');
+  else floatTxt(DUO_MID.x,DUO_MID.y-34,'⚡ 催','#ffe14a');
+  glog('biz','duo hurry',{i:p.duoI},null);
+}
+function drawDuo(){ // 世界层：两人各画一具村民立绘 + 加速旁白
+  /* 立绘：i 传 4/5 是刻意避开 0/1/2 三具特型（铁匠/猎人/贤者），落到通用长衫分支；
+     肤色与手持物件按 i&3 取模，两人一深一浅不撞脸。
+     提示：只在"这一帧按 E 真的会落到他俩身上"时才显——二人组的圈与天使的 230 圈有重叠，
+     而 eCands 是最近的赢，只按 duoNear() 显字会出现「按 E 催一句」却按开天使交任务。
+     先用便宜的距离判定挡掉远处，免得为画提示每帧多算一遍 eCands（V1.12.9 的口径）。 */
+  const et=duoNear()?eTarget():null,can=!!(et&&et.k==='duo'),fast=duoFast>0;
+  /* 提示只挂在"下一句要开口的那位"头顶：两具立绘各挂一条一样的字，重复又吵（实测截图）；
+     挂在将说话的人身上，还顺带预告了按 E 之后是谁接话。 */
+  const nxt=DUO_SCRIPT[(p.duoI|0)%DUO_SCRIPT.length].w;
+  const hint=can?(touchMode||isTouch()?(fast?'⚡ 谈 催得正快':'按 “谈” 催一句'):(fast?'⚡ 催得正快 · 再按 E':'按 E 催一句')):'';
+  for(let i=0;i<2;i++){const n=DUO[i];
+    if(!onScreen(n.x,n.y,90))continue;
+    drawVillager(n,i+4,i===nxt?hint:'');}
+  /* 加速窗口的反馈不另起一块世界层文字：挂在两人中点上方会正好撞进秦九的按 E 提示（实测叠字），
+     改成把提示语本身换成「⚡ 催得正快 · 再按 E」——位置固定，且一眼就知道 E 生效了。 */
+}
+/* ============ /V1.12.14需求2 ============ */
 function npcNear(){ // V1.12.0需求1：旧版返回"第一个"进圈的 NPC，现在返回圈内最近的那个
   let bi=-1,bd=1e9;for(let i=0;i<NPCS.length;i++){const d=dist(p.x,p.y,NPCS[i].x,NPCS[i].y);if(d<ER.npc&&d<bd){bd=d;bi=i;}}return bi;}
 function npcTalk(i){const n=NPCS[i];
@@ -3186,6 +3286,7 @@ const DIG_TOT=10,DIG_R=46;
 const DIG_BLOCK=[[ANGEL.x,ANGEL.y,230+DIG_R],[HORSE.x,HORSE.y,150+DIG_R],[TOWER_PT.x,TOWER_PT.y,130+DIG_R],
   [MAZE_PT.x,MAZE_PT.y,110+DIG_R],[PETDUN_PT.x,PETDUN_PT.y,110+DIG_R],[MNT_NPC.x,MNT_NPC.y,170+DIG_R],
   [DIG_NPC.x,DIG_NPC.y,170+DIG_R]];
+DUO.forEach(function(n){DIG_BLOCK.push([n.x,n.y,ER.duo+DIG_R]);}); // V1.12.14需求2：话痨二人的按 E 圈同样不能压宝
 NPCS.forEach(function(n){DIG_BLOCK.push([n.x,n.y,150+DIG_R]);}); // 村民按 E 圈同样不能压宝（实测漏掉时 4000 点中 299 点压在村民圈上）
 /* 十类宝物权重（合计 118，按 DIG_SUM 归一）：装备/武器最常见，宝宝蛋与残页稀有，陷阱/放怪是风险项 */
 const DIG_LOOT=[
@@ -3400,6 +3501,7 @@ function findEntries(){
   NPCS.forEach(function(n){L.push({c:0,nm:n.name,tag:'营地村民',x:n.x,y:n.y});});
   L.push({c:0,nm:'任务天使',tag:'接章·交任务',x:ANGEL.x,y:ANGEL.y});
   L.push({c:0,nm:'探宝人金算盘',tag:'藏宝图',x:DIG_NPC.x,y:DIG_NPC.y});
+  DUO.forEach(function(n){L.push({c:0,nm:n.name,tag:'界壁话痨',x:n.x,y:n.y});}); // V1.12.14需求2：可按 G 查找定位
   L.push({c:0,nm:'弼马温',tag:'坐骑总管',x:MNT_NPC.x,y:MNT_NPC.y});
   for(const k in MT){const d=MT[k],h=mobHomeW(k);if(!h)continue;
     L.push({c:d.onlyBoss?2:1,nm:d.name,tag:'Lv'+d.lvl+' · '+zoneName(d.zone),x:h.x,y:h.y,key:k});}
@@ -3600,7 +3702,9 @@ function drawFind(){
   if(nav)btn(x+w-150,fy+20,134,26,'🚫 关闭引导线',function(){navCancel('手动取消');},'#4a2a2a');
   syncFindInput();
 }
-function drawVillager(n,i){ // v1.4需求29：村民立绘真实华丽化——四 NPC 各具体型/服饰/道具 + 体积光影 + 待机呼吸
+function drawVillager(n,i,hint){ // v1.4需求29：村民立绘真实华丽化——四 NPC 各具体型/服饰/道具 + 体积光影 + 待机呼吸
+  /* V1.12.14需求2：hint 是字符串就按它显提示（话痨二人组不塞进 NPCS，npcNear 永远数不到他们，
+     也就不会误抢「按 E 交谈」的语义）；不传时保持旧行为——按 NPCS 下标判定显「按 E 交谈」。 */
   const x=n.x,y=n.y+Math.sin(t*.06+i)*2,hue=n.hue;
   const sw=Math.sin(t*.05+i)*1.6; // 衣摆/道具轻摆
   C.fillStyle='rgba(0,0,0,.34)';C.beginPath();C.ellipse(x,y+18,11.5,4,0,0,7);C.fill(); // 地面投影
@@ -3667,13 +3771,14 @@ function drawVillager(n,i){ // v1.4需求29：村民立绘真实华丽化——�
     C.fillStyle='rgba(255,255,255,.55)';C.beginPath();C.arc(x+10.5,y-7,2.3,0,7);C.fill(); // 手持物件（茶壶/书册/药篮拂尘）
   }
   txt(n.name,x,y+32,11.5,'hsl('+hue+',65%,80%)','center',null,true);
-  if(npcNear()===i){txt(touchMode||isTouch()?'按 “谈” 交谈':'按 E 交谈',x,y-32,11,'#fff2b0','center');}
-  if(n.sayT>0&&dist(p.x,p.y,x,y)<320){ // 对话气泡
-    const tw=n.say.length*15+20,bx=clamp(x-tw/2,8,LW-8);void bx; // V1.10.2需求6：字号放大后气泡同步加宽
+  if(hint!==undefined){if(hint)txt(hint,x,y-32,11,'#fff2b0','center');} // V1.12.14需求2：外部指定提示文案
+  else if(npcNear()===i){txt(touchMode||isTouch()?'按 “谈” 交谈':'按 E 交谈',x,y-32,11,'#fff2b0','center');}
+  /* V1.12.14需求1：NPC 气泡同样多行折行——旧版"字数×15+20"定宽，长句两头直接出屏。
+     可见半径 320 也放宽到 400：话痨二人组（需求2）的起话圈是 300，再按 320 裁就听不全他们说话。 */
+  if(n.sayT>0&&dist(p.x,p.y,x,y)<400){
     C.save();C.globalAlpha=Math.min(1,n.sayT/50);
-    rr(x-tw/2,y-64,tw,24,8);C.fillStyle='rgba(250,248,235,.95)';C.fill();C.strokeStyle='hsl('+n.hue+',50%,60%)';C.lineWidth=1.5;C.stroke();
-    C.beginPath();C.moveTo(x-5,y-40);C.lineTo(x+5,y-40);C.lineTo(x,y-32);C.closePath();C.fill();
-    txt(n.say,x,y-54,14.5,'#2a2418','center',null,true);C.restore();}
+    drawBubbleBox(x,y-40,false,n.say,14.5,17,Math.min(LW-40,430),'rgba(250,248,235,.95)','hsl('+n.hue+',50%,60%)',true); // 框底 y-40、尾巴尖 y-32：给 y-32 的按 E 提示让位（实测同点会叠字）
+    C.restore();}
 }
 /* ============ v1.5.3需求18：营地商业区——摊位/幡旗/零部件；需求19：建筑可破坏（10次击毁，5分钟自动修复） ============ */
 const STALLS=[
@@ -3773,17 +3878,41 @@ function sayPlayer(txt,dur){p.say=txt;p.sayT=dur||230;} // v1.5.3：主角自言
 /* V1.12.13需求1：念白改成 10 条递进长句（最长的带前缀有 78 字），而气泡原本是"字数×14+20"定宽定字号——
    超过 960 逻辑像素就会两头出屏。这里把两处气泡绘制并成一个函数，长句按实测宽度等比缩字号（下限 9px），
    宁可字小一点也不截字：故事台词截断了就读不到后半句。 */
+/* V1.12.14需求1（用户原话：“主角说话的内容很长，让说话框内容多行展示”）：
+   旧版是"一行装不下就等比缩字号，下限 9px"——78 字的虚空念白缩到 9px 在手机上根本读不了。
+   现在改成按字宽折行、字号恒定：中文没有空格可分，只能逐字累加测宽；若某个标点被顶到行首，
+   就把前一个字一起带下去（避头点），否则「……」「。」会孤零零挂在下一行开头，看着像断句断了。 */
+function wrapSay(str,maxW,fs){
+  C.font='700 '+fs+'px "Microsoft YaHei",sans-serif';
+  const S=String(str==null?'':str),L=[],SKIP='，。、；：！？…）』」》%,.';
+  let cur='';
+  for(let i=0;i<S.length;i++){const ch=S.charAt(i);
+    if(cur&&C.measureText(cur+ch).width>maxW){
+      if(SKIP.indexOf(ch)>=0&&cur.length>1){L.push(cur.slice(0,-1));cur=cur.slice(-1)+ch;} // 避头点：连着上一个字一起换行
+      else{L.push(cur);cur=ch;}}
+    else cur+=ch;}
+  if(cur)L.push(cur);
+  return L;}
+/* 通用气泡框：主角与 NPC 共用一套折行/描边/尾巴画法。
+   anchor=锚点 y；under=false 时框向上长（anchor 是框底边，挂在头顶），
+   under=true 时框向下长（anchor 是框顶边，挂在脚下——虚空里头顶留给标题与心跳带）。 */
+function drawBubbleBox(x,anchor,under,say,fs,lh,maxW,fill,edge,tail){
+  const L=wrapSay(say,maxW,fs);
+  let w=0;for(let i=0;i<L.length;i++)w=Math.max(w,C.measureText(L[i]).width);
+  const tw=Math.min(maxW+20,w+20),h=L.length*lh+16; // 上下各留 8px
+  const by=under?anchor:anchor-h;
+  rr(x-tw/2,by,tw,h,8);C.fillStyle=fill;C.fill();
+  C.strokeStyle=edge;C.lineWidth=1.3;C.stroke();
+  if(tail){C.beginPath(); // 尾巴：朝下的三角，指到说话那张脸
+    C.moveTo(x-5,by+h);C.lineTo(x+5,by+h);C.lineTo(x,by+h+8);C.closePath();C.fill();}
+  for(let i=0;i<L.length;i++)txt(L[i],x,by+8+lh/2+i*lh,fs,'#2a2418','center',null,true);
+  return h;}
 function drawSayBubble(hy,under){ // under=true：气泡落在脚下（虚空里头顶留给标题与心跳带）
   if(!(p.sayT>0&&p.say))return;
   C.save();C.globalAlpha=Math.min(1,p.sayT/40);
-  let fs=13.5;const maxW=LW-24;
-  C.font='700 '+fs+'px "Microsoft YaHei",sans-serif';
-  const w=C.measureText(p.say).width;
-  if(w>maxW)fs=Math.max(9,maxW/w*fs);
-  const tw=Math.min(maxW,w+20),by=under?hy+30:hy-98;
-  rr(p.x-tw/2,by,tw,27,7);C.fillStyle='rgba(250,248,235,.94)';C.fill();
-  C.strokeStyle='#8a6a30';C.lineWidth=1.3;C.stroke();
-  txt(p.say,p.x,by+13,fs,'#2a2418','center',null,true);
+  /* 单行时框底仍落在 hy-71（旧版 by+27 的位置），多行只往上长——场景铭牌在 hy-68，不会被压到。
+     尾巴这里刻意不给：主角头顶 hy-68 处常驻场景铭牌，再加个三角就叠字了（旧版也没有）。 */
+  drawBubbleBox(p.x,under?hy+30:hy-71,under,p.say,13.5,18,Math.min(LW-40,430),'rgba(250,248,235,.94)','#8a6a30',false);
   C.restore();
 }
 const QALL=STORY.length*3;
@@ -4204,6 +4333,7 @@ function eCands(){ // E 键候选目标全清单（只收各自半径内的）�
     if(nearHorse())L.push({k:'horse',d:dist(p.x,p.y,HORSE.x,HORSE.y)});}
   for(const c of doorCands()){const d=dist(p.x,p.y,c.x,c.y);if(d<c.r)L.push({k:'door',c:c,d:d});}
   if(nearAngel())L.push({k:'angel',d:dist(p.x,p.y,ANGEL.x,ANGEL.y)});
+  if(duoNear())L.push({k:'duo',d:dist(p.x,p.y,DUO_MID.x,DUO_MID.y)}); // V1.12.14需求2：按 E 催话
   const ni=npcNear();if(ni>=0)L.push({k:'npc',i:ni,d:dist(p.x,p.y,NPCS[ni].x,NPCS[ni].y)});
   L.sort(function(a,b){return a.d-b.d;});
   return L;}
@@ -4219,6 +4349,7 @@ function doTalk(){
   if(tt.k==='dig'){digTalkNpc();return;}
   if(tt.k==='horse'){rideOpen=true;ridePage=0;msg('🏇 营地马桩：在面板上点选目的地，马儿会自动避开魔物群疾驰','#e8c86a');return;}
   if(tt.k==='angel'){angelInteract();return;}
+  if(tt.k==='duo'){duoHurry();return;} // V1.12.14需求2：E=加快他俩的对话
   npcTalk(tt.i);
 }
 function digTalkNpc(){ /* 与藏宝NPC交涉：挖满→交图；无单→接单；有单未完→提示进度 */
@@ -7152,6 +7283,7 @@ function draw(){
   drawEscort(); // V1.11.1需求2/3：四门守军 + 近畿四支巡逻卫队
   for(let i=0;i<NPCS.length;i++){const n=NPCS[i]; // 需求59：营地村民
     if(onScreen(n.x,n.y,90))drawVillager(n,i);} // V1.12.9性能2：立绘 ±30、名牌 y+32、气泡 y-64，外扩 90
+  drawDuo(); // V1.12.14需求2：界壁话痨二人组（自带裁剪）
   drawDigSpots();drawDigNPC(); // V1.11.2需求2：藏宝宝位与藏宝NPC
   drawPet(); // bug1-新41：拾取小精灵
   drawBossPet(); // v1.4需求6：四神兽宝宝宠物
@@ -9264,7 +9396,7 @@ function doSave(quiet){
     const b=[];let n=0;
     for(let i=0;i<bagMax();i++){const c=stripItem(bag[i]);b.push(c);if(c)n++;}
     const ch=chest.map(stripItem);let cn=0;for(const c of ch)if(c)cn++; // 需求14：仓库数据存入缓存
-    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,dores:p.dores|0,set:p.set,cos:p.cos,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
+    const d={v:2,at:Date.now(),n:n,name:p.name,gender:p.gender,p:{x:INST.on?INST.homeX:p.x,y:INST.on?INST.homeY:p.y,hp:p.hp,mp:p.mp,lvl:p.lvl,exp:p.exp,gold:p.gold,aim:p.aim,ap:p.ap,st:p.st,books:p.books,slots:p.slots,skLvl:p.skLvl,skUse:p.skUse,store:p.store,ek:p.ek,ekN:p.ekN,kills:p.kills,bagRows:p.bagRows,qs:p.qs,qa:p.qa,qv:p.qv,main:p.main,encN:p.encN,npcT:p.npcT,autoSell:p.autoSell,colEq:p.colEq,colMat:p.colMat,face:p.face,pets:p.pets,ach2:p.ach2,morphUsed:p.morphUsed,mounts:p.mounts,mr:!!p.mr,dores:p.dores|0,duoI:p.duoI|0,set:p.set,cos:p.cos,bless:p.bless,equip:eq,mq:p.mq,dig:p.dig,dbuff:p.dbuff},bag:b,ch:ch}; // v1.4需求21：pets入档；v1.4需求27/28：ach2/morphUsed 入档
     localStorage.setItem(slotKey(curSlot),JSON.stringify(d));
     lastSave=Date.now();
     if(!quiet)msg('💾 '+p.name+'（档'+(curSlot+1)+'）已保存：Lv'+p.lvl+' · 背包 '+n+' 件 · 仓库 '+cn+' 件','#8fd08f');
@@ -9304,6 +9436,7 @@ function doLoad(quiet,slot){
   if(!p.mounts.un[p.mounts.sel])p.mounts.sel=Object.keys(p.mounts.un)[0]||'';
   p.mr=false;
   p.dores=q.dores|0; // V1.12.8需求9：世界尽头探索次数读档（旧档无字段=0 次）
+  p.duoI=q.duoI|0;duoSeen=0;duoFast=0;duoT=0; // V1.12.14需求2：话痨进度读档（旧档=从头聊），演出态不跨档
   /* V1.12.9性能5：读档时若存档带着省电模式，必须补一次 resize()——
      启动那次 resize() 跑在 p 声明之前（暂时性死区），当时拿不到 lp 值。 */
   resize();
@@ -9338,7 +9471,7 @@ function resetPlayer(){ // 创建新角色前重置为初始态
   p.slots=[0,8,4,11];p.skcd=[0,0,0,0];p.skLvl={};p.skUse={};p.store={};p.ek={};p.ekN={};p.bagRows=10;p.qs=[];p.qa={};p.qv=0;p.main=0;p.encN=0;p.npcT={};p.runT=0;p.morph=null;p.autoSell={eq:false,wp:false,pot:false,book:false,mat:false};p.colEq=0;p.colMat={};p.kills={slime:0,goblin:0,fire:0,knight:0,turtle:0,miner:0,bandit:0,wind:0,elite:0,boss:0};
   p.equip.mweap={slot:'mweap',w:'bow',el:'wood',q:0,name:'旧猎弓',atk:4,def:0,hp:0,gold:0,enh:0,holes:0,ilvl:1,tier:0,aff:[],power:8.8};
   p.pets=[null,null,null,null]; // v1.4需求21：4个宠物槽初始空
-  p.mounts={un:{},sel:''};p.mr=false;p.dores=0; // V1.7：新角无任何坐骑；V1.12.8需求9：新角探索次数从 0 起
+  p.mounts={un:{},sel:''};p.mr=false;p.dores=0;p.duoI=0;duoSeen=0;duoFast=0;duoT=0;DUO[0].sayT=DUO[1].sayT=0; // V1.7：新角无任何坐骑；V1.12.8需求9：新角探索次数从 0 起；V1.12.14需求2：新角从头听
   p.mq=null; // V1.11.2需求1：新角主线进度由 mqSync 按 p.main 建立
   p.dig=null;p.dbuff=null; // V1.11.2需求2：新角无藏宝图、无宝气加成
   nav=null;findSel=null;findQ='';findCat=0;findPage=0;findFocus=false; // V1.11.3需求2/3：引导线与查找态是瞬态，不入存档、不跨角色
@@ -9586,7 +9719,7 @@ function updateGame(){
     updateFx();return;} // V1.12.10：这里原本还顺手 draw() 一次——逻辑步与绘制分离后不该再画，绘制由 loop() 每帧统一负责
   if(started&&t%20===0)manageMobs(); // bug1-新43：持续按主角位置懒加载/卸载怪物
   if(started)updateNav(); // V1.11.3需求3：抵达即收线；放在 paused 之外，面板开着时也算抵达
-  if(started&&!paused){updateRide();checkMain();updateDig();updatePlayer();updateChatter();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
+  if(started&&!paused){updateRide();checkMain();updateDig();updatePlayer();updateChatter();updateDuo();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
   else updateFx();
   if(started)updateShatter(); // V1.12.8需求9：破碎/合焦演出要在面板暂停时也播完，否则会卡在碎屏里
   updateFocus(); // V1.12.13需求2：回归合焦演出同样要在面板暂停时走完
