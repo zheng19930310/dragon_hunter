@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.16</title>
+<title>降龙猎手 · 五行觉醒 V1.12.17</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -2528,15 +2528,21 @@ const EDGE_DWELL=300,SHARD_DUR=110,EDGE_SAFE=140;
    DASH.EDGE 的"20 个坐标点"同源）：每走 5 个坐标点 = 250 世界像素，一条数据流。
    若按 5 个世界像素算，走路 276px/秒 ⇒ 每秒 55 条，3 秒就撞 200 上限，戏还没开场就先卡死。 */
 const VOID_EDGE_DWELL=600,VOID_DRIFT=150,VOID_FLOW_EVERY=5,VOID_CAP=400; // V1.12.15需求4：200 条扩到 400 条（口径不变，心跳线仍恒占 1 条）
-/* VEG=带高（屏幕正中的心跳红线上下各 VEG 像素）、BTN_Y/BTN_R1=「送我回去」的位置与半径上限。
-   这几个数必须一起看：数据流走 flowBox 上下两条航道，航道之间 [LH/2-VEG, LH/2+VEG] 是心跳红线专道，
-   按钮落在下航道里、贴屏幕底部，画在数据流之上；BTN_R1 的上限保证长满后整颗圆仍在画面内，
-   且顶边不压到心跳带（BTN_Y-BTN_R1=344 > LH/2+VEG=322）。 */
-const VOID_HB_MIN=60,VOID_HB_MAX=300,ECG_N=300,VEG=52,FLOW_WIN=56; // V1.12.15需求8：心跳 2~8 秒 → 1~5 秒随机
+/* VEG=心跳红线的振幅基准（红线在屏幕正中上下各摆 VEG-10 像素）、BTN_Y/BTN_R1=「送我回去」的位置与半径上限。
+   V1.12.17需求3 之后，数据流航道已经是整屏，不再给心跳线留出空带；
+   BTN_R1 的上限保证长满后整颗圆仍在画面内（BTN_Y+BTN_R1=528 < LH=540），
+   且顶边不压到心跳线（BTN_Y-BTN_R1=344 > LH/2+VEG-10=312）。 */
+const VOID_HB_START=20,VOID_HB_FAST=30,ECG_N=300,VEG=52,FLOW_WIN=56; // V1.12.17需求1：心跳间隔由"距终点远近"决定，20 秒起 → 最快 1 秒 2 次
+/* V1.12.15 的 VOID_HB_MIN/MAX（1~5 秒随机）已删除：用户改要"距离驱动"的确定性节奏，不再随机。 */
 const BTN_Y=LH-104,BTN_R1=92; // V1.12.15需求2：按钮从 0 长起，起点半径 BTN_R0 取消
 const VOID_END_UNITS=1500;    // V1.12.15需求9：虚空里走满 1500 个坐标点 → 终点演出（渐白→消失→睁眼）
+/* V1.12.17需求2（用户原话「"送我回去"最开始没有，越往后走越大」）：
+   旧系数 1.5/单位 长得太快——走 1 秒（约 55 单位）就已经是个 82px 的大圆，
+   玩家根本感觉不到"从没有到有"。改成按"到终点的全程"线性长：走满 1500 单位正好长到 92，
+   于是前半程基本只是隐约一个点，"越往后走越大"才真的看得出来。 */
+const BTN_GROW=BTN_R1/VOID_END_UNITS;
 let voidOn=false,voidPhase=0,voidDrift=null,voidSnap=null,voidDark=0;
-let flows=[],ecgBuf=[],ecgPh=-1,hbT=0,hbN=0,hbIv=300,voidSteps=0,voidMoved=0,voidRet=null,voidFocus=null,voidMoveA=0;
+let flows=[],ecgBuf=[],ecgPh=-1,hbT=0,hbN=0,hbIv=VOID_HB_START*60,voidSteps=0,voidMoved=0,voidRet=null,voidFocus=null,voidMoveA=0;
 let voidEndOn=false,voidEndT=0,eyeBl=0,eyeBlT=0; // V1.12.15需求9：终点演出状态；voidMoveA=当前移动朝向（需求3 反方向数据流用）
 let killfeed=[]; // v2.0 需求：击杀播报（右侧滚动）
 let bagOpen=false,skPanel=false,charPanel=false,selSlot=0,selBag=-1,selEq=-1;
@@ -2664,7 +2670,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.16';
+const GLOG_MAX=600,GLOG_VER='1.12.17';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -5845,14 +5851,35 @@ function voidAddFlow(){
   flows.push({s:b.join(''),cs:cs,a:voidMoveA+Math.PI+rnd(-.55,.55),sp:rnd(.5,2.2),x:rnd(0,box.w),y:rnd(0,box.h),lane:lane});
   return true;
 }
-function flowBox(lane){ // 航道矩形：中间 [LH/2-VEG, LH/2+VEG] 留给心跳线，数据流靠裁剪绝不越界
-  return lane===0?{x:0,y:0,w:LW,h:LH/2-VEG}:{x:0,y:LH/2+VEG,w:LW,h:LH/2-VEG};
+/* V1.12.17需求3（用户原话「中间心跳线的背景是黑色的宽条，现在改成透明」）：
+   那条"黑色宽条"其实从来没被画过——它是 V1.12.13 起给心跳线预留的中央空带
+   [LH/2-VEG, LH/2+VEG]：上下两条航道各自绕开它，于是黑底上凭空多出一条没有字雨的横带，
+   看上去就像心跳线垫了一块黑条。改法就是把航道恢复成整屏，字雨铺满、空带消失；
+   红线本身在 drawFlows 之后画（drawEcg），并且带余辉，压在字雨上仍然读得出来。
+   lane 字段与 flowBox 的入参都留着：现在两条航道已经重合，删掉要改 4 处调用点，
+   留着不影响任何行为，日后若要"上下分别留白"随时可改回来。 */
+function flowBox(lane){
+  return {x:0,y:0,w:LW,h:LH};
 }
 /* 「送我回去」：半径随走过的路数长，从 46 一路涨到 110（约 2.4 倍），中心刻意压在航道下沿之内。 */
 function voidUnits(){return voidMoved/PT_UNIT;} // 走过的坐标点数（与按钮读数、数据流节奏同一口径）
+/* ---------- V1.12.17需求1：心跳间隔 = 距终点还有多远 ----------
+   用户原话「距离终点越远，频率越慢；距离终点越近，频率越快。最开始是20秒一次，
+   每次跳一次，计算下一次心跳的间隔，到最后距离太短了，不好计算，就1秒2次；
+   计算向下取整，不能超过1秒两次。」
+   口径：距离用 voidUnits()（走过的坐标点，任意方向都算；站着不动不涨），
+   终点是 VOID_END_UNITS=1500，所以"距终点的远近"就是 1 - 已走/1500。
+   线性：20 秒 → 0.5 秒；向下取整到整秒；一旦取整后不足 1 秒（也就是剩余距离太短、
+   算不出有意义的整秒），直接固定 1 秒 2 次（30 帧）——这既是"不好计算就1秒2次"，
+   也天然满足"不能超过1秒两次"。 */
+function hbInterval(){
+  const k=clamp(voidUnits()/VOID_END_UNITS,0,1);   // 0=刚进虚空（最远），1=走到终点（最近）
+  const sec=Math.floor(VOID_HB_START-(VOID_HB_START-0.5)*k); // 20 → 0.5 线性收窄，向下取整
+  return sec<1?VOID_HB_FAST:sec*60;                // 剩余太短 → 固定 1 秒 2 次；且永不快于此
+}
 /* V1.12.15需求2：从 0 开始长——刚进虚空时它根本不存在，走一步冒一点，每走 1 个坐标点长 1.5px，到 BTN_R1 封顶。
    点击判定留 18px 保底热区，否则手机上那颗刚冒头的钮小得点不中（画多大是一回事，点得中是另一回事）。 */
-function voidBtn(){return{x:LW/2,y:BTN_Y,r:Math.min(BTN_R1,voidUnits()*1.5)};}
+function voidBtn(){return{x:LW/2,y:BTN_Y,r:Math.min(BTN_R1,voidUnits()*BTN_GROW)};} // 全程线性长满：0 → 92
 function voidBtnHit(l){const B=voidBtn();return dist(l.x,l.y,B.x,B.y)<=Math.max(18,B.r);}
 function voidGo(){
   if(voidOn||voidDrift)return;
@@ -5880,7 +5907,11 @@ function voidGo(){
 function voidResetState(){
   voidPhase=0;voidDark=0;voidSteps=0;voidMoved=0;voidMoveA=0;
   voidEndOn=false;voidEndT=0;eyeBl=0;eyeBlT=0;
-  flows.length=0;ecgBuf.length=0;ecgPh=-1;hbN=0;hbIv=300;hbT=150;voidFocus=null;
+  /* V1.12.17需求1（用户原话"最开始是20秒一次"）：这里不能再给"提前响"的种子。
+     旧版 hbT=150（2.5 秒）+ 下面走路处的 Math.min(hbT,60)（1 秒）是 V1.12.13 为了让玩家
+     早点确认"心跳真的开着"而加的，但它让第一拍提前到 1~2.5 秒，与"最开始 20 秒一次"直接冲突。
+     现在完全交给距离：进虚空即 hbT=hbIv=20 秒。 */
+  flows.length=0;ecgBuf.length=0;ecgPh=-1;hbN=0;hbIv=VOID_HB_START*60;hbT=VOID_HB_START*60;voidFocus=null;
 }
 function voidSaveHere(){ // doSave 取的是 p.x/p.y，这里临时换回真实落点再换回来
   if(!voidRet)return;
@@ -5960,13 +5991,17 @@ function updateVoid(){
     voidSteps+=real;
     while(voidSteps>=VOID_FLOW_EVERY*PT_UNIT){ // 每走 5 个坐标点增加一条数据流
       voidSteps-=VOID_FLOW_EVERY*PT_UNIT;
-      if(voidAddFlow()&&hbN===0)hbT=Math.min(hbT,60); // 第一条一起手，1 秒内就要听见心跳（用户要的是"移动的过程中"）
+      voidAddFlow();
+      /* V1.12.17需求1：这里原本跟着一个 hbT=Math.min(hbT,60)，让第一拍 1 秒内就响，
+         与"最开始是 20 秒一次"矛盾，已删。间隔从头到尾只由 hbInterval() 决定。 */
     }
   }
   if(flows.length){ // 背景由白切到黑
     if(voidDark<1)voidDark=Math.min(1,voidDark+.0045); // ≈3.7 秒走完白→黑，看得见"切"的过程
     if(!ecgBuf.length)for(let i=0;i<ECG_N;i++)ecgBuf.push(rnd(-.01,.01)); // 先把底衬满，避免线从一头长出来
-    if(--hbT<=0){hbT=ri(VOID_HB_MIN,VOID_HB_MAX);hbIv=hbT;hbN++;ecgPh=0;hbBeep();
+    /* V1.12.17需求1：每跳一次，按"当前离终点还有多远"重新算下一次间隔（用户原话
+       "每次跳一次，计算下一次心跳的间隔"）。间隔是确定值，不再随机。 */
+    if(--hbT<=0){hbIv=hbInterval();hbT=hbIv;hbN++;ecgPh=0;hbBeep();
       /* V1.12.15需求6：主角自言自语报数——每跳一下说一次"第 N 下"，第一跳先问一句"这是什么声音"。
          V1.12.16需求1：拟声词跟着声音一起从"咚"改成仪器的"嘀"。 */
       sayPlayer(hbN===1?'这是什么声音？……嘀，这是第 1 下。':'又听到了……嘀，这是第 '+hbN+' 下。',200);}
@@ -6068,12 +6103,14 @@ function drawFlows(){
 function sAt(f,n,i){i%=n;return f.s.charAt(i);}
 /* V1.12.15需求7（用户原话“心跳不用一个合适的大宽条，心跳线使用一条红线”）：
    监护仪底板、网格、两行读数全部撤掉——心跳就是屏幕正中一条红线。
-   数据流的裁剪航道照旧绕开 [LH/2-VEG, LH/2+VEG]，这条带归红线独占。 */
+   V1.12.17需求3 之后数据流不再绕开这条带（航道已整屏），红线靠"画在字雨之后"压在上面。 */
 function drawEcg(){
   if(!ecgBuf.length)return;
   C.save();
   C.strokeStyle='#ff3b3b';C.lineWidth=2.2;C.lineJoin='round';
-  if(hbT>Math.max(0,hbIv-26)){C.shadowColor='#ff5a4a';C.shadowBlur=12;} // 刚跳完那一拍带余辉
+  /* 余辉窗口取"跳完后的 26 帧"，但不得超过半个周期——V1.12.17 心跳最快 30 帧一次，
+     不封顶的话 26/30 的时间都在发光，红线会看着像常亮。 */
+  if(hbT>Math.max(0,hbIv-Math.min(26,hbIv*.5))){C.shadowColor='#ff5a4a';C.shadowBlur=12;}
   C.beginPath();
   const step=LW/(ECG_N-1);
   for(let i=0;i<ecgBuf.length;i++){
