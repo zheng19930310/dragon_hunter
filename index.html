@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.9</title>
+<title>降龙猎手 · 五行觉醒 V1.12.10</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -2505,7 +2505,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.9';
+const GLOG_MAX=600,GLOG_VER='1.12.10';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -7364,9 +7364,19 @@ function y0(m){return m.y}
 /* V1.12.1需求1：同屏雷柱计数（drawProjs 每帧只进一次，故在开头归零）——
    一场雷霆万钧最多 200 道同屏，旧写法实测单帧 21.7ms；新写法多了一倍的折线点数，
    故加一道降级阈值：超过 70 道就不再画宽电晕与地面爬电，只保留中段+白核（闪电的“样子”本身）。 */
-let thorColN=0;
+let thorColN=0,thorQ=3; // V1.12.10：同屏画质档（3=全量 / 2=中档 / 1=最省）
 function drawProjs(){
   thorColN=0;
+  /* V1.12.10 重做分级：原来只有"70 道"一档，而实测峰值同屏 179 道全部仍要走两次 stroke，
+     每帧仍要多出约 6800 次画布调用（雷暴帧 10367 vs 基线 3524）——这就是"雷霆万钧变卡"的主因。
+     现在按同屏道数分三档，并让几何重建频率跟着降（每 2 帧 → 每 4 帧）：
+     200 道每 2 帧重建一次中点位移折线，本身就是手机端 GC 抖动的来源。
+     定档口径仍是"同屏总道数"（试过只数"本帧真画立柱的道数"：驻留道仍要画电弧场环，
+     峰值反而从 10427 涨回 13287，故放弃）。阈值从旧的 110/60 收到 70/35——实测同屏 177 道
+     时只有 86 道在画立柱，但另外 91 道的场环并不便宜，越早降档收益越大。 */
+  {let n=0;
+   for(const a of projs)if(a.k==='thor'&&a.x>camX-150&&a.x<camX+LW+150&&a.y>camY-230&&a.y<camY+LH+150)n++;
+   thorQ=n>70?1:n>35?2:3;}
   for(const a of projs){
     /* V1.8.1 技能精细化：通用弹道拖尾——按速度反方向叠 6 节渐隐渐小的残影，
        给所有未自绘尾迹的弹道补上速度感（已有专属尾迹的弹道叠上去也无碍）；无速度字段者自动跳过 */
@@ -7396,15 +7406,19 @@ function drawProjs(){
         const al=clamp(u*1.8,0,1),ph=(a.iv-a.tick)/6; // ph：本拍重放的相位 0→1
         if(u>.82||ph<1){
           const A=(u>.82?al:Math.min(1,al+.45))*(.55+.45*Math.abs(Math.sin(t*.42+a.seed*.13)))*(1-ph*.55);
-          const H=150+(a.seed%5)*12,fk=(a.seed*31+((a.iv-a.tick)>>1))|0; // fk：形态键（每 2 帧换一个）
+          const H=150+(a.seed%5)*12;
+          /* V1.12.10：形态键跳变间隔随画质档走——最省档每 4 帧才换一次形态，
+             于是 boltGeo（中点位移法，一条主通道 17 点 + 2~4 条分叉）的重建次数直接减半。
+             200 道同屏时这是每帧上千个临时点对象的分配差，手机 GC 抖动的实际来源。 */
+          const fk=(a.seed*31+((a.iv-a.tick)>>(thorQ===1?2:1)))|0; // fk：形态键（全量/中档每 2 帧、最省每 4 帧换一个）
           if(a.fk!==fk){a.fk=fk;a.geo=null;}
           if(!a.geo){const rng=boltRng(fk),top={x:a.x+(rng()-.5)*26,y:a.y-H},
-            main=boltGeo(rng,top.x,top.y,a.x,a.y,4,H*.26),forks=[],nf=2+(fk%3);
+            main=boltGeo(rng,top.x,top.y,a.x,a.y,thorQ===1?3:4,H*.26),forks=[],nf=thorQ===1?1:2+(fk%3);
           for(let b=0;b<nf;b++){const s=main[2+((rng()*(main.length-3))|0)],
               dir=rng()<.5?-1:1,len=H*(.18+rng()*.26);
-            forks.push(boltGeo(rng,s.x,s.y,s.x+dir*len*.8,s.y+len*.75,3,len*.3));}
+            forks.push(boltGeo(rng,s.x,s.y,s.x+dir*len*.8,s.y+len*.75,thorQ===1?2:3,len*.3));}
             a.geo={main:main,forks:forks,top:top};}
-          const G=a.geo;thorColN++;const LOD=thorColN<70; // LOD=false：超量同屏时的降级绘制
+          const G=a.geo;thorColN++;const LOD=thorQ===3; // 只有全量档画宽电晕与地面爬电
           C.beginPath();C.moveTo(G.main[0].x,G.main[0].y);
           for(let i=1;i<G.main.length;i++)C.lineTo(G.main[i].x,G.main[i].y); // 主通道（17 点自相似锯齿）
           for(const f of G.forks){C.moveTo(f[0].x,f[0].y);for(let i=1;i<f.length;i++)C.lineTo(f[i].x,f[i].y);} // 分叉
@@ -7412,17 +7426,22 @@ function drawProjs(){
             C.moveTo(a.x+Math.cos(an)*a.r*.3,a.y+Math.sin(an)*a.r*.18);
             C.lineTo(a.x+Math.cos(an+.5)*a.r*.92,a.y+Math.sin(an+.5)*a.r*.5);}
           C.lineCap='round';C.lineJoin='round';
+          /* V1.12.10：每道雷原本固定 2~3 次 stroke（电晕+中段+白核），179 道同屏就是 400+ 次 stroke。
+             中段与白核其实是同一条 path 描两遍，最省档合成一次——先粗描淡蓝、下一道再细描白，
+             单遍时只留白核那一笔（视觉主体），密度高时肉眼分辨不出少了那层淡蓝。 */
           if(LOD){C.globalAlpha=A*.3;C.strokeStyle=a.col;C.lineWidth=8;C.stroke();} // 电晕（宽而淡）
-          C.globalAlpha=A*.62;C.strokeStyle='#bfe8ff';C.lineWidth=LOD?3.2:2.2;C.stroke(); // 中段
-          C.globalAlpha=A;C.strokeStyle='#fff';C.lineWidth=1.4;C.stroke();        // 白核
-          C.globalAlpha=A*.34;C.fillStyle='#9adcfa'; // 天顶云光：让雷“来自天上”
-          C.beginPath();C.ellipse(G.top.x,G.top.y-6,26,9,0,0,7);C.fill();
+          if(thorQ!==1){C.globalAlpha=A*.62;C.strokeStyle='#bfe8ff';C.lineWidth=3.2;C.stroke();} // 中段
+          C.globalAlpha=A;C.strokeStyle='#fff';C.lineWidth=thorQ===1?1.8:1.4;C.stroke();        // 白核
+          if(thorQ!==1){
+          C.globalAlpha=A*.34;C.fillStyle='#9adcfa'; // 天顶云光：让雷"来自天上"
+          C.beginPath();C.ellipse(G.top.x,G.top.y-6,26,9,0,0,7);C.fill();}
           C.globalAlpha=A*.85;C.fillStyle='#eaffff'; // 落点闪光
           C.beginPath();C.ellipse(a.x,a.y,9+Math.abs(Math.sin(t*.5+a.seed))*4,3.6,0,0,7);C.fill();}
+        if(thorQ!==1){ // 最省档不画电弧场环与中心点（200 道时这两笔各是一次 beginPath+stroke/fill）
         C.globalAlpha=al*.62;C.strokeStyle='#dff6ff';C.lineWidth=2; // 电弧场环（渐扩渐隐）
         C.beginPath();C.arc(a.x,a.y,a.r*(.5+.5*(1-u)),0,7);C.stroke();
         C.globalAlpha=al*.5;C.fillStyle=a.col;
-        C.beginPath();C.arc(a.x,a.y,2.4+1.6*Math.abs(Math.sin(t*.3+a.seed)),0,7);C.fill();
+        C.beginPath();C.arc(a.x,a.y,2.4+1.6*Math.abs(Math.sin(t*.3+a.seed)),0,7);C.fill();}
         C.globalAlpha=1;}}
     else if(a.k==='tornado'){ // 需求31：修正朝向（底窄顶宽）+ 更好看的螺旋漏斗
       const al=clamp(a.t/40,0,1),H=a.r*2.6,lev=6;C.save();C.translate(a.x,a.y);
@@ -8773,16 +8792,56 @@ function drawStart(){
 let loopErrN=0;
 function safeLog(cat,text,detail,lvl){try{glog(cat,text,detail,lvl);}catch(_){/* 日志本身绝不能拖垮主循环 */}}
 /* ============ 主循环 ============ */
-function loop(){
-  t++;
-  try{gperf(performance.now?performance.now():Date.now());}catch(e){safeLog('err','gperf threw: '+e.message,null,'error');} // V1.11.1需求7：帧耗时采样
+/* ============ V1.12.10（用户原话：“技能倒计时和有些计时任务也变慢了，现实过了3秒，游戏里才加减1秒”） ============
+   这句原话描述的不是"卡"，而是**游戏时间被帧率绑架**。
+   旧 loop() 每收到一次 rAF 就 `t++` 并跑一帧逻辑，而全场所有倒计时——技能 CD（p.skcd）、普攻冷却（p.cool）、
+   怪物技能与眩晕冻结、buff 持续、挖宝与藏宝 CD、时辰与天气、消息与粒子寿命、自动存档节奏——
+   统统是"帧数"。于是帧率一掉，时间就跟着变慢：实测在 20fps 下跑 60 帧（真实 3 秒），
+   132 帧的 CD 只走掉 60 帧，等于**真实 3 秒里游戏只过了 1 秒**。手机副本/怪多时正是这个场景。
+   副作用还不小：卡顿时技能 CD 变短（玩家白赚）、而怪物施法也一起变慢，两边规则不一致。
+
+   改法：固定步长累加器。逻辑永远按 60 步/秒推进，绘制每 rAF 一次。
+   · dt 上限 250ms：切后台回来不补一屏历史帧；
+   · 单帧最多补 CATCHUP=15 步，正好等于 dt 上限换算出的步数（250ms÷16.67ms）：
+     于是"丢时间"只发生在 dt 钳制那一处（切后台/断点），运行中再慢也不额外丢。
+     上限值按实测定——最重场景（副本+满怪+雷暴峰值）一步逻辑只有 0.1~0.3ms，
+     补满 15 步也只有 1.5~4.5ms，相对一帧的绘制开销可忽略，不会"越卡越追、追不动"。
+     实测 CPU 降 6 倍（约 2fps）时补 10 步只能保住 34% 的墙钟，补 15 步即与钳制口径一致。
+   · 绘制只画一次，所以补步不会翻倍绘制开销。
+   注意：loopBody() 的对外契约保持不变（推进一帧逻辑 + 绘制一次；`t++` 一直在调用方，本版也没改），
+   验收探针与旧调用点照用；新增的 updateGame() 是去掉末尾 draw() 的那一份，供累加器逐步推进。 */
+const STEP=1000/60,CATCHUP=15;
+let _acc=0,_last=-1; // _last 必须是"未初始化"哨兵：用 0 的话 `if(!_last)` 在 t=0/performance.now()≈0 的合成时间戳下会误判
+function loop(now){
+  if(now==null)now=performance.now?performance.now():Date.now();
+  if(_last<0)_last=now;                    // 首帧没有参照，dt 记 0（而不是把启动到现在的时间一次性补成历史帧）
+  let dt=now-_last;_last=now;
+  if(dt<0)dt=0;
+  if(dt>250)dt=250;                       // 后台/断点回来：丢掉这段，不补历史帧
+  _acc+=dt;
+  let n=0;
+  while(_acc>=STEP&&n<CATCHUP){_acc-=STEP;n++;t++;stepGame();}
+  if(_acc>STEP*CATCHUP)_acc=0;            // 长期跟不上就放弃追赶，保证时间单调而不堆积
+  try{gperf(now);}catch(e){safeLog('err','gperf threw: '+e.message,null,'error');} // V1.11.1需求7：帧耗时采样（每 rAF 一次，量的是真实帧间隔）
+  try{draw();}catch(e){                    // 绘制每 rAF 恰好一次
+    safeLog('err','draw threw: '+((e&&e.message)||e),{stack:gstack(e)},'error');
+    loopErrN++;if(loopErrN===1||loopErrN%120===0)msg('⚠ 运行异常已记录（第 '+loopErrN+' 次）——按 O 打开设置可导出日志 JSON','#ff8a6a');}
+  requestAnimationFrame(loop); // 无论本帧是否异常，都必须续上下一帧
+}
+/* 逻辑步：只推进世界，不绘制。异常兜底与旧 loop() 一致。
+   注意不能直接调 loopBody()——那里面还有一次 draw()，与 loop() 末尾的绘制重复，
+   一帧画两遍等于把本版要省的开销原样加回去。loopBody() 保留"逻辑+绘制"的旧契约给探针用。 */
+function stepGame(){
   try{gselfCheck();}catch(e){safeLog('err','gselfCheck threw: '+e.message,null,'error');}
-  try{loopBody();}catch(e){ /* V1.11.1需求7：主循环兜底——异常必须被记录并上报一次，同时不让游戏黑屏冻结 */
+  try{updateGame();}catch(e){ /* V1.11.1需求7：主循环兜底——异常必须被记录并上报一次，同时不让游戏黑屏冻结 */
     safeLog('err','loop threw: '+((e&&e.message)||e),{stack:gstack(e)},'error');
     loopErrN++;if(loopErrN===1||loopErrN%120===0)msg('⚠ 运行异常已记录（第 '+loopErrN+' 次）——按 O 打开设置可导出日志 JSON','#ff8a6a');}
-  requestAnimationFrame(loop); // 无论上一帧是否异常，都必须续上下一帧
 }
 function loopBody(){
+  updateGame();
+  draw();
+}
+function updateGame(){
   updateClock(); // V1.9需求1/4：推十二时辰与天气轮换（面板暂停时时间照流，与祝福弹幕同构）
   updateMusic(); // V1.10.1需求5：背景音乐循环（面板暂停时照常演奏）
   if(press.on&&!drag.on&&bagOpen&&performance.now()-press.t0>=HOLD){ // bug1-新37：长按满2秒进入拖动模式
@@ -8790,7 +8849,7 @@ function loopBody(){
   const paused=bagOpen||skPanel||charPanel||rideOpen||towerSelOpen||mountOpen||setOpen||findOpen; // v1.5.2需求9；v1.5.3需求11；V1.8：设置面板；V1.11.3：查找面板也暂停（翻列表时别被怪打死）
   if(loading()){ // V1.10.0需求3：加载遮罩期间冻结世界更新与输入，仅推进倒计时与特效
     LOAD.t--;if(LOAD.t<=0){LOAD.txt='';if(INST.on)msg('🗺 '+(INST.name||'副本')+' 展开完毕——开战！','#8affff');else msg('🗺 回到落鸦村——地图加载完毕','#8affff');}
-    updateFx();draw();return;} // V1.11.1需求7：rAF 统一由 loop() 驱动，loopBody 只负责本帧逻辑与绘制
+    updateFx();return;} // V1.12.10：这里原本还顺手 draw() 一次——逻辑步与绘制分离后不该再画，绘制由 loop() 每帧统一负责
   if(started&&t%20===0)manageMobs(); // bug1-新43：持续按主角位置懒加载/卸载怪物
   if(started)updateNav(); // V1.11.3需求3：抵达即收线；放在 paused 之外，面板开着时也算抵达
   if(started&&!paused){updateRide();checkMain();updateDig();updatePlayer();updateChatter();updateMobs();updateEscort();updateProjs();updatePickups();updateBossPet();updateMorphSkill();checkMazeExit();updateFx();} // v1.4需求18-21-22；v1.5.2需求9：骑乘自动寻路；V1.6需求2：迷宫出口探测
@@ -8800,7 +8859,6 @@ function loopBody(){
   if(_petSayT>0)_petSayT--;
   if(started)updateBless(); // V1.8需求3/5：祝福弹幕与屏幕粒子（面板开启也照常飞）
     if(started&&p.dead===0&&t%600===0)setTimeout(function(){doSave(true);},0); // bug1-新23：每 10 秒异步自动存档
-  draw();
 }
 function greetMsgs(){
   msg('五行克制：克×1.5 被克×0.7，伤害数字按武器五行上色；主动技能伴生使用次数自动升级','#7ee0ff');
