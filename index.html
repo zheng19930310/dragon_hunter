@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.17</title>
+<title>降龙猎手 · 五行觉醒 V1.12.18</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -2526,7 +2526,9 @@ const EDGE_DWELL=300,SHARD_DUR=110,EDGE_SAFE=140;
    · voidEndT    —— 终点演出已走的帧数；eyeBl/eyeBlT —— 眨眼的倒计时与进行中的眨眼相位。 */
 /* VOID_FLOW_EVERY 的"单位"取本仓库既有的坐标点口径（PT_UNIT=50 世界像素，与小地图读数一致，
    DASH.EDGE 的"20 个坐标点"同源）：每走 5 个坐标点 = 250 世界像素，一条数据流。
-   若按 5 个世界像素算，走路 276px/秒 ⇒ 每秒 55 条，3 秒就撞 200 上限，戏还没开场就先卡死。 */
+   若按 5 个世界像素算，走路 276px/秒 ⇒ 每秒 55 条，3 秒就撞 200 上限，戏还没开场就先卡死。
+   V1.12.18 提速后（15px/帧 = 900px/秒）本口径的实际出流速度是 900/250 = 3.6 条/秒，
+   走满 1500 单位共 300 条，仍在 399 条硬顶之内。 */
 const VOID_EDGE_DWELL=600,VOID_DRIFT=150,VOID_FLOW_EVERY=5,VOID_CAP=400; // V1.12.15需求4：200 条扩到 400 条（口径不变，心跳线仍恒占 1 条）
 /* VEG=心跳红线的振幅基准（红线在屏幕正中上下各摆 VEG-10 像素）、BTN_Y/BTN_R1=「送我回去」的位置与半径上限。
    V1.12.17需求3 之后，数据流航道已经是整屏，不再给心跳线留出空带；
@@ -2535,6 +2537,11 @@ const VOID_EDGE_DWELL=600,VOID_DRIFT=150,VOID_FLOW_EVERY=5,VOID_CAP=400; // V1.1
 const VOID_HB_START=20,VOID_HB_FAST=30,ECG_N=300,VEG=52,FLOW_WIN=56; // V1.12.17需求1：心跳间隔由"距终点远近"决定，20 秒起 → 最快 1 秒 2 次
 /* V1.12.15 的 VOID_HB_MIN/MAX（1~5 秒随机）已删除：用户改要"距离驱动"的确定性节奏，不再随机。 */
 const BTN_Y=LH-104,BTN_R1=92; // V1.12.15需求2：按钮从 0 长起，起点半径 BTN_R0 取消
+/* V1.12.18需求（用户原话「虚空里速度改成15，走快点」）：虚空里的移动速度从 4.6 提到 15。
+   只改虚空这一条，外面大世界的 4.6（含装备/成就/场景加成）一律不动。
+   提速后走满 1500 单位的全程从 ≈4 分 32 秒 缩到 ≈1 分 23 秒，
+   心跳"20 秒起、越来越急"的阶梯会被压缩——详见 v1.12.18需求.md 的实测表。 */
+const VOID_SPD=15;
 const VOID_END_UNITS=1500;    // V1.12.15需求9：虚空里走满 1500 个坐标点 → 终点演出（渐白→消失→睁眼）
 /* V1.12.17需求2（用户原话「"送我回去"最开始没有，越往后走越大」）：
    旧系数 1.5/单位 长得太快——走 1 秒（约 55 单位）就已经是个 82px 的大圆，
@@ -2670,7 +2677,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.17';
+const GLOG_MAX=600,GLOG_VER='1.12.18';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -5975,8 +5982,9 @@ function updateVoid(){
   }
   if(voidEndOn){updateVoidEnd();return;} // V1.12.15需求9：终点演出接管一切，主角不再移动、不再吐数据流
   if(p.sayT>0)p.sayT--;
-  /* 虚空里只留最朴素的一条移动：不吃成就/装备/场景增益，也正因为在这里走，按钮才变大、数据流才来。 */
-  const spd=4.6*(p.morph?.8:1);
+  /* 虚空里只留最朴素的一条移动：不吃成就/装备/场景增益，也正因为在这里走，按钮才变大、数据流才来。
+     V1.12.18：速度改用 VOID_SPD=15（用户原话「虚空里速度改成15，走快点」），变身仍打八折。 */
+  const spd=VOID_SPD*(p.morph?.8:1);
   let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),
       dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
   if(vj.x||vj.y){dx+=vj.x*1.6;dy+=vj.y*1.6;}
