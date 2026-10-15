@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.11</title>
+<title>降龙猎手 · 五行觉醒 V1.12.11b</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -35,6 +35,69 @@ body.force-landscape #findInput{transform:rotate(-90deg)}
 <canvas id="game"></canvas>
 <input id="nameInput" type="text" maxlength="10" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="点这里输入姓名（最多 10 字）">
 <input id="findInput" type="text" maxlength="14" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入名字过滤，或坐标如 24,79">
+<!-- V1.12.11b需求：微信内置浏览器打开时给出「在浏览器打开」提示 + 指示图。
+     样式一律写进行内属性（含 SVG 的 fill/stroke 呈现属性），因为微信内置内核会剥离/改写样式表，
+     写在 <style> 里的提示可能整块失效——那正是这条提示最需要出现的场合。
+     显示与否完全由下面那段脚本按 UA 决定：正常浏览器（电脑/手机自带浏览器）里它始终 display:none，
+     游戏照原样直接进，不受任何影响。 -->
+<div id="wxTip" style="display:none;position:fixed;left:0;top:0;right:0;bottom:0;z-index:9999;background:rgba(4,8,6,.95);overflow:auto;text-align:center;font-family:'Microsoft YaHei',sans-serif;color:#cfe0c8;-webkit-overflow-scrolling:touch">
+  <div style="box-sizing:border-box;max-width:560px;margin:0 auto;padding:14px 12px 18px;text-align:left">
+    <div style="font-size:19px;font-weight:700;color:#ffd700;text-align:center;margin:0 0 8px">降龙猎手 · 请改用浏览器打开</div>
+    <div style="font-size:13.5px;line-height:1.75;margin:0 0 10px">微信内置浏览器功能受限，本页在微信里可能出现<b style="color:#ff9a7a">画面渲染不出来、点什么都没反应、存档无法保存</b>。请按下面两步换到系统浏览器：</div>
+    <svg viewBox="0 0 344 158" style="display:block;width:100%;height:auto;background:#0a0f12;border:1px solid #33413a;border-radius:8px">
+      <text x="88" y="152" font-size="9.5" fill="#8fbf9a" text-anchor="middle">第①步：点右上角「…」</text>
+      <rect x="44" y="12" width="88" height="128" rx="12" fill="#121a1f" stroke="#4a5a66" stroke-width="2"/>
+      <rect x="50" y="24" width="76" height="104" fill="#0d1417"/>
+      <rect x="50" y="24" width="76" height="15" fill="#26333d"/>
+      <text x="55" y="35" font-size="8" fill="#a8bcc6">&#12288;&#10094;&#12288;网页标题</text>
+      <circle cx="115" cy="31.5" r="1.8" fill="#eaf2f6"/><circle cx="120.5" cy="31.5" r="1.8" fill="#eaf2f6"/><circle cx="126" cy="31.5" r="1.8" fill="#eaf2f6"/>
+      <circle cx="120.5" cy="31.5" r="11" fill="none" stroke="#ff7a5a" stroke-width="2" stroke-dasharray="4 3"/>
+      <path d="M88 98 Q96 68 114 46" fill="none" stroke="#ffd700" stroke-width="3" stroke-linecap="round"/>
+      <path d="M116 42 l-9 2 5 8 z" fill="#ffd700"/>
+      <path d="M132 32 Q160 18 192 30" fill="none" stroke="#ffd700" stroke-width="2" stroke-dasharray="5 4"/>
+      <path d="M195 31 l-9 -3 2 9 z" fill="#ffd700"/>
+      <text x="262" y="152" font-size="9.5" fill="#8fbf9a" text-anchor="middle">第②步：选「在浏览器打开」</text>
+      <rect x="200" y="14" width="132" height="124" rx="10" fill="#1b2429" stroke="#4a5a66" stroke-width="2"/>
+      <text x="210" y="34" font-size="9" fill="#b9c6cc">发送给朋友</text>
+      <text x="210" y="56" font-size="9" fill="#b9c6cc">分享到朋友圈</text>
+      <text x="210" y="78" font-size="9" fill="#b9c6cc">复制链接</text>
+      <rect x="205" y="84" width="122" height="18" rx="4" fill="#24461f" stroke="#8aff8a" stroke-width="1.5"/>
+      <text x="210" y="97" font-size="9.5" font-weight="700" fill="#c8ffb0">在浏览器打开</text>
+      <text x="210" y="119" font-size="9" fill="#b9c6cc">刷新</text>
+      <text x="210" y="133" font-size="9" fill="#b9c6cc">收藏</text>
+      <circle cx="316" cy="93" r="8" fill="none" stroke="#ffd700" stroke-width="2"/>
+      <circle cx="316" cy="93" r="3" fill="#ffd700"/>
+    </svg>
+    <div style="font-size:15px;line-height:1.8;margin:10px 0 6px;text-align:center;color:#eaffea">右上角「<b>…</b>」 → 菜单里选「<b style="color:#8aff8a">在浏览器打开</b>」</div>
+    <div style="font-size:12px;line-height:1.7;margin:0 0 12px;text-align:center;color:#8fa08a">（安卓：在浏览器打开 / iOS：用 Safari 打开）。本提示只在微信里出现，用电脑或手机浏览器打开则直接进入游戏；存档存在各浏览器本地，换浏览器需重新建档。</div>
+    <button id="wxTipGo" style="display:block;width:100%;padding:12px 10px;font-size:16px;font-weight:700;color:#0a120a;background:#8ac86a;border:0;border-radius:8px;font-family:inherit">仍在微信里试试（功能可能受限）</button>
+  </div>
+</div>
+<div id="wxBar" style="display:none;position:fixed;left:6px;top:6px;z-index:9998;box-sizing:border-box;max-width:70%;padding:6px 9px;border-radius:14px;background:rgba(10,18,12,.86);border:1px solid #6a7a3a;color:#e6f2c8;font:12px/1.35 'Microsoft YaHei',sans-serif">
+  <span id="wxBarTxt">微信内核受限 · 建议点右上「…」选「在浏览器打开」</span><b id="wxBarMore" style="margin-left:6px;color:#ffd700">看指引</b><b id="wxBarX" style="margin-left:6px;color:#8fa08a">&#10005;</b>
+</div>
+<script>
+/* V1.12.11b需求：只有微信内置浏览器才显示上面那块提示；其他环境一律不碰，直接进游戏。
+   用 UA 判定而不是特性检测——微信里 X5 内核有时特性齐全但依然被禁本地存储/渲染受限，
+   而"请用浏览器打开"这句指引对用户总是有用的。脚本用 ES5 写，报错也不影响主程序。
+   关掉全屏指引后不是一去不返：左上角留一条细提示，随时「看指引」叫回来，也能彻底关掉。
+   两条都只在微信里存在，正常浏览器连这个 DOM 都不会显示，游戏零打扰。 */
+(function(){
+  try{
+    var ua=(navigator.userAgent||'')+' '+(navigator.vendor||'');
+    if(!/MicroMessenger|wxwork|WeChat|wechatdevtools/i.test(ua))return;   // 非微信：整段不执行
+    var tip=document.getElementById('wxTip'),go=document.getElementById('wxTipGo');
+    var bar=document.getElementById('wxBar'),more=document.getElementById('wxBarMore'),x=document.getElementById('wxBarX');
+    if(!tip||!bar)return;
+    function closeTip(){tip.style.display='none';bar.style.display='block';}
+    function openTip(){tip.style.display='block';bar.style.display='none';}
+    tip.style.display='block';
+    if(go)go.onclick=closeTip;
+    if(more)more.onclick=openTip;
+    if(x)x.onclick=function(){try{bar.parentNode.removeChild(bar);}catch(e){bar.style.display='none';}};
+  }catch(e){}
+})();
+</script>
 <script>
 "use strict";
 /* ============ 高清单Canvas：逻辑960x540 + 高DPR清晰文字 ============ */
@@ -2515,7 +2578,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.11';
+const GLOG_MAX=600,GLOG_VER='1.12.11b';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
