@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.15</title>
+<title>降龙猎手 · 五行觉醒 V1.12.16</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -256,24 +256,52 @@ function angDiff(a,b){let d=a-b;while(d>Math.PI)d-=TAU;while(d<-Math.PI)d+=TAU;r
 function pickW(w){let s=0;for(const x of w)s+=x;let r=Math.random()*s;for(let i=0;i<w.length;i++){r-=w[i];if(r<0)return i;}return 0;}
 
 /* ============ 音效 ============ */
-let AC=null;
+let AC=null,MG=null;
 function sfxVol(){return p&&p.set&&p.set.sv!=null?p.set.sv/5:1;} // V1.10.1需求5：音效音量 1~5 档
+/* V1.12.16需求2（用户原话"声音有点小了，加到最大也没多大声"）：
+   根因两条，都在这。① 所有声音都是 sfx() 直连 destination，而音量档 sv 最大只有 sfxVol()=1.0
+   ——等于"从头到尾没有一格放大余量"，把滑块推到 5 只是回到录音原始电平，所以推满也不会更大声。
+   ② iOS/Safari 的 AudioContext 常在用户手势真正落地前停在 suspended，节点全建好却不出声。
+   修法：加一条主输出链 增益(×6) → WaveShaper 软削顶 → destination，1~5 档变成真实的
+   ×1.2 ~ ×6 增益范围（原来只有 ×0.2~×1，整整 5 倍动态被浪费）。软削顶曲线是
+   0.9·tanh(1.4x)/tanh(1.4)，数学上封顶 0.9 永不破音。
+   实测（OfflineAudioContext 渲波形，见 /tmp/t/gain_tune2.js、level_sweep2.js）：
+   嘀嘀第一记峰值 0.182→0.90、RMS 0.0131→0.0624（约 4.8 倍）；第二记 0.849 保持主次分明；
+   最坏情况六个战斗音效同帧叠加峰值 0.602，仍在余量内、不会糊成一片。
+   注：一开始用的是 DynamicsCompressor，实测反而把音量压回 0.06——压缩器有约 6ms 预视，
+   75ms 的短"嘀"整记都被当成过冲压掉了。所以换成无状态的软削顶。 */
+function masterOut(){
+  if(!AC)return null;
+  if(MG)return MG;
+  try{const g=AC.createGain();g.gain.value=6;
+    try{
+      const n=2048,cv=new Float32Array(n);
+      for(let i=0;i<n;i++){const x=i/(n-1)*2-1;cv[i]=.9*Math.tanh(x*1.4)/Math.tanh(1.4);}
+      const w=AC.createWaveShaper();w.curve=cv;w.oversample='none'; // 方波本身谐波多，过采样反而在拐点振铃出 0.96+ 的过冲
+      g.connect(w);w.connect(AC.destination);
+    }catch(e){g.connect(AC.destination);} // 老浏览器没有 WaveShaper：只留 ×6 增益
+    MG=g;}
+  catch(e){MG=null;}
+  return MG;
+}
+function acOut(){return masterOut()||AC.destination;}
+function acWake(){if(!AC)return;try{if(AC.state==='suspended')AC.resume();}catch(e){}}
 function asfx(f,d,type,v){if(p&&p.set&&!p.set.asfx)return;sfx(f,d,type,v);} // V1.10.1需求5：攻击声效开关
-function sfx(f,d,type,v){if(!AC)return;d=d||.08;type=type||'square';v=v||.04;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v*sfxVol();o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d);}catch(e){}}
+function sfx(f,d,type,v){if(!AC)return;d=d||.08;type=type||'square';v=v||.04;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v*sfxVol();o.connect(g);g.connect(acOut());o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d);}catch(e){}}
 function arp(list,step){step=step||80;list.forEach(function(f,i){setTimeout(function(){sfx(f,.13,'square',.05);},i*step);});}
 /* V1.10.1需求5：背景音乐——五声音阶拨弦循环，帧驱动，随开关即时启停 */
 const MUS_SCALE=[262,294,330,392,440,523,587,659];
 const MUS_SEQ=[0,2,4,6,5,3,4,1,0,3,5,7,6,4,2,4];
 let musStep=0;
 function tone(f,dur,vol,type){if(!AC)return;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type||'triangle';o.frequency.value=f;
-  g.gain.value=0;o.connect(g);g.connect(AC.destination);const t0=AC.currentTime;
+  g.gain.value=0;o.connect(g);g.connect(acOut());const t0=AC.currentTime;
   g.gain.linearRampToValueAtTime(Math.max(.0002,vol),t0+.02);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
   o.start(t0);o.stop(t0+dur+.02);}catch(e){}}
 function updateMusic(){
   if(voidOn)return; // V1.12.13需求2：虚空里关闭游戏背景声音（用户原话），只留心跳与数据流自己的声音
   if(!started||!AC||!p||!p.set||!p.set.mus)return;
   if(++musStep%26)return; // ~0.43 秒一拍
-  const mv=p.set.mv|0||3,vol=.010*mv,beat=(musStep/26|0);
+  const mv=p.set.mv|0||3,vol=.0035*mv,beat=(musStep/26|0); // V1.12.16需求2：主链整体放大了，背景音乐回调一档，别盖过音效
   const n=MUS_SEQ[beat%16];
   tone(MUS_SCALE[n]*2,.5,vol);tone(MUS_SCALE[n],.9,vol*.7);
   if(beat%8===0)tone(MUS_SCALE[n]/2,1.4,vol*.8,'sine');
@@ -2636,7 +2664,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.15';
+const GLOG_MAX=600,GLOG_VER='1.12.16';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -5894,12 +5922,13 @@ function voidBack(){
   doSave(true);
 }
 /* 出声的同一帧心跳线才开始跳（用户原话“有心跳声则心跳线也开始跳动”）。
-   V1.12.15需求5（用户原话“特殊空间的心跳声没开启”）：旧版是 64Hz/46Hz 两记正弦——
-   手机喇叭放不出 60Hz 以下，玩家听到的就是"没声音"。把主体提到 150/110Hz（胸腔闷响仍在可放频段内），
-   各叠一记短促高次泛音当"咚"的起振头；音量也抬半档。间隔 1~5 秒随机见 VOID_HB_MIN/MAX。 */
-function hbThump(){ // lub-dub：两记，第二记更闷更短，就是监护仪旁边那种声音
-  sfx(150,.13,'sine',.20);sfx(300,.05,'triangle',.06);
-  later(function(){sfx(110,.20,'sine',.16);sfx(220,.06,'triangle',.05);},10);
+   V1.12.16需求1（用户原话“不用心跳声，用仪器那种嘀嘀的声音”）：闷响的 lub-dub 换成监护仪/
+   血氧仪那种短促清亮的电子"嘀"——方波基音 + 一记高次泛音当亮头，起音硬、衰减快，
+   一次心跳一声嘀，1~5 秒一声，连起来就是仪器在旁边数着的样子。
+   V1.12.16需求2：音量抬到主输出链（见 masterOut）之上，配合 sv 档位的真实放大范围。 */
+function hbBeep(){
+  sfx(990,.075,'square',.14);sfx(1980,.035,'triangle',.06);
+  later(function(){sfx(990,.06,'square',.085);sfx(1980,.03,'triangle',.035);},7);
 }
 function updateVoid(){
   if(!voidOn)return;
@@ -5937,9 +5966,10 @@ function updateVoid(){
   if(flows.length){ // 背景由白切到黑
     if(voidDark<1)voidDark=Math.min(1,voidDark+.0045); // ≈3.7 秒走完白→黑，看得见"切"的过程
     if(!ecgBuf.length)for(let i=0;i<ECG_N;i++)ecgBuf.push(rnd(-.01,.01)); // 先把底衬满，避免线从一头长出来
-    if(--hbT<=0){hbT=ri(VOID_HB_MIN,VOID_HB_MAX);hbIv=hbT;hbN++;ecgPh=0;hbThump();
-      /* V1.12.15需求6：主角自言自语报数——每跳一下说一次"第 N 下"，第一跳先问一句"这是什么声音"。 */
-      sayPlayer(hbN===1?'这是什么声音？……咚，这是第 1 下。':'又听到了……咚，这是第 '+hbN+' 下。',200);}
+    if(--hbT<=0){hbT=ri(VOID_HB_MIN,VOID_HB_MAX);hbIv=hbT;hbN++;ecgPh=0;hbBeep();
+      /* V1.12.15需求6：主角自言自语报数——每跳一下说一次"第 N 下"，第一跳先问一句"这是什么声音"。
+         V1.12.16需求1：拟声词跟着声音一起从"咚"改成仪器的"嘀"。 */
+      sayPlayer(hbN===1?'这是什么声音？……嘀，这是第 1 下。':'又听到了……嘀，这是第 '+hbN+' 下。',200);}
     let samp;
     if(ecgPh>=0){samp=ecgAmp(ecgPh);ecgPh+=1/40;if(ecgPh>1)ecgPh=-1;}
     else samp=rnd(-.014,.014); // 无心跳时是基线微抖，跟真监护仪一样有底噪
@@ -9561,7 +9591,7 @@ function confirmCreate(){ // 创建面板确认→真正建角
   p.name=nm;p.gender=gd;p.face={hat:fc.hat,face:fc.face,hair:fc.hair,top:fc.top,pants:fc.pants,shoe:fc.shoe};curSlot=slot;
   started=true;
   armBackTrap(); // V1.12.5需求6：开局即布防返回手势
-  try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  try{AC=new (window.AudioContext||window.webkitAudioContext)();MG=null;acWake();}catch(e){} // V1.12.16需求2：换 AC 必须丢旧主链，并唤醒 iOS 的 suspended
   bag[0]={slot:'pot',name:'治疗药水',t:0,bob:0,count:3};
   initWorld();
   doSave(true);
@@ -9648,7 +9678,7 @@ function handleStartClick(l){ // 选档/创建界面点击路由
       return;}}
 }
 addEventListener('beforeunload',function(){doSave(true);});
-document.addEventListener('visibilitychange',function(){if(document.hidden)doSave(true);});
+document.addEventListener('visibilitychange',function(){if(document.hidden)doSave(true);else acWake();}); // V1.12.16需求2：回前台时浏览器可能又把 AC 挂起
 
 /* V1.12.8需求3（用户原话「技能书升级的耗材在选择存档界面，提示获取方式」）：
    选档界面原本只讲"怎么建号"，四系法术要用的📕书与✨灵能尘从哪来，只有进了游戏、
@@ -9806,7 +9836,7 @@ function greetMsgs(){
 function start(){
   started=true;
   armBackTrap(); // V1.12.5需求6：读档开局同样布防
-  try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  try{AC=new (window.AudioContext||window.webkitAudioContext)();MG=null;acWake();}catch(e){} // V1.12.16需求2：同上
   if(!bag.some(function(x){return x;}))bag[0]={slot:'pot',name:'治疗药水',t:0,bob:0,count:3};
   greetMsgs();
 }
