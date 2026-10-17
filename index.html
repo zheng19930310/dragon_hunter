@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>降龙猎手 · 五行觉醒 V1.12.19</title>
+<title>降龙猎手 · 五行觉醒 V1.12.20</title>
 <style>
 html,body{margin:0;height:100%;background:#07090a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
   /* V1.12.5需求6：横屏防误退出——阻断边缘下拉刷新/横向回弹等浏览器手势，禁长按弹出系统菜单 */
@@ -2551,6 +2551,16 @@ const BTN_GROW=BTN_R1/VOID_END_UNITS;
 let voidOn=false,voidPhase=0,voidDrift=null,voidSnap=null,voidDark=0;
 let flows=[],ecgBuf=[],ecgPh=-1,hbT=0,hbN=0,hbIv=VOID_HB_START*60,voidSteps=0,voidMoved=0,voidRet=null,voidFocus=null,voidMoveA=0;
 let voidEndOn=false,voidEndT=0,eyeBl=0,eyeBlT=0; // V1.12.15需求9：终点演出状态；voidMoveA=当前移动朝向（需求3 反方向数据流用）
+/* V1.12.20需求1（用户原话「虚空中改成走到终点：50%自动回到游戏里，50%出现眨眼睛」）：
+   · voidEndPath —— 'auto' = 渐白走完自动送回世界；'blink' = 才出现那双眼。
+   · voidEndForce —— 探针钩子：置 'auto'/'blink' 钉死分支做验证，null 才是真抛硬币。
+   V1.12.20需求2（用户原话「虚空终点眨眼睛要真实逼真的」）：
+   · eyeGaze —— 两只眼共用的注视点（屏幕方向，共轭运动）：跳视目标 tx/ty + next 倒计时。
+   · eyeHist/eyeLagN —— 右眼取左眼 eyeLagN 帧前的睁开度，两眼不同拍。
+   · eyeBlZ/eyeBlDbl —— 本次眨眼的[闭,顿,睁]三段帧数，与"连眨第二下"标记。 */
+let voidEndPath='blink',voidEndForce=null;
+let eyeHist=[],eyeLagN=2,eyeGaze={x:0,y:0,tx:0,ty:0,next:0};
+let eyeBlZ=[6,3,15],eyeBlDbl=false;
 let killfeed=[]; // v2.0 需求：击杀播报（右侧滚动）
 let bagOpen=false,skPanel=false,charPanel=false,selSlot=0,selBag=-1,selEq=-1;
 let bagScroll=0,drag={from:-1,on:false},justSwapped=false;
@@ -2677,7 +2687,7 @@ function mobShotFx(m,a){
    目标：把"跑起来才看得见"的问题固化成结构化记录，一键导出 JSON 交给运维/Qoder 排查。
    记录四类：err（异常与报错）、perf（掉帧与堆积）、flow（系统级异常：碰撞/天气/副本/守军/经济）、biz（玩法里程碑，便于对照复现）。
    约束：全内存环形缓冲（上限 GLOG_MAX 条），不写存档、不发网络请求；导出走 Blob 本地下载。 */
-const GLOG_MAX=600,GLOG_VER='1.12.19';
+const GLOG_MAX=600,GLOG_VER='1.12.20';
 const GLOG={ev:[],drop:0,errN:0,warnN:0,t0:(window.performance&&performance.now?performance.now():Date.now()),snap:null};
 function gzone(){try{for(const k in ZONES){const z=ZR(k);if(p.x>z.x&&p.x<z.x+z.w&&p.y>z.y&&p.y<z.y+z.h)return k;}return 'wild';}catch(e){return '?';}}
 function gctx(){ /* 现场快照：所有记录都带同一份上下文，便于定位"在哪个图、哪个时辰、多少怪" */
@@ -5920,6 +5930,10 @@ function voidGo(){
 function voidResetState(){
   voidPhase=0;voidDark=0;voidSteps=0;voidMoved=0;voidMoveA=0;
   voidEndOn=false;voidEndT=0;eyeBl=0;eyeBlT=0;
+  /* V1.12.20需求1/2：抛硬币的结果、注视点、眨眼节奏都不许留到下一次虚空——
+     残留的话第二次进终点会沿用上一次的分支，"每次 50%"就变成"看运气记住是哪次"。 */
+  voidEndPath='blink';voidEndForce=null;eyeHist.length=0;eyeBlDbl=false;eyeBlZ=[6,3,15];
+  eyeGaze={x:0,y:0,tx:0,ty:0,next:0};
   /* V1.12.17需求1（用户原话"最开始是20秒一次"）：这里不能再给"提前响"的种子。
      旧版 hbT=150（2.5 秒）+ 下面走路处的 Math.min(hbT,60)（1 秒）是 V1.12.13 为了让玩家
      早点确认"心跳真的开着"而加的，但它让第一拍提前到 1~2.5 秒，与"最开始 20 秒一次"直接冲突。
@@ -6046,29 +6060,74 @@ function updateVoid(){
   /* V1.12.15需求9：走满 1500 个坐标点（75000 世界像素）→ 终点。触发一次即锁进演出态，不会反复进。 */
   if(!voidEndOn&&voidUnits()>=VOID_END_UNITS)voidEndGo();
 }
-/* ---------- V1.12.15需求9：终点 ----------
-   流程：150 帧渐白（主角与数据流一起淡掉，世界清空）→ 纯白里一双眼睛缓缓睁开（180 帧）
-   → 睁开后一直学人眨眼（每 2.5~5 秒一次：7 帧闭、4 帧顿、12 帧睁）
-   → 睁眼起满 10 秒，屏幕中间浮出那句话，一直显示。点任意处回到游戏世界（voidBack 原路放回）。 */
+/* ---------- V1.12.15需求9：终点 / V1.12.20需求1：终点五五开 ----------
+   用户原话「虚空中改成走到终点：50%自动回到游戏里，50%出现眨眼睛」。
+   走满 1500 单位先掷一枚硬币（voidEndCoin），两条路都从同一段 150 帧渐白起手：
+   · 'auto'  —— 渐白走完，再多顿 30 帧（让"白完了"这件事被看见），然后自己 voidBack 回世界。
+                全程不出现眼睛，也不需要玩家点一下 —— 这就是"自动回到游戏里"。
+   · 'blink' —— 进双眼演出，并按需求2 重画成真实眼球。
+   voidEndForce 是探针钉子：置 'auto'/'blink' 强制分支，null 才是真随机。 */
+function voidEndCoin(){return voidEndForce||((Math.random()<0.5)?'auto':'blink');}
 function voidEndGo(){
+  voidEndPath=voidEndCoin();
   voidEndOn=true;voidEndT=0;eyeBl=ri(150,300);eyeBlT=0;
+  eyeHist.length=0;eyeGaze={x:0,y:0,tx:0,ty:0,next:0};eyeBlDbl=false; // 需求2：每次进终点，眼球运动从头开始
   flows.length=0;ecgBuf.length=0;ecgPh=-1;hbT=1e9;p.sayT=0; // 主角消失：数据流、心跳线、气泡全清
-  glog('biz','edge void end',{u:Math.round(voidUnits())},null);
+  glog('biz','edge void end',{u:Math.round(voidUnits()),path:voidEndPath},null);
   voidSaveHere(); // 终点也算"还在虚空"，存档仍写进虚空前的落点
 }
 function updateVoidEnd(){
   voidEndT++;
+  /* V1.12.20需求1：自动那条路只有渐白，走完就自己送回世界，不画眼睛也不等点击。
+     voidBack 顺手做了 voidResetState + 合焦演出 + 那句梦话 + 存档，这里不用自己收尾。
+     注意 voidResetState 会把 voidEndPath 复位成 'blink'，所以这个判断必须写在 voidBack 之前生效。 */
+  if(voidEndPath==='auto'){if(voidEndT>=150+30)voidBack();return;}
   if(voidEndT>150){ // 睁开之后才开始眨眼
-    if(eyeBlT>0){if(++eyeBlT>23){eyeBlT=0;eyeBl=ri(150,300);}}
-    else if(--eyeBl<=0)eyeBlT=1;
+    /* V1.12.20需求2（用户原话「虚空终点眨眼睛要真实逼真的」）：
+       真人不是节拍器 —— 间隔 2.2~6.5 秒随机，约 12% 概率连眨两下（double blink）；
+       闭眼快（5~7 帧）、全闭顿一下（2~4 帧）、睁眼慢（13~19 帧），三段时长每抽重新取。 */
+    if(eyeBlT>0){
+      eyeBlT++;
+      if(eyeBlT>eyeBlZ[0]+eyeBlZ[1]+eyeBlZ[2]){
+        eyeBlT=0;
+        if(eyeBlDbl){eyeBlDbl=false;eyeBl=ri(6,14);}          // 刚才是第一下，稍顿再来一下
+        else{eyeBl=ri(132,390);eyeBlDbl=Math.random()<.12;}   // 2.2s ~ 6.5s
+      }
+    }
+    else if(--eyeBl<=0){eyeBlT=1;eyeBlZ=[ri(5,7),ri(2,4),ri(13,19)];}
+    /* 注视点：眼睛从来不是死盯不动的。每 0.8~2.6 秒换一次注视方向做跳视（saccade），
+       逼近用快指数收敛（跳视是"甩"过去的，不是匀速滑过去），再叠一层每帧零点几像素的
+       生理性震颤（physiological nystagmus）—— 少了它就像玻璃假眼。 */
+    if(--eyeGaze.next<=0){
+      eyeGaze.tx=rnd(-9,9);eyeGaze.ty=rnd(-4.5,4.5);eyeGaze.next=ri(48,156);
+    }
+    eyeGaze.x=clamp(eyeGaze.x+(eyeGaze.tx-eyeGaze.x)*.24+rnd(-.28,.28),-11,11);
+    eyeGaze.y=clamp(eyeGaze.y+(eyeGaze.ty-eyeGaze.y)*.24+rnd(-.22,.22),-6,6);
+    eyeHist.push(eyeOpenness()); // 右眼取几帧前的值，两眼不同拍才像活的
+    if(eyeHist.length>8)eyeHist.shift();
   }
 }
-function eyeOpenness(){ // 0~1：渐白完成后 180 帧从 0 睁到 1，再乘上当前眨眼相位
+/* 睁开度 0~1：渐白完成后 180 帧从 0 睁到 1，再乘上当前眨眼相位。
+   V1.12.20需求2：三段不再走直线 —— 闭眼是"啪"地合上（平方曲线，末尾最快），
+   全闭顿一下，睁眼是先快后缓的 ease-out。旧版三条直线看着像机械闸门。 */
+function eyeOpenness(){
   const base=clamp((voidEndT-150)/180,0,1);
   if(base<=0)return 0;
   let k=1;
-  if(eyeBlT>0)k=eyeBlT<=7?1-eyeBlT/7:(eyeBlT<=11?0:(eyeBlT-11)/12);
+  if(eyeBlT>0){
+    const z0=eyeBlZ[0],z1=eyeBlZ[1],z2=eyeBlZ[2];
+    if(eyeBlT<=z0){const u=eyeBlT/z0;k=1-u*u;}
+    else if(eyeBlT<=z0+z1)k=0;
+    else if(eyeBlT<=z0+z1+z2){const u=(eyeBlT-z0-z1)/z2;k=u*(2-u);}
+    else k=1;
+  }
   return base*Math.max(0,Math.min(1,k));
+}
+/* 右眼睁开度：取 eyeLagN 帧前的左眼值。真人两眼眨眼差 1~3 帧，多数时候看不出来，
+   但正因为"看不出来"才真实 —— 完全同步反而有种贴图感。 */
+function eyeOpenR(){
+  if(eyeLagN>0&&eyeHist.length>eyeLagN)return eyeHist[eyeHist.length-1-eyeLagN];
+  return eyeOpenness();
 }
 /* 归一化心电复合波（P 波—QRS 群—T 波），形状照医院监护仪那条线调的。 */
 const ECG_W=[[0,0],[.05,0],[.09,.14],[.13,0],[.18,0],[.21,-.14],[.25,.98],[.29,-.52],[.33,.06],[.40,0],[.52,.24],[.64,.27],[.76,.13],[.88,0],[1,0]];
@@ -6199,8 +6258,9 @@ function drawVoid(){
   }
   if(touchMode)drawVoidJoy();
 }
-/* 终点画面：前 150 帧渐白（主角在中央淡出，其余已清空）；之后纯白底上一双眼睛，
-   睁开度走 eyeOpenness()；那句话在睁眼满 10 秒后出现并一直挂着。 */
+/* 终点画面：前 150 帧渐白（主角在中央淡出，其余已清空）。
+   V1.12.20需求1：渐白之后分两条路 —— 'auto' 继续在纯白里等 30 帧，由 updateVoidEnd 自动
+   voidBack 回世界（不画眼睛、不等点击）；'blink' 才画那双眼睛，睁眼满 10 秒浮出那句话。 */
 function drawVoidEnd(){
   const k=clamp(voidEndT/150,0,1);
   C.fillStyle='#ffffff';C.fillRect(0,0,LW,LH);
@@ -6210,38 +6270,201 @@ function drawVoidEnd(){
     C.fillStyle='rgba(255,255,255,'+(k*k).toFixed(3)+')';C.fillRect(0,0,LW,LH);
     return;
   }
-  drawEyePair(LW/2-105,LH/2-46,eyeOpenness(),1);
-  drawEyePair(LW/2+105,LH/2-46,eyeOpenness(),-1);
+  if(voidEndPath!=='blink')return; // 自动回城那条：白着等就行，眼睛里不出现
+  const EY=LH/2-40; // 双眼基线；两眼光心间距 192，中间留 40px 鼻梁位
+  drawEye(LW/2-96,EY,eyeOpenness(),1); // 左：主眼，用当前帧睁开度
+  drawEye(LW/2+96,EY,eyeOpenR(),-1);   // 右：几帧前的值，两眼不同拍
   if(voidEndT>=150+600){ // 睁眼 10 秒后：那句话出现，一直显示
     /* 白底上必须 noStroke：txt() 默认描一圈 4px 黑边，深灰字配黑边在纯白背景上糊成一团（实测截图）。 */
-    txt('这只是一个游戏，欢迎回到现实世界，加油，努力，一切都会变好的',LW/2,LH/2+118,22,'#241f1a','center','700',true);
-    txt('（点一下任意处，回到游戏）',LW/2,LH/2+152,12,'#8a8078','center','400',true);
+    txt('这只是一个游戏，欢迎回到现实世界，加油，努力，一切都会变好的',LW/2,EY+158,22,'#241f1a','center','700',true);
+    txt('（点一下任意处，回到游戏）',LW/2,EY+192,12,'#8a8078','center','400',true);
   }
 }
-/* 一具眼睛：上下两道二次曲线夹出杏仁形，眼白填充 + 裁剪出虹膜/瞳孔/高光，再描眼线。
-   睁开度 op 直接压杏仁形的高度——op=0 时收成一条线，就是闭着的眼。s=±1 决定高光落在哪一侧，
-   两只眼的高光同向，看着才像同一张脸上的一对。
-   杏仁形必须存成 Path2D：画虹膜时的 beginPath() 会把当前路径冲掉，
-   直接沿用旧路径描边，描出来的是最后那个高光小圆，眼线根本不在（实测截图里眼睛没有轮廓）。 */
-function drawEyePair(cx,cy,op,s){
-  const w=150,hh=Math.max(1.2,58*op);
-  const almond=new Path2D();
-  almond.moveTo(cx-w/2,cy);
-  almond.quadraticCurveTo(cx,cy-hh*2,cx+w/2,cy);
-  almond.quadraticCurveTo(cx,cy+hh*2,cx-w/2,cy);
-  almond.closePath();
+/* ---------- V1.12.20需求2：真实眼球 ----------
+   用户原话「虚空终点眨眼睛要真实逼真的」。
+   旧版的理解方式错了：它把眼睛当成"洞"—— 两道二次曲线夹出杏仁形，虹膜是一个跟着杏仁
+   一起缩放的正圆。于是半闭时瞳孔会跟着变小，这在真实脸上根本不存在。
+   真眼是一颗大小恒定的球，睁闭是上眼睑自上而下 sweep，虹膜是被眼睑"切掉"的。
+   本版按这个结构重画：
+   1) 眼裂 = 上眼睑弧（随睁开度下压）+ 下眼睑弧围成的区域，用 clip 求出。
+      眼球画在 clip 里 ⇒ 睁开度只动眼睑，球半径 EYE_R 一帧都不变。
+   2) 巩膜用偏心球面渐变（亮部偏左上、边缘转暗），不是平涂白。
+   3) 虹膜按共轭注视点 eyeGaze 平移：两只眼朝同一个屏幕方向看（不镜像），
+      转到边上时水平压扁（透视缩短）并整体变暗（周边照明 fall-off）。
+   4) 细节层：颞侧红血丝、64 条明暗交替的放射纤维、Fuchs 隐窝、瞳孔缘亮环、
+      深色 limbal 环、瞳孔直径每帧微抖（生理性颤动）、角膜三条高光
+      （主高光固定在左上 = 光源统一，不跟注视点跑；跟着跑就是塑料眼珠）、
+      上眼睑压在球面上的一道阴影。
+   5) 眼裂之外才收口：上眼睑皮肤 + 睑沟折线、上睫毛线、下眼睑细线 + 下缘水光、
+      靠屏幕中心那侧的内眼角（收尖 + 粉色泪阜）、上下两排带弧度的睫毛。
+   6) 两只眼不同拍：右眼由调用方传 eyeOpenR()（几帧前的左眼睁开度）。
+   s=+1 是画在屏幕左侧的那只眼、s=-1 右侧那只（决定颞侧与内眼角方向）。 */
+const EYE_R=56,EYE_IR=27,EYE_PU=11.5,EYE_HALF=76; // 球半径 / 虹膜半径 / 瞳孔基准半径 / 半眼裂宽
+function drawEye(cx,cy,op,s){
+  const upY=cy-46*op, dnY=cy+19*Math.max(op,0.02); // 上/下眼睑弧的控制点（op=0 时两弧压成一条线）
+  const upC=2*upY-cy, dnC=2*dnY-cy;                 // 二次贝塞尔控制点（两端点在 cy，故取镜像）
+  const bez=(t,a,b,c)=>(1-t)*(1-t)*a+2*(1-t)*t*b+t*t*c; // 弧上取点：t=0 左角 → t=1 右角
   C.save();
-  C.fillStyle='#fffdf7';C.fill(almond);
-  C.save();C.clip(almond);
-  const ir=Math.min(34,Math.max(2,hh*.92)); // 虹膜跟着睁开度缩放，全闭时不会在细缝里露出一圈棕
-  C.beginPath();C.arc(cx,cy,ir,0,7);C.fillStyle='#7a5230';C.fill();
-  C.beginPath();C.arc(cx,cy,ir*.45,0,7);C.fillStyle='#15100b';C.fill();
-  C.beginPath();C.arc(cx-ir*.3*s,cy-ir*.35,ir*.16,0,7);C.fillStyle='rgba(255,255,255,.92)';C.fill();
-  C.restore();
-  C.lineWidth=3.2;C.strokeStyle='#3a2c20';C.stroke(almond); // 上眼线
-  C.beginPath(); // 上眼睑一道阴影，睁开时眼睛才有"眼皮"而不只是两个洞
-  C.moveTo(cx-w/2+6,cy-2);C.quadraticCurveTo(cx,cy-hh*2-6,cx+w/2-6,cy-2);
-  C.lineWidth=5;C.strokeStyle='rgba(58,44,32,.5)';C.stroke();
+  /* ---- 1. 眼眶下的皮肤底：纯白底上直接开一个洞就像贴纸，先铺一层肤色 ---- */
+  const skin=C.createRadialGradient(cx,cy+6,8,cx,cy,152);
+  skin.addColorStop(0,'rgba(243,229,215,.55)');skin.addColorStop(.62,'rgba(240,225,209,.3)');
+  skin.addColorStop(1,'rgba(255,255,255,0)');
+  C.fillStyle=skin;C.beginPath();C.ellipse(cx,cy,158,96,0,0,7);C.fill();
+  /* ---- 2. 眼裂 clip ---- */
+  C.save();C.beginPath();
+  C.moveTo(cx-EYE_HALF,cy);C.quadraticCurveTo(cx,upC,cx+EYE_HALF,cy);
+  C.quadraticCurveTo(cx,dnC,cx-EYE_HALF,cy);
+  C.closePath();C.clip();
+  /* ---- 3. 眼球：大小恒定的球 ----
+     巩膜外圈不能压得太暗：眼裂 clip 的下缘正好切在球的下方，
+     边缘那圈深色会在下眼睑上留一条灰带（截图里下眼白发灰就是这个）。
+     所以外圈只比中心暗一档，真正的"球感"交给后面虹膜周围的阴影和高光。 */
+  const sg=C.createRadialGradient(cx-8,cy-10,3,cx,cy,EYE_R*1.12);
+  sg.addColorStop(0,'#fdfaf5');sg.addColorStop(.55,'#f4eee6');sg.addColorStop(.82,'#e3d9cd');sg.addColorStop(1,'#cfc3b6');
+  C.fillStyle=sg;C.beginPath();C.arc(cx,cy,EYE_R,0,7);C.fill();
+  if(op>0.24){ // 红血丝长在颞侧（远离鼻梁那侧），半闭时眼角被压掉就看不见
+    C.save();C.globalAlpha=.22*Math.min(1,(op-.24)/.5);C.strokeStyle='#c2695a';C.lineWidth=.9;C.lineCap='round';
+    /* 颞侧 = 远离鼻梁的一侧：画在屏幕左边的眼，颞侧就是它的左边（π 方向） */
+    for(let i=0;i<6;i++){
+      const a=(s>0?Math.PI:0)+(i-2.5)*.2, r0=EYE_R*.98;
+      C.beginPath();C.moveTo(cx+Math.cos(a)*r0,cy+Math.sin(a)*r0);
+      C.quadraticCurveTo(cx+Math.cos(a+.12)*r0*.7,cy+Math.sin(a+.12)*r0*.7,
+                         cx+Math.cos(a-.04)*r0*.38,cy+Math.sin(a-.04)*r0*.38);
+      C.stroke();
+    }
+    C.restore();
+  }
+  if(op>0.02){ // 睁开度接近 0 时眼裂已经没有面积，整块虹膜直接跳过
+    /* 共轭注视：两只眼用同一个 eyeGaze（不镜像），看着才是"同一个人往那边看" */
+    const ix=cx+eyeGaze.x*2.1, iy=cy+eyeGaze.y*1.6;
+    const sqz=1-Math.min(.3,Math.abs(eyeGaze.x)/11*.3);            // 转到边上：水平透视压缩
+    const lit=1-clamp(Math.hypot(eyeGaze.x,eyeGaze.y)/13,0,1)*.28; // 周边照明变弱
+    C.save();C.translate(ix,iy);C.scale(sqz,1);
+    const ig=C.createRadialGradient(0,EYE_IR*.14,1,0,0,EYE_IR);
+    ig.addColorStop(0,'rgba(160,114,66,'+(.95*lit)+')');ig.addColorStop(.5,'rgba(116,78,44,'+(.96*lit)+')');
+    ig.addColorStop(.86,'rgba(64,42,26,'+lit+')');ig.addColorStop(1,'rgba(26,20,16,'+lit+')');
+    C.fillStyle=ig;C.beginPath();C.arc(0,0,EYE_IR,0,7);C.fill();
+    C.save();C.beginPath();C.arc(0,0,EYE_IR,0,7);C.clip();
+    for(let i=0;i<64;i++){ // 放射纤维：明暗交替、粗细不一，虹膜不是"一圈棕"
+      const a=i/64*Math.PI*2+((i*7)%5)*.02;
+      C.strokeStyle=(i%2?'rgba(224,184,132,'+(.3*lit)+')':'rgba(38,26,16,'+(.34*lit)+')');
+      C.lineWidth=(i%3===0)?1.5:.7;C.beginPath();
+      C.moveTo(Math.cos(a)*EYE_PU*.98,Math.sin(a)*EYE_PU*.98);
+      C.lineTo(Math.cos(a)*EYE_IR*.99,Math.sin(a)*EYE_IR*.99);C.stroke();
+    }
+    for(let i=0;i<11;i++){ // Fuchs 隐窝：瞳孔领外一圈不规则暗块
+      const a=i/11*Math.PI*2+((i*13)%7)*.3, r=EYE_PU*1.15+((i*29)%9)*.6;
+      C.fillStyle='rgba(32,22,14,'+(.22*lit)+')';
+      C.beginPath();C.arc(Math.cos(a)*r,Math.sin(a)*r,1.9+((i*17)%3)*.8,0,7);C.fill();
+    }
+    C.strokeStyle='rgba(238,208,162,'+(.4*lit)+')';C.lineWidth=1.4;C.beginPath();C.arc(0,0,EYE_PU*1.07,0,7);C.stroke(); // 睫状环
+    C.strokeStyle='rgba(16,12,10,.9)';C.lineWidth=3.4;C.beginPath();C.arc(0,0,EYE_IR-1.2,0,7);C.stroke();              // limbal 环
+    C.restore();
+    const pu=EYE_PU+Math.sin(t*.11)*.5+Math.sin(t*.31)*.2; // 瞳孔颤动（自主神经活动）
+    C.fillStyle='#0a0806';C.beginPath();C.arc(0,0,pu,0,7);C.fill();
+    C.strokeStyle='rgba(70,84,110,.5)';C.lineWidth=1;C.beginPath();C.arc(0,0,pu+.9,0,7);C.stroke();
+    /* 角膜高光：光源固定在左上，所以主高光不随注视点跑；
+       对侧一小点次高光 + 下缘一道弧形反光，是角膜湿润的三个信号 */
+    C.save();C.globalCompositeOperation='lighter';
+    const hx0=-EYE_IR*.34, hy0=-EYE_IR*.38;
+    const hg=C.createRadialGradient(hx0,hy0,0,hx0,hy0,EYE_IR*.44);
+    hg.addColorStop(0,'rgba(255,255,255,.95)');hg.addColorStop(.35,'rgba(255,255,255,.42)');hg.addColorStop(1,'rgba(255,255,255,0)');
+    C.fillStyle=hg;C.beginPath();C.arc(hx0,hy0,EYE_IR*.44,0,7);C.fill();
+    C.fillStyle='rgba(255,255,255,.6)';C.beginPath();C.arc(EYE_IR*.36,EYE_IR*.34,2.3,0,7);C.fill();
+    C.strokeStyle='rgba(255,255,255,.2)';C.lineWidth=2.2;C.beginPath();C.arc(0,0,EYE_IR*.84,.28*Math.PI,.7*Math.PI);C.stroke();
+    C.restore();
+    C.restore(); // 解除虹膜平移/压缩
+  }
+  /* 上眼睑压在球面上的阴影——"眼皮盖在球上"而不是"洞"，全靠这一层 */
+  const lg=C.createLinearGradient(0,upY,0,upY+40*op+10);
+  lg.addColorStop(0,'rgba(58,40,30,.44)');lg.addColorStop(1,'rgba(58,40,30,0)');
+  C.fillStyle=lg;C.beginPath();C.rect(cx-EYE_HALF-2,upY,(EYE_HALF+2)*2,40*op+12);C.fill();
+  C.restore(); // 解除眼裂 clip
+  /* ---- 4. 眼睑与周边（画在眼裂之外，把球真正盖住）----
+     上眼睑试过两种"色块"画法都不行：
+     · 眼裂弧 + 矩形 → 眼角露出直角，像贴了块膏药；
+     · 两条弧夹成透镜形 + 竖直渐变 → 弧顶虽然透明，两侧斜边还在，
+       于是眼睛上方顶出一个可见的"穹顶"轮廓。
+     根因是一样的：只要这块皮肤有边界，边界就会显形。真实脸上眼皮没有轮廓线，
+     看得见的只有睫毛线（实边）和睑沟那道折。
+     所以改成"软带"：同一条眼裂上弧反复向上平移描 26 条，
+     alpha 随高度幂次衰减到 0 —— 没有闭合区域，也就没有任何边界可显。
+     （眼球本身已在眼裂 clip 内画完，这里纯粹是眼皮阴影，不会漏画。） */
+  const LID_K=26, LID_H=30+34*op;
+  for(let k=0;k<LID_K;k++){
+    const u=k/(LID_K-1), off=u*LID_H;
+    C.beginPath();
+    C.moveTo(cx-EYE_HALF,cy-off*.3);
+    C.quadraticCurveTo(cx,upC-2*off,cx+EYE_HALF,cy-off*.3);
+    C.strokeStyle='rgba(200,158,130,'+(0.4*Math.pow(1-u,1.6)).toFixed(3)+')';
+    C.lineWidth=3.2;C.stroke();
+  }
+  C.beginPath(); // 睑沟（上眼窝那道折）—— 这才是脸上真正看得见的那条线
+  /* 只留这一条折。上一版在它下面又叠了一道"柔光"白线，结果是小屏幕上两条平行弧
+     并排，看着像画上去的两道杠；纯白背景上白高光本来也就不显。 */
+  const crEnd=cy-34-12*op, crApex=cy-58-26*op; // 端点高度 / 弧顶高度；控制点 = 2*弧顶 - 端点
+  C.moveTo(cx-66,crEnd);C.quadraticCurveTo(cx,2*crApex-crEnd,cx+66,crEnd);
+  C.strokeStyle='rgba(168,124,98,.34)';C.lineWidth=2;C.lineCap='round';C.stroke();
+  C.beginPath(); // 上睫毛线
+  C.moveTo(cx-EYE_HALF,cy);C.quadraticCurveTo(cx,upC,cx+EYE_HALF,cy);
+  C.strokeStyle='#2a1d14';C.lineWidth=3.1;C.lineCap='round';C.stroke();
+  C.beginPath(); // 下眼睑线
+  C.moveTo(cx-EYE_HALF,cy);C.quadraticCurveTo(cx,dnC,cx+EYE_HALF,cy);
+  C.strokeStyle='rgba(122,86,66,.5)';C.lineWidth=1.5;C.stroke();
+  C.beginPath(); // 下缘水光
+  C.moveTo(cx-62,cy+2);C.quadraticCurveTo(cx,dnC+3,cx+62,cy+2);
+  C.strokeStyle='rgba(255,252,246,.7)';C.lineWidth=1.2;C.stroke();
+  /* 内眼角在靠屏幕中心那一侧：收得尖、带一点粉；泪阜只画在内角 */
+  const inn=(LW/2-cx>0)?1:-1, icx=cx+EYE_HALF*inn;
+  C.beginPath();C.moveTo(icx,cy);C.lineTo(icx-inn*10,cy-2);C.lineTo(icx-inn*7,cy+3.5);C.closePath();
+  C.fillStyle='rgba(204,148,136,.45)';C.fill();
+  if(op>.3){C.fillStyle='rgba(226,140,130,'+(.5*op)+')';C.beginPath();C.arc(icx-inn*4,cy+.5,2.4,0,7);C.fill();}
+  /* 睫毛：上一版等长等距地"竖"在眼睑上，看着像梳齿。真实睫毛是——
+     眼角短、中间偏外最长（bell 曲线），根根向外侧倒（越靠眼角越横着长），
+     长短/倾角/粗细各带一点差异，整段弯成弧。
+     随机量必须用下标哈希出来的确定值，不能用 Math.random —— 否则每帧重掷，睫毛会抖。 */
+  const lr=(i,salt)=>{const x=Math.sin(i*12.9898+salt*78.233)*43758.5453;return x-Math.floor(x);};
+  C.lineCap='round';
+  /* 成束：真实上睫毛不是等距单根，而是 2~4 根一簇、簇间留缝、簇内方向互相错开。
+     等距分布正是"梳齿"的来源。这里把眼裂宽度切成 7 簇，每簇 2~3 根，
+     簇心位置本身也带 ±0.03 的抖动，避免又排成等距。 */
+  const CL=7;
+  for(let c=0;c<CL;c++){
+    const cnt=2+(lr(c,7)>.55?1:0);
+    const c0=(c+.5)/CL+(lr(c,8)-.5)*.06;                 // 簇心（0~1）
+    for(let j=0;j<cnt;j++){
+      const tt=clamp(c0+(j-(cnt-1)/2)*.026+(lr(c*3+j,9)-.5)*.012,.03,.97);
+      const i=c*3+j;
+      const x0=bez(tt,cx-EYE_HALF,cx,cx+EYE_HALF), y0=bez(tt,cy,upC,cy);
+      const bell=Math.sin(Math.PI*Math.pow(tt,.8));       // 中间偏外最长
+      const len=(4+14*bell)*(.7+.55*lr(i,1))*op;
+      if(len<2)continue;
+      const outward=(tt-.5)*2;                            // -1 左角 → +1 右角
+      const dx=outward*(.5+.6*lr(i,2))*len+len*(lr(i,5)-.5)*.3, dy=-len*(.84+.12*lr(i,3));
+      const cqx=x0+dx*.26, cqy=y0+dy*.62;
+      /* 一根一笔：上一版为了"根粗梢细"把同一根拆成粗段+细段两笔，
+         可圆头线帽会在粗段两端各画一个半圆，缩到小屏上就是一根火柴顶个圆头。
+         改成单段、宽度 1.5 起步、只靠眼角收细 —— 干净得多。 */
+      C.strokeStyle='rgba(28,19,14,'+(.4+.42*op).toFixed(3)+')';
+      C.lineWidth=1.5-.55*Math.abs(outward);
+      C.beginPath();C.moveTo(x0,y0);C.quadraticCurveTo(cqx,cqy,x0+dx,y0+dy);C.stroke();
+    }
+  }
+  for(let i=0;i<12;i++){
+    const tt=(i+1)/13;
+    const x0=bez(tt,cx-64,cx,cx+64), y0=bez(tt,cy,dnC,cy);
+    const bell=Math.sin(Math.PI*tt);
+    /* 下睫毛要"连成一片"而不是"一排小短线"：真实下睫毛极短（1~3px）且紧贴睑缘，
+       缩到手机尺寸上就是一条柔和的下缘。上一版画到 len*1.15≈8px 还从弧线起笔，
+       等于在下眼睑下方悬空挂了一排小刺。这里起点压回睑线上方 1px、长度砍一半。 */
+    const len=(1+2.6*bell)*(.7+.55*lr(i,4))*op;
+    if(len<.6)continue;
+    const outward=(tt-.5)*2;
+    C.strokeStyle='rgba(58,40,30,.26)';C.lineWidth=1.8;
+    C.beginPath();C.moveTo(x0,y0-1);
+    C.quadraticCurveTo(x0+outward*len*.2,y0+len*.4,x0+outward*len*.5,y0+len);
+    C.stroke();
+  }
   C.restore();
 }
 /* 回归时的“画面逐渐清晰”：与碎屏同构，只是这次只合焦不再撕裂。 */
