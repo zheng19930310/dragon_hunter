@@ -3,22 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="color-scheme" content="light only">
+<meta name="theme-color" content="#efe7df">
 <title>降龙猎手 · 终点之手 H1 · 3D 手势 Demo</title>
 <style>
+  :root{color-scheme:light only}
   html,body{margin:0;padding:0;height:100%;background:#efe7df;overflow:hidden;
-    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-  #cv{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color-scheme:light only;forced-color-adjust:none;-webkit-text-size-adjust:100%}
+  #cv{display:block;width:100%;height:100%;touch-action:none;cursor:grab;background:#efe7df}
   #bar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:7px;z-index:3}
   #bar button{border:0;border-radius:16px;padding:8px 13px;font-size:13px;color:#7a6254;
     background:rgba(255,255,255,.78);box-shadow:0 1px 4px rgba(120,90,70,.2);-webkit-tap-highlight-color:transparent}
   #bar button.on{background:#e9c8b2;color:#5a4234;font-weight:600}
   #tip{position:fixed;left:50%;top:8px;transform:translateX(-50%);font-size:11px;color:#b8a094;
     letter-spacing:.05em;user-select:none;pointer-events:none;white-space:nowrap;z-index:3}
+  #err{position:fixed;left:8px;right:8px;top:34px;z-index:9;display:none;max-height:60%;overflow:auto;
+    background:rgba(60,20,20,.9);color:#ffd9cf;font:11px/1.55 ui-monospace,monospace;
+    padding:9px 11px;border-radius:9px;white-space:pre-wrap;word-break:break-all}
 </style>
 </head>
 <body>
 <canvas id="cv"></canvas>
 <div id="tip">拖动 = 旋转 · 滚轮 / 双指 = 缩放 · 下方按钮 = 手势</div>
+<div id="err"></div>
 <div id="bar">
   <button data-g="open">张开</button><button data-g="relax" class="on">放松</button>
   <button data-g="point">指</button><button data-g="v">剪刀手</button>
@@ -40,9 +48,16 @@
    单文件、离线、零依赖（WebGL 1）。
    ========================================================================== */
 const cv = document.getElementById('cv');
-const GL = cv.getContext('webgl', {antialias:true, alpha:false, preserveDrawingBuffer:true});
-if (!GL) document.getElementById('tip').textContent = '当前浏览器不支持 WebGL · 请在系统浏览器中打开本文件';
-const DPR = Math.min(devicePixelRatio || 1, 2);
+const errBox = document.getElementById('err');
+function showErr(msg) { errBox.style.display = 'block'; errBox.textContent = '⚠ ' + msg; }
+window.addEventListener('error', e => showErr((e.message || '脚本异常') + '\n' + (e.filename || '') + ':' + (e.lineno || '')));
+const GL = cv.getContext('webgl', {antialias:true, alpha:false, preserveDrawingBuffer:true})
+        || cv.getContext('experimental-webgl', {antialias:true, alpha:false, preserveDrawingBuffer:true});
+if (!GL) { showErr('当前浏览器未开启 WebGL。请在系统浏览器（Chrome / Edge / Safari）中打开本文件，或在设置里开启"硬件加速 / WebGL"。'); throw new Error('no webgl'); }
+// 手机 DPR 高，画布像素必须 ≤ MAX_RENDERBUFFER_SIZE，否则 viewport 超界整屏黑
+const MAXRB = Math.min(GL.getParameter(GL.MAX_RENDERBUFFER_SIZE) || 2048,
+                       GL.getParameter(GL.MAX_TEXTURE_SIZE) || 2048);
+const DPR = devicePixelRatio || 1;
 let W = 0, H = 0;
 
 /* ============================ mat4 ============================ */
@@ -422,17 +437,22 @@ function prog(v, f) { const p = GL.createProgram(); GL.attachShader(p, sh(GL.VER
   GL.linkProgram(p); if (!GL.getProgramParameter(p, GL.LINK_STATUS)) throw GL.getProgramInfoLog(p); return p; }
 const SKY = `
 attribute vec3 aP, aN; attribute vec4 aM; attribute vec2 aUV;
-uniform mat4 uVP, uRoot; varying vec3 vN, vW; varying vec4 vM; varying vec2 vUV;
-void main(){ vec4 w = uRoot * vec4(aP,1.0); vW = w.xyz; vN = mat3(uRoot) * aN; vM = aM; vUV = aUV;
+uniform mat4 uVP, uRoot; uniform mat3 uRN; varying vec3 vN, vW; varying vec4 vM; varying vec2 vUV;
+void main(){ vec4 w = uRoot * vec4(aP,1.0); vW = w.xyz; vN = uRN * aN; vM = aM; vUV = aUV;
   gl_Position = uVP * w; }`;
 const SKP = `
 #extension GL_OES_standard_derivatives : enable
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
+#else
+precision mediump float;
+#endif
 varying vec3 vN, vW; varying vec4 vM; varying vec2 vUV;
 uniform sampler2D uT; uniform vec3 uEye;
-float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+float h21(vec2 p){ vec2 q = mod(abs(p), vec2(79.0, 79.0)); return fract(sin(dot(q, vec2(12.9898, 78.233))) * 3.7235); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
   return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
+float sstep(float a, float b, float x){ return smoothstep(a, b, x); }   // 保证 a<b
 #ifdef GL_OES_standard_derivatives
 float dxf(float x){ return dFdx(x); } float dyf(float x){ return dFdy(x); }
 #else
@@ -448,17 +468,17 @@ void main(){
   vec3 nb = normalize(n + vec3(g.x, -g.y, 0.0) * 0.6);
   // 底色：白里透粉的细腻皮肤
   vec3 base = vec3(0.945, 0.828, 0.762);
-  base = mix(base, base * vec3(1.02, 1.005, 1.0), smoothstep(0.2, 0.9, vn(vW.xy * 0.35)));
+  base = mix(base, base * vec3(1.02, 1.005, 1.0), sstep(0.2, 0.9, vn(vW.xy * 0.35)));
   // 掌侧更粉嫩、背侧略白
   base = mix(base * vec3(1.005, 0.985, 0.985), base * vec3(0.985, 0.985, 1.008), side);
   // 指尖泛红 + 指腹细纹（R 通道在指区 = 指纹/指腹纹）
-  float tipT = rg > 0.5 ? smoothstep(0.10, 0.0, vUV.y - 0.0) : 0.0;
+  float tipT = rg > 0.5 ? 1.0 - sstep(0.0, 0.10, vUV.y) : 0.0;
   base = mix(base, vec3(0.96, 0.78, 0.73), 0.35 * tipT * side);
   // 毛孔高频
   float pore = vn(vW.xy * 2.2 + vW.z * 1.4) * 0.5 + vn(vW.yz * 4.5) * 0.5;
   base *= 1.0 - 0.045 * (pore - 0.5) * 2.0;
   // 掌纹/指纹（按法线朝掌面程度显隐）
-  float crease = mask.r * (0.04 + 0.96 * smoothstep(0.3, 0.75, side));
+  float crease = mask.r * (0.04 + 0.96 * sstep(0.3, 0.75, side));
   base = mix(base, base * vec3(0.80, 0.62, 0.58), clamp(crease, 0.0, 1.0) * 0.85);
   // 静脉（背侧列）
   base = mix(base, base * vec3(0.62, 0.72, 0.94), mask.g * (0.15 + 0.85 * (1.0 - side)) * 0.85);
@@ -469,18 +489,20 @@ void main(){
   if (type > 1.5) {
     float t = clamp((vUV.y - 0.74) / 0.16, 0.0, 1.0);       // NAIL 区纵向 0根 → 1尖
     float eu = abs(vUV.x - (0.34 + (rg - 1.0) * 0.132 + 0.06)) / 0.06;   // 甲宽归一（0中 → 1缘）
-    base = mix(vec3(0.985, 0.845, 0.80), vec3(0.995, 0.965, 0.945), smoothstep(0.12, 0.82, t));
-    base = mix(base, vec3(1.0, 0.985, 0.975), smoothstep(0.86, 0.99, t));
-    base = mix(base, vec3(0.975, 0.90, 0.86) , smoothstep(0.30, 0.0, t));   // 甲根半月
-    base *= 1.0 - 0.10 * smoothstep(0.62, 1.0, eu);                          // 甲侧缘收暗
-    base = mix(base, vec3(0.86, 0.76, 0.72), smoothstep(0.10, 0.02, t) * 0.55); // 甲根沟
-    for (int k = 0; k < 5; k++) { float lx = 0.02 + float(k) * 0.045;        // 甲面纵细棱
-      base *= 1.0 - 0.05 * smoothstep(0.012, 0.0, abs(eu - lx)) * (1.0 - smoothstep(0.75, 0.95, t)); }
+    base = mix(vec3(0.985, 0.845, 0.80), vec3(0.995, 0.965, 0.945), sstep(0.12, 0.82, t));
+    base = mix(base, vec3(1.0, 0.985, 0.975), sstep(0.86, 0.99, t));
+    base = mix(base, vec3(0.975, 0.90, 0.86) , 1.0 - sstep(0.0, 0.30, t));   // 甲根半月
+    base *= 1.0 - 0.10 * sstep(0.62, 1.0, eu);                               // 甲侧缘收暗
+    base = mix(base, vec3(0.86, 0.76, 0.72), (1.0 - sstep(0.02, 0.10, t)) * 0.55); // 甲根沟
+    base *= 1.0 - 0.05 * (1.0 - sstep(0.75, 0.95, t))
+            * (step(abs(eu - 0.02), 0.012) + step(abs(eu - 0.065), 0.012)
+             + step(abs(eu - 0.110), 0.012) + step(abs(eu - 0.155), 0.012)
+             + step(abs(eu - 0.200), 0.012));                                 // 甲面纵细棱
   }
   // 光照
   vec3 L1 = normalize(vec3(-0.45, 0.75, 0.65)), L2 = normalize(vec3(0.8, 0.15, 0.35));
   vec3 c1 = vec3(1.0, 0.93, 0.84), c2 = vec3(0.72, 0.80, 0.95);
-  float d1 = max(dot(nb, L1), 0.0), d2 = max(dot(nb, L2), 0.0);
+  float d2 = max(dot(nb, L2), 0.0);
   float w1 = pow(max(dot(nb, L1) * 0.5 + 0.5, 0.0), 1.2);
   float sss = pow(max(dot(v, -L1), 0.0), 3.0) * (0.25 + 0.5 * wr);
   vec3 lit = base * (vec3(0.34, 0.335, 0.36) + c1 * w1 * 0.60 + c2 * d2 * 0.18);
@@ -491,14 +513,14 @@ void main(){
   float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   lit += vec3(0.95, 0.85, 0.8) * rim * 0.20;
   lit = mix(lit, vec3(0.937, 0.906, 0.875), clamp((1.0 - max(dot(n, v), 0.0)) * 0.28, 0.0, 0.5));
-  lit = pow(lit, vec3(0.92));
+  lit = pow(max(lit, vec3(0.0)), vec3(0.92));
   gl_FragColor = vec4(lit, 1.0);
 }`;
 const SKY2 = `attribute vec3 aP; uniform float uAsp; varying vec2 vU;
 void main(){ vU = aP.xy; gl_Position = vec4(aP.x * 1.15, aP.y * 1.15 - 0.55, 0.999, 1.0); }`;
 const SKP2 = `precision mediump float; varying vec2 vU; uniform float uAsp;
 void main(){ vec2 p = vU / vec2(0.55, 0.30); float r = length(p);
-  float a = smoothstep(1.0, 0.15, r) * 0.22; gl_FragColor = vec4(vec3(0.80,0.72,0.66), a); }`;
+  float a = (1.0 - smoothstep(0.15, 1.0, r)) * 0.22; gl_FragColor = vec4(vec3(0.80,0.72,0.66), a); }`;
 const PR = prog(SKY, SKP), PR2 = prog(SKY2, SKP2);
 GL.getExtension('OES_standard_derivatives');
 const buf = (tgt, data) => { const b = GL.createBuffer(); GL.bindBuffer(tgt, b); GL.bufferData(tgt, data, GL.STATIC_DRAW); return b; };
@@ -515,7 +537,7 @@ GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
 GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
 GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
 GL.enable(GL.DEPTH_TEST); GL.disable(GL.CULL_FACE);
-const U = {}; for (const k of ['uVP', 'uRoot', 'uEye', 'uT']) U[k] = GL.getUniformLocation(PR, k);
+const U = {}; for (const k of ['uVP', 'uRoot', 'uRN', 'uEye', 'uT']) U[k] = GL.getUniformLocation(PR, k);
 const A = {}; for (const k of ['aP', 'aN', 'aM', 'aUV']) A[k] = GL.getAttribLocation(PR, k);
 const U2 = {uAsp: GL.getUniformLocation(PR2, 'uAsp')}, A2 = {aP: GL.getAttribLocation(PR2, 'aP')};
 
@@ -528,7 +550,7 @@ GL.bindBuffer(GL.ARRAY_BUFFER, gN); GL.bufferData(GL.ARRAY_BUFFER, outN.byteLeng
 /* ============================ 动画状态 ============================ */
 const st = {cur: FING.map((f, fi) => GES.relax.c[fi].slice()), s: 1, thYaw: 0, thOpp: 0};
 let gesture = 'relax', auto = false, autoT = 0, autoI = 0;
-let rotX = -0.12, rotY = 0.45, dist = 390, t = 0;
+let rotX = -0.12, rotY = 0.45, distU = 390, t = 0;   // distU = 用户缩放倍率基准
 
 function targets() { return GES[gesture] || GES.relax; }
 function stepPose(dt) {
@@ -586,7 +608,11 @@ function skin(B) {
 /* ============================ 渲染 ============================ */
 function resize() {
   W = innerWidth; H = innerHeight;
-  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  // 手机高 DPR 下画布像素总量封顶（超 4096 边长或 ~4M 像素都会黑屏/爆显存）
+  let d = DPR;
+  const maxPix = 3.2e6;
+  while (d > 0.75 && (W * d > MAXRB || H * d > MAXRB || W * H * d * d > maxPix)) d -= 0.25;
+  cv.width = Math.round(W * d); cv.height = Math.round(H * d);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   GL.viewport(0, 0, cv.width, cv.height);
 }
@@ -598,8 +624,12 @@ function draw() {
   const model = M4.mul(M4.mul(M4.Ry(rotY), M4.Rx(rotX)), M4.mul(M4.T(0, -64, 0), M4.Ry(Math.sin(t * 0.6) * 0.04)));
   const scale = M4.I(); for (let i = 0; i < 3; i++) scale[i * 5] = br;
   const root = M4.mul(model, scale);
+  // 自适应取景：竖屏窄视场时自动拉远，保证拇指/指尖不出画（用户缩放作为倍率）
+  const FOVY = 0.62, tanV = Math.tan(FOVY / 2), tanH = tanV * asp;
+  const fit = Math.max(115 / tanV, 88 / tanH) * 1.06;
+  const dist = clamp(fit * (distU / 390), 120, 1400);
   const eye = [Math.sin(rotY) * Math.cos(rotX), -Math.sin(rotX), Math.cos(rotY) * Math.cos(rotX)].map(v => v * dist);
-  const VP = M4.mul(M4.persp(0.62, asp, 10, 1200), M4.T(0, 0, -dist));
+  const VP = M4.mul(M4.persp(FOVY, asp, 10, 1600), M4.T(0, 0, -dist));
   GL.clearColor(0.937, 0.906, 0.875, 1); GL.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
   // 阴影
   GL.useProgram(PR2); GL.enableVertexAttribArray(A2.aP);
@@ -616,6 +646,7 @@ function draw() {
   GL.bindBuffer(GL.ARRAY_BUFFER, bM); GL.enableVertexAttribArray(A.aM); GL.vertexAttribPointer(A.aM, 4, GL.FLOAT, false, 0, 0);
   GL.bindBuffer(GL.ARRAY_BUFFER, bUV); GL.enableVertexAttribArray(A.aUV); GL.vertexAttribPointer(A.aUV, 2, GL.FLOAT, false, 0, 0);
   GL.uniformMatrix4fv(U.uVP, false, VP); GL.uniformMatrix4fv(U.uRoot, false, root);
+  GL.uniformMatrix3fv(U.uRN, false, [root[0], root[1], root[2], root[4], root[5], root[6], root[8], root[9], root[10]]);
   GL.uniform3f(U.uEye, 0, 0, dist);
   GL.activeTexture(GL.TEXTURE0); GL.bindTexture(GL.TEXTURE_2D, TEX); GL.uniform1i(U.uT, 0);
   GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, bI);
@@ -624,8 +655,10 @@ function draw() {
 let last = 0;
 function frame(ms) {
   const dt = Math.min(0.05, (ms - last) / 1000 || 0.016); last = ms; t += dt;
+  if (GL.isContextLost()) { requestAnimationFrame(frame); return; }
   stepPose(dt); draw(); requestAnimationFrame(frame);
 }
+cv.addEventListener('webglcontextlost', e => { e.preventDefault(); showErr('WebGL 上下文被系统回收（切后台或显存不足），请下拉刷新页面。'); }, false);
 requestAnimationFrame(frame);
 
 /* ============================ 交互 ============================ */
@@ -642,13 +675,13 @@ cv.addEventListener('pointermove', e => { if (!drag) return;
   rotY += (e.clientX - drag[0]) * 0.008; rotX = clamp(rotX + (e.clientY - drag[1]) * 0.006, -1.2, 1.2);
   drag = [e.clientX, e.clientY]; });
 addEventListener('pointerup', () => drag = null);
-addEventListener('wheel', e => { dist = clamp(dist + e.deltaY * 0.25, 170, 560); }, {passive: true});
+addEventListener('wheel', e => { distU = clamp(distU + e.deltaY * 0.25, 170, 560); }, {passive: true});
 cv.addEventListener('touchstart', e => { if (e.touches.length === 2) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }, {passive: true});
 cv.addEventListener('touchmove', e => { if (e.touches.length === 2 && pinch) {
   const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-  dist = clamp(dist + (pinch - d) * 0.9, 170, 560); pinch = d; e.preventDefault(); } }, {passive: false});
+  distU = clamp(distU + (pinch - d) * 0.9, 170, 560); pinch = d; e.preventDefault(); } }, {passive: false});
 window.__set = g => { gesture = g; auto = false; syncBtns(); };
-window.__rot = (a, b, d) => { rotY = a; rotX = b; if (d) dist = d; };
+window.__rot = (a, b, d) => { rotY = a; rotX = b; if (d) distU = d; };
 </script>
 </body>
 </html>
