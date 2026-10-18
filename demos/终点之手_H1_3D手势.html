@@ -137,7 +137,7 @@ function fingUV(fi, uf, arcTip) {
 }
 
 /* —— 掌 + 腕 + 前臂残段（椭圆截面放样 + 指节穹顶，全绑 root） —— */
-const PU = 26, PV = 22;
+const PU = 34, PV = 30;
 // 指蹼：四指轴线与蹼谷（x 处距最近指轴越远 → 越低）
 const KNUCK = [-26, -9, 8, 24];
 function webDip(x) {
@@ -155,7 +155,7 @@ function webDip(x) {
     if (u < 0) { const a = -u / 0.62;                       // 腕→前臂
       hw = 15.5 + 3.5 * smooth01((a - 0.3) / 0.7); hd = 8.2 + 2.0 * a; y = 8 - a * 56;
     } else {                                               // 掌体（扁椭圆截面，方圆形轮廓）
-      hw = 22 + 12 * Math.pow(u, 0.7); hd = 6.4 + 3.0 * u; y = 8 + u * 78;
+      hw = (22 + 12 * Math.pow(u, 0.7)) * (1 - 0.055 * smooth01((u - 0.8) / 0.2)); hd = 6.4 + 3.0 * u; y = 8 + u * 78;
     }
     const row = vcount;
     for (let j = 0; j <= PV; j++) {
@@ -177,7 +177,7 @@ function webDip(x) {
   const topRow = vcount - (PV + 1), DOME = 8;
   const riseAt = (x, ct) => {
     const padG = Math.exp(-Math.pow(Math.min(...KNUCK.map(k => Math.abs(x - k))) / 6.2, 2));
-    return 9.5 * Math.max(-ct, 0) + (0.8 * padG - 2.5 * (1 - padG)) * Math.max(ct, 0);
+    return 9.5 * Math.max(-ct, 0) + (0.3 * padG - 2.5 * (1 - padG)) * Math.max(ct, 0);
   };
   let prevRow = topRow;
   for (let r = 1; r <= DOME; r++) {
@@ -226,7 +226,7 @@ function fingerRestChain(f) {            // 静息世界骨链（含微弯；正
 }
 function buildFinger(fi, f) {
   const bid = 1 + fi * 3, R = fingerRestChain(f), Ri = R.map(M4.invRigid);
-  const SEG = 12, RNG = 9, stt = fstat[fi];
+  const SEG = 16, RNG = 12, stt = fstat[fi];
   // 褶纹权重：段两端为真实关节（j=0 远端=PIP，j=1 两端=PIP/DIP，j=2 无关节）
   const wrAt = (arcTip, j) => {
     const sig = f.L[j] * 0.12;
@@ -235,7 +235,7 @@ function buildFinger(fi, f) {
     if (j > 0) e = Math.max(e, Math.exp(-Math.pow((arcTip - stt.j[j] - f.L[j]) / sig, 2)));
     return 0.22 + 0.78 * e;
   };
-  const ring = (G, lp, n, s01, j, arcTip, zo) => {   // 一个截面环；s01<0 = 指根裙边（随掌骨 root 走）
+  const ring = (G, lp, s01, j, arcTip, zo) => {   // 一个截面环；s01<0 = 指根裙边（随掌骨 root 走）
     for (let q = 0; q <= SEG; q++) {
       const th = q / SEG * Math.PI * 2, st = Math.sin(th), ct = Math.cos(th);
       const p = [lp[0] * st, lp[1], lp[2] * ct + (zo || 0)], nn = nrm3(st / lp[0], 0, ct / lp[2]);
@@ -243,15 +243,17 @@ function buildFinger(fi, f) {
       V(wp2, wn2, 0.5 + 0.5 * ct, 0, 1 + fi, wrAt(arcTip, j), fingUV(fi, q / SEG, arcTip));
       if (s01 < 0) { bind(0, 0, wp2, wp2, wn2, wn2, 0); continue; }   // 裙边：与掌顶点同样绑定
       const wB = j === 2 ? 0 : smooth01((s01 - 0.78) / 0.22);
-      // la = 本骨局部坐标（p 已是），lb = 静止世界 → 下一骨局部
+      // 局部坐标一律由世界位置反求（放置骨可为 j 或 j+1 → 段间环完全重合，不留台阶）
       const jn = Math.min(j + 1, 2);
-      const b = x3(Ri[jn], wp2), nb = x3n(Ri[jn], wn2);
-      bind(bid + j, bid + jn, p, b, nn, nb, wB);
+      const la = x3(Ri[j], wp2), lb = x3(Ri[jn], wp2);
+      const na = x3n(Ri[j], wn2), nb = x3n(Ri[jn], wn2);
+      bind(bid + j, bid + jn, la, lb, na, nb, wB);
     }
   };
   const wall = (j) => {
-    const L = f.L[j], wPrev = j === 0 ? f.w[0] * 1.25 : f.w[j] * 0.96, w0 = f.w[j], w1 = f.w[Math.min(j + 1, 2)] * 0.97;
-    const dPrev = j === 0 ? f.d[0] * 1.32 : f.d[j] * 0.96, d0 = f.d[j], d1 = f.d[Math.min(j + 1, 2)] * 0.97;
+    // w1 系数使本段末环与下段首环半径完全相等（0.96·bul(0)/bul(1)）→ 关节处零台阶
+    const L = f.L[j], wPrev = j === 0 ? f.w[0] * 1.25 : f.w[j] * 0.96, w0 = f.w[j], w1 = f.w[Math.min(j + 1, 2)] * (j < 2 ? 0.99467 : 0.97);
+    const dPrev = j === 0 ? f.d[0] * 1.32 : f.d[j] * 0.96, d0 = f.d[j], d1 = f.d[Math.min(j + 1, 2)] * (j < 2 ? 0.99467 : 0.97);
     const r0 = vcount;
     const extra = j === 0 ? 5 : 0;              // 指根裙边：收缩锥体埋进掌内，杜绝穿帮
     for (let r = 0; r <= RNG + extra; r++) {
@@ -259,13 +261,15 @@ function buildFinger(fi, f) {
       // 近端 22% 从上一节末端半径连续过渡（消除竹节台阶），关节处微凸，远端渐收
       const mix = 1 - smooth01(s / 0.22);
       const wr_ = wPrev + (w0 - wPrev) * (1 - mix), dr_ = dPrev + (d0 - dPrev) * (1 - mix);
-      const bul = 1 + 0.055 * Math.exp(-Math.pow((s - 0.10) / 0.16, 2)) - 0.045 * s;
-      let ww = (wr_ + (w1 - wr_) * s) * bul, hh = y, dd = (dr_ + (d1 - dr_) * s) * bul * 0.92, zo = 0;
+      const bul = 1 + 0.011 * Math.exp(-Math.pow((s - 0.08) / 0.20, 2)) - 0.026 * s;
+      let ww = (wr_ + (w1 - wr_) * s) * bul, hh = y, dd = (dr_ + (d1 - dr_) * s) * bul * 0.94, zo = 0;
       if (s < 0) {                              // 裙边：向下迅速收细，完全埋进掌内（不穿出掌面）
         const u = Math.min(-s / (extra / RNG), 1);
         ww *= 1 - 0.45 * u; dd *= 1 - 0.82 * u;
       }
-      ring(R[j], [ww, hh, dd], [0, 0, 0], s, j, stt.j[j] + (1 - s) * L, zo);
+      // 关节处末环放进子骨局部系 y=0，与下一段首环世界坐标完全重合 → 蒙皮后不留台阶灰箍
+      const joint = s >= 1 && j < 2;
+      ring(joint ? R[j + 1] : R[j], [ww, joint ? 0 : hh, dd], s, j, stt.j[j] + (1 - s) * L, zo);
     }
     for (let r = 0; r < RNG + extra; r++) for (let q = 0; q < SEG; q++) {
       const a = r0 + r * (SEG + 1) + q;
@@ -275,7 +279,8 @@ function buildFinger(fi, f) {
   wall(0); wall(1); wall(2);
   // 指尖帽
   {
-    const j = 2, G = R[2], L = f.L[2], r0 = f.w[2] * 0.94, d0 = f.d[2] * 0.92, CAP = 4, base = vcount;
+    // 帽底半径 = wall(2) 末环（w1·bul(1)=0.97·0.97）→ 与指体无缝
+    const j = 2, G = R[2], L = f.L[2], r0 = f.w[2] * 0.97 * 0.97, d0 = f.d[2] * 0.97 * 0.97 * 0.94, CAP = 6, base = vcount, wallLast = vcount - (SEG + 1);
     for (let r = 1; r <= CAP; r++) {
       const ph = r / CAP * Math.PI / 2, y = L + Math.sin(ph) * d0 * 0.95;
       const hw = Math.max(r0 * Math.cos(ph), 0.02), hd = Math.max(d0 * Math.cos(ph), 0.02);
@@ -286,8 +291,9 @@ function buildFinger(fi, f) {
         V(x3(G, p), x3n(G, nn), 0.5 + 0.5 * ct, 0, 1 + fi, 0.18, fingUV(fi, q / SEG, arc));
         bind(bid + 2, bid + 2, p, p, nn, nn, 0);
       }
-      if (r > 1) for (let q = 0; q < SEG; q++) {
-        const A = base + (r - 2) * (SEG + 1) + q, B = base + (r - 1) * (SEG + 1) + q;
+      for (let q = 0; q < SEG; q++) {
+        const A = r === 1 ? wallLast + q : base + (r - 2) * (SEG + 1) + q;
+        const B = base + (r - 1) * (SEG + 1) + q;
         quad(A, B, B + 1, A + 1);
       }
     }
@@ -298,10 +304,10 @@ function buildFinger(fi, f) {
   }
   // 指甲（背侧 -z，甲面沿指背/指尖球面贴合）
   {
-    const j = 2, G = R[2], L = f.L[2], NS = 8, NR = 6, base = vcount;
+    const j = 2, G = R[2], L = f.L[2], NS = 10, NR = 9, base = vcount;
     const rN = NAILR(fi);
     const dN = f.d[2] * 0.92, wN = f.w[2] * 0.94;
-    const cy = L * 0.55, al = L * 0.42 + dN * 0.85, aw = wN * 0.5;
+    const cy = L * 0.44, al = L * 0.42 + dN * 0.62, aw = wN * 0.46;
     for (let r = 0; r <= NR; r++) {
       const t = r / NR;                                      // 0=甲根 1=甲尖
       const y = cy + al * t;
@@ -309,7 +315,7 @@ function buildFinger(fi, f) {
       if (y <= L) zs = -dN * (1 - 0.06 * Math.pow((L - y) / (L - cy), 2));
       else { const s = Math.min((y - L) / (dN * 0.95), 0.97); zs = -dN * Math.sqrt(1 - s * s); }
       const off = 0.4 - 0.7 * smooth01(t / 0.22);            // -z 为指体外侧：甲根埋入，甲体贴面微凸
-      const gs = 1 - 0.15 * t * t;                           // 尖端收窄
+      const gs = 1 - 0.22 * t * t;                           // 尖端收窄（椭圆甲形）
       for (let q = 0; q <= NS; q++) {
         const u = q / NS - 0.5;
         const wid = Math.cos(u * Math.PI * 0.85);
@@ -336,6 +342,66 @@ for (let fi = 0; fi < 5; fi++) buildFinger(fi, FING[fi]);
     SKIN.splice(i, 0, [0, 0, p[0], p[1], p[2], p[0], p[1], p[2], n[0], n[1], n[2], n[0], n[1], n[2], 0]);
   }
 }
+/* —— 全局光滑法线（蒙皮版）：loft 解析法线忽略锥度 → 段间法线跳变成灰箍。
+      在静止世界空间按面积加权重建，再反变换回各顶点的两根骨骼局部系 —— */
+(function smoothNormalsSkin() {
+  const ID = M4.I(), CH = FING.map(f => fingerRestChain(f)), CI = CH.map(c => c.map(M4.invRigid));
+  const boneM = b => b === 0 ? ID : CH[((b - 1) / 3) | 0][(b - 1) % 3];
+  const boneI = b => b === 0 ? ID : CI[((b - 1) / 3) | 0][(b - 1) % 3];
+  const wp = new Float32Array(vcount * 3), wn = new Float32Array(vcount * 3);
+  for (let i = 0; i < vcount; i++) {
+    const s = SKIN[i], o = i * 3, M = boneM(s[0]);
+    const la = [s[2], s[3], s[4]];
+    const p = x3(M, la), n = x3n(M, [s[8], s[9], s[10]]);
+    wp[o] = p[0]; wp[o + 1] = p[1]; wp[o + 2] = p[2];
+    const l = Math.hypot(n[0], n[1], n[2]) || 1;
+    wn[o] = n[0] / l; wn[o + 1] = n[1] / l; wn[o + 2] = n[2] / l;
+  }
+  const acc = new Float32Array(vcount * 3), sumMag = new Float32Array(vcount);
+  // 同位焊接：关节处两段各自生成的重合环按位置归并，法线才能跨缝平均
+  const rep = new Int32Array(vcount), wkey = new Map();
+  for (let i = 0; i < vcount; i++) {
+    const o = i * 3, k = Math.round(wp[o] * 16) + ',' + Math.round(wp[o + 1] * 16) + ',' + Math.round(wp[o + 2] * 16);
+    const r0 = wkey.get(k);
+    rep[i] = r0 === undefined ? i : r0;
+    if (r0 === undefined) wkey.set(k, i);
+  }
+  for (let i = 0; i < IDX.length; i += 3) {
+    const A = IDX[i] * 3, B = IDX[i + 1] * 3, C = IDX[i + 2] * 3;
+    const ux = wp[B] - wp[A], uy = wp[B + 1] - wp[A + 1], uz = wp[B + 2] - wp[A + 2];
+    const vx = wp[C] - wp[A], vy = wp[C + 1] - wp[A + 1], vz = wp[C + 2] - wp[A + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const fm = Math.hypot(nx, ny, nz) * 0.5;
+    for (const o of [A, B, C]) {
+      // 与原法线反向的面（绕序不一致）不计入，避免翻面处互相抵消
+      const sg = (nx * wn[o] + ny * wn[o + 1] + nz * wn[o + 2]) >= 0 ? 1 : -1;
+      const q = rep[o / 3] * 3;
+      acc[q] += nx * sg; acc[q + 1] += ny * sg; acc[q + 2] += nz * sg;
+      sumMag[q] += fm;
+    }
+  }
+  for (let i = 0; i < vcount; i++) {
+    const o = i * 3, s = SKIN[i], region = MISC[i * 4 + 2], type = MISC[i * 4 + 1];
+    const q = rep[i] * 3;
+    let x = acc[q], y = acc[q + 1], z = acc[q + 2];
+    let l = Math.hypot(x, y, z);
+    // 边界顶点（扇中心/甲片轮廓/裙边侧棱）：|Σ| << Σ|面法线| → 保留解析法线，防止低模棱面与翻黑
+    if (l < 1e-6 || !(sumMag[q] > 0 && l / sumMag[q] > 0.45)) continue;
+    x /= l; y /= l; z /= l;
+    if (x * wn[o] + y * wn[o + 1] + z * wn[o + 2] < 0) { x = -x; y = -y; z = -z; }
+    // 混合权重：指甲=0（硬缘）；掌/腕/穹顶=0.85（保留骨点体量）；指壁=1（消灰箍）
+    const wv = type === 2 ? 0 : 1;
+    const ax = wn[o], ay = wn[o + 1], az = wn[o + 2];
+    x = ax + (x - ax) * wv; y = ay + (y - ay) * wv; z = az + (z - az) * wv;
+    l = Math.hypot(x, y, z); if (l < 1e-6) continue;
+    x /= l; y /= l; z /= l;
+    const na = x3n(boneI(s[0]), [x, y, z]), nb = x3n(boneI(s[1]), [x, y, z]);
+    const la2 = Math.hypot(na[0], na[1], na[2]) || 1, lb2 = Math.hypot(nb[0], nb[1], nb[2]) || 1;
+    s[8] = na[0] / la2; s[9] = na[1] / la2; s[10] = na[2] / la2;
+    s[11] = nb[0] / lb2; s[12] = nb[1] / lb2; s[13] = nb[2] / lb2;
+    N[o] = x; N[o + 1] = y; N[o + 2] = z;
+  }
+})();
 console.log('verts', vcount, 'skin', SKIN.length, 'tris', IDX.length / 3);
 if (SKIN.length !== vcount) throw new Error('SKIN/verts mismatch');
 if (vcount > 65535) throw new Error('too many verts for uint16 indices');
@@ -366,9 +432,9 @@ const texCv = document.createElement('canvas'); texCv.width = texCv.height = TS;
   let ctx = c; ctx.globalCompositeOperation = 'lighter';
   ctx.save(); ctx.beginPath(); ctx.rect(px(PALM,0,0), py(PALM,0,0), PALM.w * TS, PALM.h * TS); ctx.clip();
   const P_ = PALM;
-  stroke(ctx, [[px(P_,.30,.06), py(P_,.30,.06)], [px(P_,.40,.20), py(P_,.40,.20)], [px(P_,.44,.37), py(P_,.44,.37)], [px(P_,.40,.52), py(P_,.40,.52)], [px(P_,.32,.61), py(P_,.32,.61)]], 5.5, 'rgba(255,0,0,.72)', 2.5);   // 生命线（绕鱼际）
-  stroke(ctx, [[px(P_,.28,.10), py(P_,.28,.10)], [px(P_,.40,.14), py(P_,.40,.14)], [px(P_,.52,.20), py(P_,.52,.20)], [px(P_,.62,.27), py(P_,.62,.27)]], 4.5, 'rgba(255,0,0,.68)', 2.2);                    // 智慧线
-  stroke(ctx, [[px(P_,.78,.07), py(P_,.78,.07)], [px(P_,.69,.05), py(P_,.69,.05)], [px(P_,.56,.05), py(P_,.56,.05)], [px(P_,.45,.06), py(P_,.45,.06)], [px(P_,.36,.09), py(P_,.36,.09)]], 4, 'rgba(255,0,0,.64)', 2.2);   // 感情线
+  stroke(ctx, [[px(P_,.30,.06), py(P_,.30,.06)], [px(P_,.40,.20), py(P_,.40,.20)], [px(P_,.44,.37), py(P_,.44,.37)], [px(P_,.40,.52), py(P_,.40,.52)], [px(P_,.32,.61), py(P_,.32,.61)]], 4.2, 'rgba(255,0,0,.46)', 2.2);   // 生命线（绕鱼际）
+  stroke(ctx, [[px(P_,.28,.10), py(P_,.28,.10)], [px(P_,.40,.14), py(P_,.40,.14)], [px(P_,.52,.20), py(P_,.52,.20)], [px(P_,.62,.27), py(P_,.62,.27)]], 3.4, 'rgba(255,0,0,.42)', 1.9);                    // 智慧线
+  stroke(ctx, [[px(P_,.78,.07), py(P_,.78,.07)], [px(P_,.69,.05), py(P_,.69,.05)], [px(P_,.56,.05), py(P_,.56,.05)], [px(P_,.45,.06), py(P_,.45,.06)], [px(P_,.36,.09), py(P_,.36,.09)]], 3.0, 'rgba(255,0,0,.38)', 1.9);   // 感情线
   stroke(ctx, [[px(P_,.51,.53), py(P_,.51,.53)], [px(P_,.52,.37), py(P_,.52,.37)], [px(P_,.51,.21), py(P_,.51,.21)]], 2.2, 'rgba(255,0,0,.32)', 2);                                          // 命运线
   stroke(ctx, [[px(P_,.32,.21), py(P_,.32,.21)], [px(P_,.35,.13), py(P_,.35,.13)], [px(P_,.41,.08), py(P_,.41,.08)]], 2, 'rgba(255,0,0,.26)', 2);                                            // 鱼际副纹
   for (let i = 0; i < 130; i++) {                                                                                                                             // 细纹网
@@ -408,17 +474,17 @@ const texCv = document.createElement('canvas'); texCv.width = texCv.height = TS;
     wig(ctx, px(r,.66,.965), py(r,.66,.965), px(r,.60,.42), py(r,.60,.42), 8, 6, 3.4, 'rgba(0,255,0,.34)', 3);
     if (f > 0) wig(ctx, px(r,.55,.98), py(r,.55,.98), px(r,.52,.70), py(r,.52,.70), 5, 4, 2.4, 'rgba(0,255,0,.2)', 2.5);
   }
-  // —— B 通道：指节褶 + 腕褶 + 指腹横纹 ——
+  // —— B 通道：指节褶（只画指腹侧 u0.05–0.45，绕背侧就是灰箍）+ 腕褶 ——
   for (let f = 0; f < 5; f++) {
     const r = FINGR(f), LTj = fstat[f].j;
-    const vs = [0.985, LTj[0] / fstat[f].LT, LTj[1] / fstat[f].LT, 0.965];    // 指根褶、两道关节、指尖褶
+    const vs = [LTj[0] / fstat[f].LT, LTj[1] / fstat[f].LT];    // 只留两道关节褶
     for (const vv of vs) {
-      wig(ctx, px(r,.06,vv), py(r,.06,vv), px(r,.94,vv), py(r,.94,vv + .006), 6, 3, 2.2, 'rgba(0,0,255,.22)', 3);
+      wig(ctx, px(r,.05,vv), py(r,.05,vv), px(r,.45,vv + .004), py(r,.45,vv + .004), 5, 2, 1.6, 'rgba(0,0,255,.13)', 2.2);
     }
     for (const vv of [0.05, 0.09])                                                          // 甲根附近背侧横纹
-      wig(ctx, px(r,.15,vv), py(r,.15,vv), px(r,.85,vv), py(r,.85,vv), 5, 2.5, 1.8, 'rgba(0,0,255,.3)', 1.4);
+      wig(ctx, px(r,.15,vv), py(r,.15,vv), px(r,.85,vv), py(r,.85,vv), 5, 2.5, 1.4, 'rgba(0,0,255,.16)', 1.2);
     if (f === 0) for (const vv of [0.55, 0.6])
-      wig(ctx, px(r,.1,vv), py(r,.1,vv), px(r,.9,vv), py(r,.9,vv + .01), 5, 4, 2.6, 'rgba(0,0,255,.34)', 2.6);
+      wig(ctx, px(r,.1,vv), py(r,.1,vv), px(r,.9,vv), py(r,.9,vv + .01), 5, 4, 2.0, 'rgba(0,0,255,.20)', 2.2);
   }
   ctx.save(); ctx.beginPath(); ctx.rect(px(P_,0,0), py(P_,0,0), PALM.w * TS, PALM.h * TS); ctx.clip();
   for (const vv of [0.60, 0.635, 0.71])                                                         // 腕褶三（掌下缘两道 + 腕一道）
@@ -426,8 +492,8 @@ const texCv = document.createElement('canvas'); texCv.width = texCv.height = TS;
   ctx.restore();
   // —— 指甲区：R 亮度供游离缘/甲半月着色 ——
   for (let f = 0; f < 5; f++) { const r = NAILR(f);
-    ctx.fillStyle = 'rgba(255,0,0,.55)'; ctx.fillRect(px(r,0,0), py(r,0,.78), r.w * TS, r.h * TS * .22);
-    ctx.fillStyle = 'rgba(255,0,0,.28)'; ctx.fillRect(px(r,0,0), py(r,0,.0), r.w * TS, r.h * TS * .14); }
+    ctx.fillStyle = 'rgba(255,0,0,.55)'; ctx.fillRect(px(r,0,0), py(r,0,.85), r.w * TS, r.h * TS * .15);
+    ctx.fillStyle = 'rgba(255,0,0,.28)'; ctx.fillRect(px(r,0,0), py(r,0,.0), r.w * TS, r.h * TS * .10); }
 })();
 
 /* ============================ WebGL ============================ */
@@ -467,8 +533,8 @@ void main(){
   vec3 n = normalize(vN), v = normalize(uEye - vW);
   float side = vM.x, type = vM.y, rg = vM.z, wr = vM.w;   // side: 1=掌面/指腹 0=背面
   vec3 mask = texture2D(uT, vUV).rgb;
-  // —— 凹凸：高度图 = 褶纹 B + 0.55·掌/腹纹 R（掌纹凹凸同样按 side 门控，防止背面漏线） ——
-  float hgt = mask.b + 0.55 * mask.r * (0.1 + 0.9 * side);
+  // —— 凹凸：褶纹只允许出现在指腹/掌侧（背侧漏进去就是灰箍）；指甲面不参与 ——
+  float hgt = (mask.b * sstep(0.55, 0.9, side) + 0.55 * mask.r * (0.1 + 0.9 * side)) * (1.0 - step(1.25, type));
   vec2 g = vec2(dxf(hgt), dyf(hgt)) * 2.2;
   vec3 nb = normalize(n + vec3(g.x, -g.y, 0.0) * 0.6);
   // 底色：白里透粉的细腻皮肤
@@ -482,20 +548,27 @@ void main(){
   // 毛孔高频
   float pore = vn(vW.xy * 2.2 + vW.z * 1.4) * 0.5 + vn(vW.yz * 4.5) * 0.5;
   base *= 1.0 - 0.045 * (pore - 0.5) * 2.0;
-  // 掌纹/指纹（按法线朝掌面程度显隐）
-  float crease = mask.r * (0.04 + 0.96 * sstep(0.3, 0.75, side));
-  base = mix(base, base * vec3(0.80, 0.62, 0.58), clamp(crease, 0.0, 1.0) * 0.85);
+  // 掌纹/指纹（按法线朝掌面程度显隐；指甲区不参与，否则甲体被染灰）
+  float skin = step(type, 1.25);
+  float crease = mask.r * (0.04 + 0.96 * sstep(0.3, 0.75, side)) * skin;
+  if (rg < 0.25 && type < 1.25) {                            // 掌区明暗过渡
+    float pv = (vUV.y - 0.0) / 0.46;
+    base *= mix(vec3(1.005, 0.988, 0.982), vec3(0.982, 0.968, 0.968), clamp((pv - 0.42) / 0.5, 0.0, 1.0));
+    base *= 1.0 - 0.06 * exp(-pow((pv - 0.10) / 0.075, 2.0));  // 指根横带
+    base *= 1.0 - 0.05 * exp(-pow((pv - 0.66) / 0.10, 2.0));   // 腕前暗带
+  }
+  base = mix(base, base * vec3(0.86, 0.72, 0.68), clamp(crease, 0.0, 1.0) * 0.55);
   // 静脉（背侧列）
   base = mix(base, base * vec3(0.62, 0.72, 0.94), mask.g * (0.15 + 0.85 * (1.0 - side)) * 0.85);
-  // 关节/腕褶（全向，wr 门控强弱）
-  float wline = mask.b * (0.3 + 0.7 * wr);
-  base = mix(base, base * vec3(0.84, 0.74, 0.70), clamp(wline, 0.0, 1.0) * 0.28);
+  // 关节/腕褶（褶只长在指腹/掌侧，背侧几乎不可见；wr 门控强弱）
+  float wline = mask.b * (0.3 + 0.7 * wr) * sstep(0.55, 0.9, side) * skin;
+  base = mix(base, base * vec3(0.88, 0.80, 0.77), clamp(wline, 0.0, 1.0) * 0.15);
   // 指甲：甲体粉白、游离缘更白、甲根半透；甲缘两侧收暗并留浅甲沟，避免"白色小贴片"
   if (type > 1.5) {
     float t = clamp((vUV.y - 0.74) / 0.16, 0.0, 1.0);       // NAIL 区纵向 0根 → 1尖
     float eu = abs(vUV.x - (0.34 + (rg - 1.0) * 0.132 + 0.06)) / 0.06;   // 甲宽归一（0中 → 1缘）
-    base = mix(vec3(0.985, 0.845, 0.80), vec3(0.995, 0.965, 0.945), sstep(0.12, 0.82, t));
-    base = mix(base, vec3(1.0, 0.985, 0.975), sstep(0.86, 0.99, t));
+    base = mix(vec3(0.975, 0.845, 0.80), vec3(0.995, 0.955, 0.935), sstep(0.12, 0.82, t));
+    base = mix(base, vec3(0.995, 0.965, 0.94), sstep(0.88, 0.99, t));
     base = mix(base, vec3(0.975, 0.90, 0.86) , 1.0 - sstep(0.0, 0.30, t));   // 甲根半月
     base *= 1.0 - 0.10 * sstep(0.62, 1.0, eu);                               // 甲侧缘收暗
     base = mix(base, vec3(0.86, 0.76, 0.72), (1.0 - sstep(0.02, 0.10, t)) * 0.55); // 甲根沟
@@ -510,14 +583,14 @@ void main(){
   float d2 = max(dot(nb, L2), 0.0);
   float w1 = pow(max(dot(nb, L1) * 0.5 + 0.5, 0.0), 1.2);
   float sss = pow(max(dot(v, -L1), 0.0), 3.0) * (0.25 + 0.5 * wr);
-  vec3 lit = base * (vec3(0.34, 0.335, 0.36) + c1 * w1 * 0.60 + c2 * d2 * 0.18);
+  vec3 lit = base * (vec3(0.30, 0.295, 0.32) + c1 * w1 * 0.74 + c2 * d2 * 0.16);
   lit += base * vec3(1.0, 0.45, 0.35) * sss * 0.35;
   vec3 hv = normalize(L1 + v);
-  float spec = pow(max(dot(nb, hv), 0.0), type > 1.5 ? 60.0 : 26.0) * (type > 1.5 ? 0.45 : 0.18);
+  float spec = pow(max(dot(nb, hv), 0.0), type > 1.5 ? 60.0 : 26.0) * (type > 1.5 ? 0.30 : 0.12);
   lit += c1 * spec;
   float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-  lit += vec3(0.95, 0.85, 0.8) * rim * 0.20;
-  lit = mix(lit, vec3(0.937, 0.906, 0.875), clamp((1.0 - max(dot(n, v), 0.0)) * 0.28, 0.0, 0.5));
+  lit += vec3(0.95, 0.85, 0.8) * rim * 0.12;
+  lit = mix(lit, vec3(0.937, 0.906, 0.875), clamp((1.0 - max(dot(n, v), 0.0)) * 0.16, 0.0, 0.35));
   lit = pow(max(lit, vec3(0.0)), vec3(0.92));
   gl_FragColor = vec4(lit, 1.0);
 }`;
