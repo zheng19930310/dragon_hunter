@@ -85,11 +85,11 @@ const smooth01 = x=>{ x=clamp(x,0,1); return x*x*(3-2*x); };
 /* ============================ 手部参数（mm，纤细女手） ============================ */
 // base=指节顶（MCP 铰链线，穹顶 apex y≈90） preZ=外张 preY=拇指对掌 yaw L=三节长 w=宽 d=厚 rest=三节静息弯（纤细女手实测尺寸）
 const FING = [
-  {name:'thumb', base:[-24,49,6.5], preZ:0.75,  preY:0.55, L:[26,18,14], w:[10.2,9.0,7.6], d:[8.0,7.0,6.0], rest:[12,14,8],  sp:0.0, tPitch:0.55},
-  {name:'index', base:[-26,84,0],  preZ:0.09,  preY:0,     L:[40,25,18], w:[8.8,7.8,6.8],  d:[7.2,6.4,5.6], rest:[4,7,5],    sp:0.10},
-  {name:'mid',   base:[-9,86,0],   preZ:0.02,  preY:0,     L:[41,28,20], w:[9.3,8.3,7.2],  d:[7.6,6.7,5.9], rest:[3,6,4],    sp:0.02},
-  {name:'ring',  base:[8,85,0],    preZ:-0.06, preY:0,     L:[38,25,18], w:[8.8,7.8,6.8],  d:[7.2,6.4,5.6], rest:[4,8,6],    sp:-0.07},
-  {name:'pinky', base:[24,80,0],   preZ:-0.12, preY:0,     L:[29,19,14], w:[7.4,6.5,5.6],  d:[6.0,5.3,4.6], rest:[5,10,8],   sp:-0.10},
+  {name:'thumb', base:[-24,49,6.5], preZ:0.75,  preY:0.55, L:[26,18,14], w:[10.6,9.4,7.9],  d:[7.2,6.4,5.6],  rest:[12,14,8],  sp:0.0, tPitch:0.55},
+  {name:'index', base:[-26,84,0],  preZ:0.09,  preY:0,     L:[40,25,18], w:[9.2,8.2,7.1],   d:[6.2,5.6,4.9],  rest:[4,7,5],    sp:0.10},
+  {name:'mid',   base:[-9,86,0],   preZ:0.02,  preY:0,     L:[41,28,20], w:[9.8,8.8,7.6],   d:[6.6,5.9,5.1],  rest:[3,6,4],    sp:0.02},
+  {name:'ring',  base:[8,85,0],    preZ:-0.06, preY:0,     L:[38,25,18], w:[9.2,8.2,7.1],   d:[6.2,5.6,4.9],  rest:[4,8,6],    sp:-0.07},
+  {name:'pinky', base:[24,80,0],   preZ:-0.12, preY:0,     L:[29,19,14], w:[7.8,6.9,6.0],   d:[5.2,4.7,4.1],  rest:[5,10,8],   sp:-0.10},
 ];
 // 手势目标：c=五指[MCP,PIP,DIP]弯曲角(度) s=张开系数 thYaw/thOpp=拇指偏置(度)
 const GES = {
@@ -153,9 +153,9 @@ function webDip(x) {
     const u = us[i];
     let hw, hd, y;
     if (u < 0) { const a = -u / 0.34;                       // 腕：只留一点，末端平切（前臂不实现）
-      hw = 15.4 + 2.2 * smooth01(a / 0.6); hd = 8.0 + 1.6 * a; y = 8 - a * 25;
+      hw = 15.4 + 2.2 * smooth01(a / 0.6); hd = 8.8 + 1.7 * a; y = 8 - a * 25;
     } else {                                               // 掌体（扁椭圆截面，方圆形轮廓）
-      hw = (22 + 12 * Math.pow(u, 0.7)) * (1 - 0.055 * smooth01((u - 0.8) / 0.2)); hd = 6.4 + 3.0 * u; y = 8 + u * 78;
+      hw = (22 + 12 * Math.pow(u, 0.7)) * (1 - 0.055 * smooth01((u - 0.8) / 0.2)); hd = 7.4 + 3.5 * u; y = 8 + u * 78;
     }
     const row = vcount;
     for (let j = 0; j <= PV; j++) {
@@ -167,7 +167,12 @@ function webDip(x) {
       const dip = -3.5 * smooth01((u - 0.86) / 0.14) * webDip(hw * st) * Math.max(-ct, 0)
                   -2.6 * smooth01((u - 0.9) / 0.1) * webDip(hw * st) * Math.max(ct, 0);   // 蹼谷：背深掌浅
       const mnd = 5.2 * Math.exp(-(Math.pow((hw * st + 21) / 11, 2) + Math.pow((y - 46) / 12, 2))) * Math.max(ct, 0);
-      const z = hd * ct + arch + thenar + mnd - kn - rim;
+      // 刀4：手背四条掌骨嵴 + 骨间沟（从手背中段起，向上汇入指节）→ 掌背与手指同一套骨相，不再"平片+套管"
+      const xd = Math.min(...KNUCK.map(k => Math.abs(hw * st - k)));
+      const metG = Math.exp(-Math.pow(xd / 5.6, 2));
+      const dor = 1.25 * metG * smooth01((u - 0.12) / 0.5) * Math.max(-ct, 0)
+                - 0.55 * (1 - metG) * smooth01((u - 0.55) / 0.45) * Math.max(-ct, 0);
+      const z = hd * ct + arch + thenar + mnd - kn - rim - dor;
       const thenX = u > 0 ? 7.5 * Math.exp(-Math.pow((y - 44) / 14, 2)) * Math.max(-st, 0) : 0;   // 鱼际外凸：把拇指根包进掌轮廓
       const x = hw * st * (u > 0 ? 1 : 0.96 + 0.04 * ct) - thenX;
       V([x, y + dip, z], nrm3(st / hw, 0, ct / hd), 0.5 + 0.5 * ct, 0, 0, 0, palmUV(x, y));
@@ -179,20 +184,23 @@ function webDip(x) {
   const topRow = vcount - (PV + 1), DOME = 8;
   const riseAt = (x, ct) => {
     const padG = Math.exp(-Math.pow(Math.min(...KNUCK.map(k => Math.abs(x - k))) / 6.2, 2));
-    return 9.5 * Math.max(-ct, 0) + (0.3 * padG - 2.5 * (1 - padG)) * Math.max(ct, 0);
+    // 刀4：背侧不再是等高平台——掌骨头凸起、指蹼处下凹，形成连续波浪顶缘（消除"手背/手指分层"）
+    // 掌侧同样沿掌骨头抬起，把指根外扩环吞进掌体（消除"手指套上去"的领圈）
+    return (6.5 + 3.6 * padG - 2.4 * (1 - padG)) * Math.max(-ct, 0)
+         + (4.6 * padG - 2.5 * (1 - padG)) * Math.max(ct, 0);
   };
   let prevRow = topRow;
   for (let r = 1; r <= DOME; r++) {
     const ph = r / DOME * Math.PI / 2, cp = Math.cos(ph), sp = Math.sin(ph);
-    const hw = 34 * Math.pow(cp, 0.7) + 0.3, hd = 9.4 * Math.pow(cp, 0.7) + 0.3;
+    const hw = 34 * Math.pow(cp, 1.15) + 0.3, hd = 11.4 * Math.pow(cp, 1.05) + 0.3;   // 指数 >1 → 穹顶从掌缘起就圆收，不留桌面状平脊
     const row = vcount;
     for (let j = 0; j <= PV; j++) {
       const th = j / PV * Math.PI * 2, st = Math.sin(th), ct = Math.cos(th);
       const x = hw * st;
       const padG = Math.exp(-Math.pow(Math.min(...KNUCK.map(k => Math.abs(x - k))) / 6.2, 2));
-      const y = 86 + sp * riseAt(x, ct) - 2.5 * cp * cp * webDip(x) * Math.max(-ct, 0);   // 蹼谷只开在背侧
+      const y = 86 + sp * riseAt(x, ct) - 6.5 * cp * cp * webDip(x) * Math.max(-ct, 0);   // 蹼谷只开在背侧（加深 → 指根从掌背"长出来"而非立在平台上）
       const xd = Math.min(...KNUCK.map(k => Math.abs(x - k)));
-      const kn = 1.7 * sp * Math.max(-ct, 0) * Math.exp(-Math.pow(xd / 6.5, 2));
+      const kn = 2.6 * sp * Math.max(-ct, 0) * Math.exp(-Math.pow(xd / 6.5, 2));          // 每根掌骨头的独立凸起
       const z = hd * ct - kn - (9.5 + 4 * (1 - padG)) * (1 - 0.85 * sp) * Math.max(ct, 0);   // 掌侧后退：底部与掌缘连续，向顶部渐消（收口不往前顶）
       V([x, y, z], nrm3(st / hw, sp * 1.4, ct / hd), 0.5 + 0.5 * ct, 0, 0, 0, palmUV(x, y));
     }
@@ -237,10 +245,47 @@ function buildFinger(fi, f) {
     if (j > 0) e = Math.max(e, Math.exp(-Math.pow((arcTip - stt.j[j] - f.L[j]) / sig, 2)));
     return 0.22 + 0.78 * e;
   };
-  const ring = (G, lp, s01, j, arcTip, zo) => {   // 一个截面环；s01<0 = 指根裙边（随掌骨 root 走）
+  // 骨点形态（刀2）：关节=侧副韧带双凸 + 背凸；段间伸肌腱纵脊；MCP 加方肩
+  // 关节索引：段 j 的 s=0 端为关节 j（MCP/PIP/DIP），s=1 端为关节 j+1（j<2）→ 共享环两侧取值恒等，无台阶
+  const ZERO = {bone: 0, sq: 0, dor: 0};
+  const JT = [{bone: 0.105, sq: 0.055, dor: 0.070, w: 0.60},   // MCP：方肩+骨点（大半埋在掌指交界）
+              {bone: 0.140, sq: 0.016, dor: 0.058, w: 1.0},    // PIP：最清晰的骨点
+              {bone: 0.100, sq: 0.014, dor: 0.040, w: 0.95}];  // DIP
+  const knShape = (s, j) => {
+    if (fi === 0 || s < 0) return ZERO;                        // 拇指埋在鱼际、指根裙边埋在掌内 → 不加骨点
+    const sg = 0.20, gs = Math.exp(-(s / sg) * (s / sg));
+    let bone = JT[j].w * gs * JT[j].bone, sq = JT[j].w * gs * JT[j].sq, dor = JT[j].w * gs * JT[j].dor;
+    if (j < 2) {
+      const ge = Math.exp(-((1 - s) / sg) * ((1 - s) / sg));
+      bone += JT[j + 1].w * ge * JT[j + 1].bone;
+      sq += JT[j + 1].w * ge * JT[j + 1].sq;
+      dor += JT[j + 1].w * ge * JT[j + 1].dor;
+    }
+    return {bone, sq, dor};
+  };
+  // 背侧伸肌腱纵脊：以弧长为唯一自变量做折线插值 → 共享环两侧恒等，不会裂
+  const RIDGE = [0.14, 0.30, 0.18];                            // 近/中/远段（中段腱帽最明显），单位 mm
+  const ridgeAt = (a) => {
+    if (fi === 0) return 0;
+    const k = (x0, v0, x1, v1) => v0 + (v1 - v0) * (a - x0) / (x1 - x0);
+    const aMCP = stt.j[0] + f.L[0], aPIP = stt.j[0], aDIP = stt.j[1], aCAP = stt.j[2];
+    const vMCP = 0.30 * RIDGE[0], vPIP = 0.45 * (RIDGE[0] + RIDGE[1]) / 2;
+    const vDIP = 0.45 * (RIDGE[1] + RIDGE[2]) / 2, vCAP = 0.55 * RIDGE[2];
+    if (a >= aMCP) return vMCP * Math.max(0, 1 - (a - aMCP) / (f.L[0] * 0.5));
+    if (a >= aPIP) return k(aMCP, vMCP, aPIP, vPIP);
+    if (a >= aDIP) return k(aPIP, vPIP, aDIP, vDIP);
+    if (a >= aCAP) return k(aDIP, vDIP, aCAP, vCAP);
+    return vCAP * Math.max(0, a / aCAP);
+  };
+  const ring = (G, lp, s01, j, arcTip, zo, shp) => {   // 一个截面环；s01<0 = 指根裙边（随掌骨 root 走）
+    const bn = shp || ZERO, rg = ridgeAt(arcTip);
     for (let q = 0; q <= SEG; q++) {
       const th = q / SEG * Math.PI * 2, st = Math.sin(th), ct = Math.cos(th);
-      const p = [lp[0] * st, lp[1], lp[2] * ct + (zo || 0)], nn = nrm3(st / lp[0], 0, ct / lp[2]);
+      const kx = 1 + bn.bone * st * st + bn.sq * Math.pow(st, 4);   // 侧副韧带骨点 + MCP 方肩
+      let zz = lp[2] * ct + (zo || 0);
+      if (rg) zz -= rg * Math.exp(-Math.pow((Math.abs(st) - 0.30) / 0.14, 2)) * Math.max(-ct, 0);   // 背侧伸肌腱纵脊
+      if (bn.dor) zz -= bn.dor * (1 - st * st) * Math.max(-ct, 0) * lp[2] / Math.max(lp[0], 1e-6) * 0.9;  // 关节背凸
+      const p = [lp[0] * st * kx, lp[1], zz], nn = nrm3(st / lp[0], 0, ct / lp[2]);
       const wp2 = x3(G, p), wn2 = x3n(G, nn);
       V(wp2, wn2, 0.5 + 0.5 * ct, 0, 1 + fi, wrAt(arcTip, j), fingUV(fi, q / SEG, arcTip));
       if (s01 < 0) { bind(0, 0, wp2, wp2, wn2, wn2, 0); continue; }   // 裙边：与掌顶点同样绑定
@@ -254,7 +299,7 @@ function buildFinger(fi, f) {
   };
   const wall = (j) => {
     // w1 系数使本段末环与下段首环半径完全相等（0.96·bul(0)/bul(1)）→ 关节处零台阶
-    const flareW = fi === 0 ? 1.06 : 1.25, flareD = fi === 0 ? 1.10 : 1.32;   // 拇指根不做大外扩（鱼际本身就是膨体）
+    const flareW = fi === 0 ? 1.06 : 1.12, flareD = fi === 0 ? 1.10 : 1.18;   // 拇指根不做大外扩（鱼际本身就是膨体）
     const L = f.L[j], wPrev = j === 0 ? f.w[0] * flareW : f.w[j] * 0.96, w0 = f.w[j], w1 = f.w[Math.min(j + 1, 2)] * (j < 2 ? 0.99467 : 0.97);
     const dPrev = j === 0 ? f.d[0] * flareD : f.d[j] * 0.96, d0 = f.d[j], d1 = f.d[Math.min(j + 1, 2)] * (j < 2 ? 0.99467 : 0.97);
     const r0 = vcount;
@@ -272,7 +317,7 @@ function buildFinger(fi, f) {
       }
       // 关节处末环放进子骨局部系 y=0，与下一段首环世界坐标完全重合 → 蒙皮后不留台阶灰箍
       const joint = s >= 1 && j < 2;
-      ring(joint ? R[j + 1] : R[j], [ww, joint ? 0 : hh, dd], s, j, stt.j[j] + (1 - s) * L, zo);
+      ring(joint ? R[j + 1] : R[j], [ww, joint ? 0 : hh, dd], s, j, stt.j[j] + (1 - s) * L, zo, knShape(s, j));
     }
     for (let r = 0; r < RNG + extra; r++) for (let q = 0; q < SEG; q++) {
       const a = r0 + r * (SEG + 1) + q;
@@ -280,17 +325,25 @@ function buildFinger(fi, f) {
     }
   };
   wall(0); wall(1); wall(2);
+  let TIPD;                                                  // 指尖帽几何参数（指甲贴合共用）
   // 指尖帽
   {
     // 帽底半径 = wall(2) 末环（w1·bul(1)=0.97·0.97）→ 与指体无缝
-    const j = 2, G = R[2], L = f.L[2], r0 = f.w[2] * 0.97 * 0.97, d0 = f.d[2] * 0.97 * 0.97 * 0.94, CAP = 6, base = vcount, wallLast = vcount - (SEG + 1);
+    // 刀3：指腹球体——掌侧外鼓、背侧收平，末端圆润饱满（不再是扁圆盘+中心点）
+    const j = 2, G = R[2], L = f.L[2], r0 = f.w[2] * 0.97 * 0.97, d0 = f.d[2] * 0.97 * 0.97 * 0.94;
+    const CAP = 8, base = vcount, wallLast = vcount - (SEG + 1);
+    const hy = d0 * 1.18, zc = d0 * 0.34;                 // 末端高度 / 指尖整体向指腹侧偏移
+    TIPD = {r0, d0, hy, zc, L};
     for (let r = 1; r <= CAP; r++) {
-      const ph = r / CAP * Math.PI / 2, y = L + Math.sin(ph) * d0 * 0.95;
-      const hw = Math.max(r0 * Math.cos(ph), 0.02), hd = Math.max(d0 * Math.cos(ph), 0.02);
-      const arc = stt.j[2] * Math.cos(ph);
+      const ph = r / CAP * Math.PI / 2, s = Math.sin(ph), c = Math.cos(ph);
+      const cw = Math.pow(c, 0.80);                        // 收得慢 → 肉球饱满不尖
+      const hw = Math.max(r0 * cw, 0.02), hd = Math.max(d0 * cw, 0.02);
+      const y = L + s * hy, arc = stt.j[2] * c;
       for (let q = 0; q <= SEG; q++) {
         const th = q / SEG * Math.PI * 2, st = Math.sin(th), ct = Math.cos(th);
-        const p = [hw * st, y, hd * ct], nn = nrm3(st / hw, Math.sin(ph) * 1.2, ct / hd);
+        const p = [hw * st, y, cw * d0 * ct + s * s * zc];
+        // 球坐标解析法线：st/hw 在极点发散（hw→0）会在指尖留下暗点 → 用参数化球法线
+        const nn = nrm3(st * c, s * 1.15, ct * c);
         V(x3(G, p), x3n(G, nn), 0.5 + 0.5 * ct, 0, 1 + fi, 0.18, fingUV(fi, q / SEG, arc));
         bind(bid + 2, bid + 2, p, p, nn, nn, 0);
       }
@@ -301,27 +354,32 @@ function buildFinger(fi, f) {
       }
     }
     const cN = x3n(G, [0, 1, 0.4]); cN[1] = 1;
-    V(x3(G, [0, L + d0 * 0.95, 0]), x3n(G, nrm3(0, 1, 0.3)), 0.5, 0, 1 + fi, 0.18, fingUV(fi, 0.5, 0));
-    bind(bid + 2, bid + 2, [0, L + d0 * 0.95, 0], [0, L + d0 * 0.95, 0], [0, 1, 0], [0, 1, 0], 0);
+    V(x3(G, [0, L + hy, zc]), x3n(G, nrm3(0, 1, 0.3)), 0.5, 0, 1 + fi, 0.18, fingUV(fi, 0.0, 0));   // 端点归指腹中心（原 0.5=背侧 → 指尖采到甲色变"白点"）
+    bind(bid + 2, bid + 2, [0, L + hy, zc], [0, L + hy, zc], [0, 1, 0], [0, 1, 0], 0);
     for (let q = 0; q < SEG; q++) IDX.push(vcount - 1, base + (CAP - 1) * (SEG + 1) + q + 1, base + (CAP - 1) * (SEG + 1) + q);
   }
   // 指甲（背侧 -z，甲面沿指背/指尖球面贴合）
   {
     const j = 2, G = R[2], L = f.L[2], NS = 10, NR = 9, base = vcount;
     const rN = NAILR(fi);
-    const dN = f.d[2] * 0.92, wN = f.w[2] * 0.94;
-    const cy = L * 0.44, al = L * 0.42 + dN * 0.62, aw = wN * 0.46;
+    const {d0: dC, hy: hC, zc: zC} = TIPD;
+    const wN = f.w[2] * 0.94;
+    const cy = L * 0.40, al = (L - cy) + hC * 0.20, aw = wN * 0.60;   // 甲尖止于指端肉球之前；甲宽≈指宽 69%（真实比例）
     for (let r = 0; r <= NR; r++) {
       const t = r / NR;                                      // 0=甲根 1=甲尖
       const y = cy + al * t;
-      let zs;                                                // 指背表面 z
-      if (y <= L) zs = -dN * (1 - 0.06 * Math.pow((L - y) / (L - cy), 2));
-      else { const s = Math.min((y - L) / (dN * 0.95), 0.97); zs = -dN * Math.sqrt(1 - s * s); }
-      const off = 0.4 - 0.7 * smooth01(t / 0.22);            // -z 为指体外侧：甲根埋入，甲体贴面微凸
-      const gs = 1 - 0.22 * t * t;                           // 尖端收窄（椭圆甲形）
+      let zs;                                                // 指背表面 z（与指尖帽同一套曲面）
+      if (y <= L) zs = -dC * (1 - 0.06 * Math.pow((L - y) / (L - cy), 2));
+      else {
+        const s = Math.min((y - L) / hC, 0.94), c = Math.sqrt(1 - s * s), cw = Math.pow(c, 0.80);
+        zs = -cw * dC + s * s * zC;                           // 与帽面同式：ct=-1
+      }
+      let off = 0.5 - 0.80 * smooth01(t / 0.22);             // 甲根埋入肉内，甲尖微露 → 与肉分离但不翘成贴片
+      off -= 0.12 * smooth01((t - 0.86) / 0.14);             // 游离缘轻微外挑
+      const gs = (1 - 0.22 * t * t) * (1 - 0.42 * smooth01((t - 0.70) / 0.30));   // 尖端收窄（椭圆甲形 + 随肉球回收，不戳出轮廓）
       for (let q = 0; q <= NS; q++) {
         const u = q / NS - 0.5;
-        const wid = Math.cos(u * Math.PI * 0.85);
+        const wid = Math.cos(u * Math.PI * 0.58);
         const lx = aw * u * 2 * wid * gs;
         const ly = y;
         const lz = zs + off;
@@ -515,13 +573,13 @@ const PREC = (() => {
 })();
 const SKY = PREC + `
 attribute vec3 aP, aN; attribute vec4 aM; attribute vec2 aUV;
-uniform mat4 uVP, uRoot; uniform mat3 uRN; varying vec3 vN, vW; varying vec4 vM; varying vec2 vUV;
-void main(){ vec4 w = uRoot * vec4(aP,1.0); vW = w.xyz; vN = uRN * aN; vM = aM; vUV = aUV;
+uniform mat4 uVP, uRoot; uniform mat3 uRN; varying vec3 vN, vW, vL; varying vec4 vM; varying vec2 vUV;
+void main(){ vec4 w = uRoot * vec4(aP,1.0); vW = w.xyz; vL = aP; vN = uRN * aN; vM = aM; vUV = aUV;
   gl_Position = uVP * w; }`;
 const SKP = `
 #extension GL_OES_standard_derivatives : enable
 ${PREC}
-varying vec3 vN, vW; varying vec4 vM; varying vec2 vUV;
+varying vec3 vN, vW, vL; varying vec4 vM; varying vec2 vUV;
 uniform sampler2D uT, uA; uniform vec3 uEye; uniform float uUseA;
 float h21(vec2 p){ vec2 q = mod(abs(p), vec2(79.0, 79.0)); return fract(sin(dot(q, vec2(12.9898, 78.233))) * 3.7235); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -537,9 +595,10 @@ void main(){
   float side = vM.x, type = vM.y, rg = vM.z, wr = vM.w;   // side: 1=掌面/指腹 0=背面
   vec3 mask = texture2D(uT, vUV).rgb;
   // —— 凹凸：褶纹只允许出现在指腹/掌侧（背侧漏进去就是灰箍）；指甲面不参与 ——
-  float hgt = (mask.b * sstep(0.55, 0.9, side) + 0.55 * mask.r * (0.1 + 0.9 * side)) * (1.0 - step(1.25, type));
-  vec2 g = vec2(dxf(hgt), dyf(hgt)) * 2.2;
-  vec3 nb = normalize(n + vec3(g.x, -g.y, 0.0) * 0.6);
+  // 刀4：掌纹/指纹从"只染颜色"升级为真实凹凸（mask.r 位移 + 加粗高光边缘）
+  float hgt = (mask.b * sstep(0.55, 0.9, side) + 1.15 * mask.r * (0.12 + 0.88 * side)) * (1.0 - step(1.25, type));
+  vec2 g = vec2(dxf(hgt), dyf(hgt)) * 4.2;
+  vec3 nb = normalize(n + vec3(g.x, -g.y, 0.0) * 1.0);
   // 底色：白里透粉的细腻皮肤
   vec3 base = vec3(0.945, 0.828, 0.762);
   base = mix(base, base * vec3(1.02, 1.005, 1.0), sstep(0.2, 0.9, vn(vW.xy * 0.35)));
@@ -571,23 +630,33 @@ void main(){
     float t = clamp((vUV.y - 0.74) / 0.16, 0.0, 1.0);       // NAIL 区纵向 0根 → 1尖
     float eu = abs(vUV.x - (0.34 + (rg - 1.0) * 0.132 + 0.06)) / 0.06;   // 甲宽归一（0中 → 1缘）
     base = mix(vec3(0.945, 0.785, 0.745), vec3(0.965, 0.885, 0.845), sstep(0.12, 0.82, t));
-    base = mix(base, vec3(0.975, 0.93, 0.90), sstep(0.88, 0.99, t));
+    base = mix(base, vec3(0.972, 0.915, 0.885), sstep(0.93, 1.0, t));
     base = mix(base, vec3(0.975, 0.90, 0.86) , 1.0 - sstep(0.0, 0.30, t));   // 甲根半月
     base *= 1.0 - 0.10 * sstep(0.62, 1.0, eu);                               // 甲侧缘收暗
     base = mix(base, vec3(0.86, 0.76, 0.72), (1.0 - sstep(0.02, 0.10, t)) * 0.55); // 甲根沟
     base *= 1.0 - 0.05 * (1.0 - sstep(0.75, 0.95, t))
-            * (step(abs(eu - 0.02), 0.012) + step(abs(eu - 0.065), 0.012)
-             + step(abs(eu - 0.110), 0.012) + step(abs(eu - 0.155), 0.012)
-             + step(abs(eu - 0.200), 0.012));                                 // 甲面纵细棱
+            * (exp(-pow((eu - 0.020) / 0.016, 2.0)) + exp(-pow((eu - 0.065) / 0.016, 2.0))
+             + exp(-pow((eu - 0.110) / 0.016, 2.0)) + exp(-pow((eu - 0.155) / 0.016, 2.0))
+             + exp(-pow((eu - 0.200) / 0.016, 2.0)));                          // 甲面纵细棱（软边，避免硬条纹）
   }
   // 照片漫反射（B3 同法：AI 照片烘进同一套 UV；掌区背面走背照带）
   if (uUseA > 0.5 && type < 1.5) {
     vec2 auv = vUV;
     if (rg < 0.5) auv.y += 0.46;                          // 掌区背面 → 背侧皮肤带
+    // 刀4：手指不再"渐隐回程序色"（那是分层割裂感的来源）→ 连续包裹到掌部照片
+    float pv = clamp((88.0 - vL.y) / 132.0, 0.0, 1.0);
+    float pu = 0.0 + 0.32 * clamp(0.5 + vL.x / 68.0, 0.0, 1.0);
+    vec3 palb = texture2D(uA, vec2(pu, rg < 0.5 ? clamp(0.46 + 0.46 * pv, 0.0, 0.999) : 0.46 * pv)).rgb;
     vec3 alb = texture2D(uA, auv).rgb;
     if (rg > 0.5) alb *= vec3(0.955, 0.938, 0.930);       // 手指照片压向掌面白平衡（去纸白、补红）
-    // 指根带照片未覆盖（图集 v→0.72 是补色）→ 渐隐回程序化底色，与掌无缝
-    float wgt = rg > 0.5 ? 0.85 * (1.0 - sstep(0.56, 0.71, vUV.y)) : 0.8;
+    float wgt;
+    if (rg > 0.5) {
+      float rootf = 1.0 - sstep(0.50, 0.66, vUV.y);          // 指根 → 掌部照片（其余保持指纹照片）
+      float tipf  = sstep(0.0, 0.075, vUV.y);            // 指腹末端：图集顶端 v≈0 是补色带（灰白"涂点"）
+      float wf = rootf * tipf;
+      wgt = 0.85 * mix(0.92, 1.0, wf);
+      alb = mix(palb, alb, wf);
+    } else wgt = 0.8;
     base = mix(base, alb, wgt);
   }
   // 光照：侧窗柔光（主光强、环境低）+ 指缝接触阴影 + 皮薄透红
